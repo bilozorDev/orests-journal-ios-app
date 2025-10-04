@@ -10,20 +10,31 @@ import PhotosUI
 
 struct AddFoodView: View {
     @Environment(\.dismiss) var dismiss
+
     @State private var foodName = ""
-    @State private var selectedCategory: FoodCategory = .dry
-    @State private var caloriesPerContainer = ""
-    @State private var containerSizeGrams = ""
+    @State private var selectedCategory: FoodCategory
+    @State private var caloriesPerKg = ""
+    @State private var containerSize = ""
+    @State private var selectedUnit: ContainerUnit = .grams
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var selectedImage: UIImage?
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    init(defaultCategory: FoodCategory? = nil) {
+        _selectedCategory = State(initialValue: defaultCategory ?? .dry)
+    }
+
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("Food Information")) {
-                    TextField("Food Name", text: $foodName)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Food Name *")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("Enter food name", text: $foodName)
+                    }
 
                     Picker("Category", selection: $selectedCategory) {
                         ForEach(FoodCategory.allCases, id: \.self) { category in
@@ -32,7 +43,7 @@ struct AddFoodView: View {
                     }
                 }
 
-                Section(header: Text("Photo")) {
+                Section(header: Text("Photo (Optional)")) {
                     PhotosPicker(
                         selection: $selectedPhoto,
                         matching: .images
@@ -58,11 +69,32 @@ struct AddFoodView: View {
                 }
 
                 Section(header: Text("Nutrition")) {
-                    TextField("Calories per Container", text: $caloriesPerContainer)
-                        .keyboardType(.decimalPad)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Calories per Kilogram (kcal/kg) *")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("Enter calories per kg", text: $caloriesPerKg)
+                            .keyboardType(.decimalPad)
+                    }
+                }
 
-                    TextField("Container Size (grams)", text: $containerSizeGrams)
-                        .keyboardType(.decimalPad)
+                Section(header: Text("Container Size")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Container Size *")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            TextField("Enter size", text: $containerSize)
+                                .keyboardType(.decimalPad)
+
+                            Picker("Unit", selection: $selectedUnit) {
+                                ForEach(ContainerUnit.allCases, id: \.self) { unit in
+                                    Text(unit.abbreviation).tag(unit)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
                 }
 
                 if let error = errorMessage {
@@ -104,10 +136,10 @@ struct AddFoodView: View {
 
     private var isFormValid: Bool {
         !foodName.isEmpty &&
-        !caloriesPerContainer.isEmpty &&
-        Double(caloriesPerContainer) != nil &&
-        !containerSizeGrams.isEmpty &&
-        Double(containerSizeGrams) != nil
+        !caloriesPerKg.isEmpty &&
+        Double(caloriesPerKg) != nil &&
+        !containerSize.isEmpty &&
+        Double(containerSize) != nil
     }
 
     private func saveFood() {
@@ -128,8 +160,8 @@ struct AddFoodView: View {
                 }
 
                 // Create food
-                guard let calories = Double(caloriesPerContainer),
-                      let containerSize = Double(containerSizeGrams) else {
+                guard let caloriesKg = Double(caloriesPerKg),
+                      let size = Double(containerSize) else {
                     throw NSError(domain: "AddFoodView", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid number format"])
                 }
 
@@ -137,8 +169,9 @@ struct AddFoodView: View {
                     familyId: family.id,
                     name: foodName,
                     category: selectedCategory,
-                    caloriesPerContainer: calories,
-                    containerSizeGrams: containerSize,
+                    caloriesPerKg: caloriesKg,
+                    containerSize: size,
+                    containerSizeUnit: selectedUnit,
                     imageUrl: imageUrl
                 )
 

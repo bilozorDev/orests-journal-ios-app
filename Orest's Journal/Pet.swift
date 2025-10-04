@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Pet: Codable, Identifiable {
+struct Pet: Codable, Identifiable, Hashable {
     let id: UUID
     let familyId: UUID
     let name: String
