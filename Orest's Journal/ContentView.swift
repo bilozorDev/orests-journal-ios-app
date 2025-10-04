@@ -1154,16 +1154,19 @@ struct HealthView: View {
                 Section(header: Text(formatDate(date))) {
                     if let dayEvents = eventsByDate[date] {
                         ForEach(dayEvents.sorted(by: { $0.event.occurredAt > $1.event.occurredAt })) { eventWithCategory in
-                            HealthEventRowView(eventWithCategory: eventWithCategory)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        Task {
-                                            await deleteEvent(eventWithCategory.event.id)
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                            HealthEventRowView(
+                                eventWithCategory: eventWithCategory,
+                                petId: selectedPet?.id ?? UUID()
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task {
+                                        await deleteEvent(eventWithCategory.event.id)
                                     }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
+                            }
                         }
                     }
                 }
@@ -1225,34 +1228,38 @@ struct HealthView: View {
 
 struct HealthEventRowView: View {
     let eventWithCategory: HealthEventWithCategory
+    let petId: UUID
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(eventWithCategory.category.name)
-                        .font(.headline)
+        NavigationLink(destination: HealthEventDetailView(eventWithCategory: eventWithCategory, petId: petId)) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(eventWithCategory.category.name)
+                            .font(.headline)
 
-                    Text(formatTime(eventWithCategory.event.occurredAt))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        Text(formatTime(eventWithCategory.event.occurredAt))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "heart.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.red.opacity(0.7))
                 }
 
-                Spacer()
-
-                Image(systemName: "heart.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.red.opacity(0.7))
+                if let notes = eventWithCategory.event.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                        .lineLimit(2)
+                }
             }
-
-            if let notes = eventWithCategory.event.notes, !notes.isEmpty {
-                Text(notes)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 2)
-            }
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
     }
 
     private func formatTime(_ date: Date) -> String {

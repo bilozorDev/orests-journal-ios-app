@@ -869,4 +869,20 @@ class SupabaseService {
         let months = Double(components.month ?? 0)
         return years + (months / 12.0)
     }
+
+    func getUserEmail(for userId: UUID?) async -> String {
+        guard let userId = userId else {
+            return "Unknown"
+        }
+
+        // Check if this is the current user
+        if let currentUser = try? await supabase.auth.session.user,
+           currentUser.id == userId {
+            return currentUser.email ?? "Unknown"
+        }
+
+        // For other family members, we would need a user_profiles table
+        // For now, just return a generic label
+        return "Family Member"
+    }
 }
