@@ -245,16 +245,18 @@ class SupabaseService {
         familyId: UUID,
         name: String,
         category: FoodCategory,
-        caloriesPerContainer: Double,
-        containerSizeGrams: Double,
+        caloriesPerKg: Double,
+        containerSize: Double,
+        containerSizeUnit: ContainerUnit,
         imageUrl: String?
     ) async throws -> PetFood {
         struct FoodInsert: Encodable {
             let familyId: String
             let name: String
             let category: String
-            let caloriesPerContainer: Double
-            let containerSizeGrams: Double
+            let caloriesPerKg: Double
+            let containerSize: Double
+            let containerSizeUnit: String
             let imageUrl: String?
             let createdBy: String
 
@@ -262,8 +264,9 @@ class SupabaseService {
                 case familyId = "family_id"
                 case name
                 case category
-                case caloriesPerContainer = "calories_per_container"
-                case containerSizeGrams = "container_size_grams"
+                case caloriesPerKg = "calories_per_kg"
+                case containerSize = "container_size"
+                case containerSizeUnit = "container_size_unit"
                 case imageUrl = "image_url"
                 case createdBy = "created_by"
             }
@@ -275,8 +278,9 @@ class SupabaseService {
             familyId: familyId.uuidString,
             name: name,
             category: category.rawValue,
-            caloriesPerContainer: caloriesPerContainer,
-            containerSizeGrams: containerSizeGrams,
+            caloriesPerKg: caloriesPerKg,
+            containerSize: containerSize,
+            containerSizeUnit: containerSizeUnit.rawValue,
             imageUrl: imageUrl,
             createdBy: userId.uuidString
         )
@@ -290,6 +294,14 @@ class SupabaseService {
             .value
 
         return food
+    }
+
+    func deleteFood(_ foodId: UUID) async throws {
+        try await supabase
+            .from("pet_foods")
+            .delete()
+            .eq("id", value: foodId.uuidString)
+            .execute()
     }
 
     // MARK: - Storage Functions
@@ -338,6 +350,514 @@ class SupabaseService {
             .getPublicURL(path: filePath)
 
         return publicURL.absoluteString
+    }
+
+    // MARK: - Feeding Functions
+
+    func createFeeding(
+        petId: UUID,
+        foodId: UUID,
+        amount: Double,
+        amountUnit: ContainerUnit,
+        calories: Double,
+        notes: String? = nil
+    ) async throws -> PetFeeding {
+        struct FeedingInsert: Encodable {
+            let petId: String
+            let foodId: String
+            let fedBy: String
+            let amount: Double
+            let amountUnit: String
+            let calories: Double
+            let notes: String?
+
+            enum CodingKeys: String, CodingKey {
+                case petId = "pet_id"
+                case foodId = "food_id"
+                case fedBy = "fed_by"
+                case amount
+                case amountUnit = "amount_unit"
+                case calories
+                case notes
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+
+        let feedingInsert = FeedingInsert(
+            petId: petId.uuidString,
+            foodId: foodId.uuidString,
+            fedBy: userId.uuidString,
+            amount: amount,
+            amountUnit: amountUnit.rawValue,
+            calories: calories,
+            notes: notes
+        )
+
+        let feeding: PetFeeding = try await supabase
+            .from("pet_feedings")
+            .insert(feedingInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return feeding
+    }
+
+    func getTodayCalories(for petId: UUID) async throws -> Double {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        let feedings: [PetFeeding] = try await supabase
+            .from("pet_feedings")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .gte("fed_at", value: formatter.string(from: today))
+            .lt("fed_at", value: formatter.string(from: tomorrow))
+            .execute()
+            .value
+
+        return feedings.reduce(0) { $0 + $1.calories }
+    }
+
+    func getTodayFeedings(for petId: UUID) async throws -> [PetFeeding] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        let feedings: [PetFeeding] = try await supabase
+            .from("pet_feedings")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .gte("fed_at", value: formatter.string(from: today))
+            .lt("fed_at", value: formatter.string(from: tomorrow))
+            .order("fed_at", ascending: false)
+            .execute()
+            .value
+
+        return feedings
+    }
+
+    func getFeedingHistory(for petId: UUID, limit: Int = 50) async throws -> [PetFeeding] {
+        let feedings: [PetFeeding] = try await supabase
+            .from("pet_feedings")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .order("fed_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+
+        return feedings
+    }
+
+    // MARK: - Calorie Goal Functions
+
+    func getActiveCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
+        let today = Date()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let todayString = formatter.string(from: today)
+
+        let goals: [CalorieGoal] = try await supabase
+            .from("pet_calorie_goals")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .lte("effective_from", value: todayString)
+            .or("effective_until.is.null,effective_until.gte.\(todayString)")
+            .order("effective_from", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+
+        return goals.first
+    }
+
+    func setCalorieGoal(
+        for petId: UUID,
+        dailyCalories: Double,
+        effectiveFrom: Date = Date(),
+        notes: String? = nil
+    ) async throws -> CalorieGoal {
+        struct GoalInsert: Encodable {
+            let petId: String
+            let dailyCalories: Double
+            let notes: String?
+            let createdBy: String
+
+            enum CodingKeys: String, CodingKey {
+                case petId = "pet_id"
+                case dailyCalories = "daily_calories"
+                case notes
+                case createdBy = "created_by"
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+
+        let goalInsert = GoalInsert(
+            petId: petId.uuidString,
+            dailyCalories: dailyCalories,
+            notes: notes,
+            createdBy: userId.uuidString
+        )
+
+        let goal: CalorieGoal = try await supabase
+            .from("pet_calorie_goals")
+            .insert(goalInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return goal
+    }
+
+    // MARK: - Medication Functions
+
+    func getFamilyMedications(familyId: UUID) async throws -> [PetMedication] {
+        // Get all pets for the family
+        let pets = try await getFamilyPets(familyId: familyId)
+        let petIds = pets.map { $0.id.uuidString }
+
+        guard !petIds.isEmpty else {
+            return []
+        }
+
+        let medications: [PetMedication] = try await supabase
+            .from("pet_medications")
+            .select()
+            .in("pet_id", values: petIds)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+
+        return medications
+    }
+
+    func getActiveMedications(for petId: UUID) async throws -> [PetMedication] {
+        let today = Calendar.current.startOfDay(for: Date())
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let todayString = formatter.string(from: today)
+
+        let medications: [PetMedication] = try await supabase
+            .from("pet_medications")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .lte("start_date", value: todayString)
+            .or("end_date.is.null,end_date.gte.\(todayString)")
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+
+        return medications
+    }
+
+    func createMedication(
+        petId: UUID,
+        name: String,
+        medicationType: MedicationType,
+        startDate: Date,
+        endDate: Date?,
+        timesPerDay: Int,
+        notes: String?
+    ) async throws -> PetMedication {
+        struct MedicationInsert: Encodable {
+            let petId: String
+            let name: String
+            let medicationType: String
+            let startDate: String
+            let endDate: String?
+            let timesPerDay: Int
+            let notes: String?
+            let createdBy: String
+
+            enum CodingKeys: String, CodingKey {
+                case petId = "pet_id"
+                case name
+                case medicationType = "medication_type"
+                case startDate = "start_date"
+                case endDate = "end_date"
+                case timesPerDay = "times_per_day"
+                case notes
+                case createdBy = "created_by"
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        let medicationInsert = MedicationInsert(
+            petId: petId.uuidString,
+            name: name,
+            medicationType: medicationType.rawValue,
+            startDate: formatter.string(from: startDate),
+            endDate: endDate.map { formatter.string(from: $0) },
+            timesPerDay: timesPerDay,
+            notes: notes,
+            createdBy: userId.uuidString
+        )
+
+        let medication: PetMedication = try await supabase
+            .from("pet_medications")
+            .insert(medicationInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return medication
+    }
+
+    func recordDose(
+        medicationId: UUID,
+        notes: String? = nil
+    ) async throws -> PetMedicationDose {
+        struct DoseInsert: Encodable {
+            let medicationId: String
+            let givenBy: String
+            let notes: String?
+
+            enum CodingKeys: String, CodingKey {
+                case medicationId = "medication_id"
+                case givenBy = "given_by"
+                case notes
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+
+        let doseInsert = DoseInsert(
+            medicationId: medicationId.uuidString,
+            givenBy: userId.uuidString,
+            notes: notes
+        )
+
+        let dose: PetMedicationDose = try await supabase
+            .from("pet_medication_doses")
+            .insert(doseInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return dose
+    }
+
+    func getMedicationDoses(for medicationId: UUID, limit: Int = 50) async throws -> [PetMedicationDose] {
+        let doses: [PetMedicationDose] = try await supabase
+            .from("pet_medication_doses")
+            .select()
+            .eq("medication_id", value: medicationId.uuidString)
+            .order("given_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+
+        return doses
+    }
+
+    func getLastDose(for medicationId: UUID) async throws -> PetMedicationDose? {
+        let doses: [PetMedicationDose] = try await supabase
+            .from("pet_medication_doses")
+            .select()
+            .eq("medication_id", value: medicationId.uuidString)
+            .order("given_at", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+
+        return doses.first
+    }
+
+    func getDosesToday(for medicationId: UUID) async throws -> [PetMedicationDose] {
+        // Get start of today in UTC
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let todayString = formatter.string(from: startOfToday)
+
+        let doses: [PetMedicationDose] = try await supabase
+            .from("pet_medication_doses")
+            .select()
+            .eq("medication_id", value: medicationId.uuidString)
+            .gte("given_at", value: todayString)
+            .order("given_at", ascending: false)
+            .execute()
+            .value
+
+        return doses
+    }
+
+    func deleteMedication(_ medicationId: UUID) async throws {
+        try await supabase
+            .from("pet_medications")
+            .delete()
+            .eq("id", value: medicationId.uuidString)
+            .execute()
+    }
+
+    // MARK: - Health Journal Functions
+
+    func getHealthCategories(for petId: UUID) async throws -> [HealthCategory] {
+        let categories: [HealthCategory] = try await supabase
+            .from("pet_health_categories")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .order("name", ascending: true)
+            .execute()
+            .value
+
+        return categories
+    }
+
+    func getOrCreateHealthCategory(petId: UUID, name: String) async throws -> HealthCategory {
+        let normalized = name.lowercased().trimmingCharacters(in: .whitespaces)
+
+        // Try to find existing category (case-insensitive)
+        let existing: [HealthCategory] = try await supabase
+            .from("pet_health_categories")
+            .select()
+            .eq("pet_id", value: petId.uuidString)
+            .eq("name_normalized", value: normalized)
+            .limit(1)
+            .execute()
+            .value
+
+        if let category = existing.first {
+            return category
+        }
+
+        // Create new category
+        struct CategoryInsert: Encodable {
+            let petId: String
+            let name: String
+            let nameNormalized: String
+            let createdBy: String
+
+            enum CodingKeys: String, CodingKey {
+                case petId = "pet_id"
+                case name
+                case nameNormalized = "name_normalized"
+                case createdBy = "created_by"
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+
+        let categoryInsert = CategoryInsert(
+            petId: petId.uuidString,
+            name: name.trimmingCharacters(in: .whitespaces),
+            nameNormalized: normalized,
+            createdBy: userId.uuidString
+        )
+
+        let category: HealthCategory = try await supabase
+            .from("pet_health_categories")
+            .insert(categoryInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return category
+    }
+
+    func createHealthEvent(
+        petId: UUID,
+        categoryName: String,
+        occurredAt: Date = Date(),
+        notes: String?
+    ) async throws -> HealthEvent {
+        // Get or create category
+        let category = try await getOrCreateHealthCategory(petId: petId, name: categoryName)
+
+        // Create event
+        struct EventInsert: Encodable {
+            let categoryId: String
+            let occurredAt: String
+            let notes: String?
+            let createdBy: String
+
+            enum CodingKeys: String, CodingKey {
+                case categoryId = "category_id"
+                case occurredAt = "occurred_at"
+                case notes
+                case createdBy = "created_by"
+            }
+        }
+
+        let userId = try await supabase.auth.session.user.id
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        let eventInsert = EventInsert(
+            categoryId: category.id.uuidString,
+            occurredAt: formatter.string(from: occurredAt),
+            notes: notes?.isEmpty == false ? notes : nil,
+            createdBy: userId.uuidString
+        )
+
+        let event: HealthEvent = try await supabase
+            .from("pet_health_events")
+            .insert(eventInsert)
+            .select()
+            .single()
+            .execute()
+            .value
+
+        return event
+    }
+
+    func getHealthEvents(for petId: UUID, limit: Int = 100) async throws -> [HealthEventWithCategory] {
+        // Get all categories for this pet
+        let categories = try await getHealthCategories(for: petId)
+        let categoryIds = categories.map { $0.id.uuidString }
+
+        guard !categoryIds.isEmpty else {
+            return []
+        }
+
+        // Get events for these categories
+        let events: [HealthEvent] = try await supabase
+            .from("pet_health_events")
+            .select()
+            .in("category_id", values: categoryIds)
+            .order("occurred_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+
+        // Create category lookup
+        let categoryDict = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
+
+        // Combine events with categories
+        let eventsWithCategories = events.compactMap { event -> HealthEventWithCategory? in
+            guard let category = categoryDict[event.categoryId] else { return nil }
+            return HealthEventWithCategory(event: event, category: category)
+        }
+
+        return eventsWithCategories
+    }
+
+    func deleteHealthEvent(_ eventId: UUID) async throws {
+        try await supabase
+            .from("pet_health_events")
+            .delete()
+            .eq("id", value: eventId.uuidString)
+            .execute()
     }
 
     // MARK: - Helper Functions
