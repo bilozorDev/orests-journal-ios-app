@@ -131,11 +131,17 @@ struct MainTabView: View {
                 }
                 .tag(3)
 
+            HealthSearchView()
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+                .tag(4)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(4)
+                .tag(5)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToFoodTab"))) { _ in
             selectedTab = 1
@@ -193,10 +199,6 @@ struct DashboardView: View {
                     feedingHistoryLink(pet: pet)
 
                     medicationSection(pet: pet)
-
-                    if calorieGoal > 0 {
-                        updateGoalButton
-                    }
                 }
 
                 Spacer()
@@ -221,6 +223,14 @@ struct DashboardView: View {
                 Label("\(pet.name)'s Daily Calories", systemImage: "fork.knife.circle.fill")
                     .font(.headline)
                 Spacer()
+                if calorieGoal > 0 {
+                    Button(action: {
+                        showSetGoal = true
+                    }) {
+                        Label("Update Goal", systemImage: "target")
+                            .font(.subheadline)
+                    }
+                }
             }
             .padding(.horizontal)
 
@@ -453,20 +463,11 @@ struct DashboardView: View {
         .padding(.top, 8)
     }
 
-    private var updateGoalButton: some View {
-        Button(action: {
-            showSetGoal = true
-        }) {
-            Label("Update Goal", systemImage: "target")
-                .font(.subheadline)
-        }
-        .padding(.top, 8)
-    }
-
     var body: some View {
         NavigationView {
             dashboardContent
             .navigationTitle("Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showRecordFeeding) {
                 if let pet = selectedPet {
                     RecordFeedingView(petId: pet.id)
@@ -493,7 +494,7 @@ struct DashboardView: View {
             }
             .onChange(of: showRecordFeeding) { _, isShowing in
                 if !isShowing {
-                    Task {
+                    Task { @MainActor in
                         await loadTodayCalories()
                         await loadTodayFeedings()
                     }
@@ -501,7 +502,7 @@ struct DashboardView: View {
             }
             .onChange(of: showSetGoal) { _, isShowing in
                 if !isShowing {
-                    Task {
+                    Task { @MainActor in
                         await loadCalorieGoal()
                         await loadTodayCalories()
                         await loadTodayFeedings()
@@ -509,7 +510,7 @@ struct DashboardView: View {
                 }
             }
             .onChange(of: selectedPet) { _, _ in
-                Task {
+                Task { @MainActor in
                     await loadCalorieGoal()
                     await loadTodayCalories()
                     await loadTodayFeedings()
@@ -551,6 +552,7 @@ struct DashboardView: View {
         isLoading = false
     }
 
+    @MainActor
     private func loadCalorieGoal() async {
         guard let pet = selectedPet else { return }
         do {
@@ -562,6 +564,7 @@ struct DashboardView: View {
         }
     }
 
+    @MainActor
     private func loadTodayCalories() async {
         guard let pet = selectedPet else { return }
         do {
@@ -694,8 +697,8 @@ struct FoodView: View {
                 } else {
                     List {
                         ForEach(FoodCategory.allCases, id: \.self) { category in
-                            Section(header: Text(category.displayName)) {
-                                if let categoryFoods = foodsByCategory[category] {
+                            if let categoryFoods = foodsByCategory[category] {
+                                Section(header: Text(category.displayName)) {
                                     ForEach(categoryFoods) { food in
                                         FoodRowView(food: food)
                                             .contextMenu {
@@ -721,23 +724,23 @@ struct FoodView: View {
                                             }
                                     }
                                 }
-
-                                Button(action: {
-                                    selectedCategory = category
-                                    showAddFood = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "plus.circle.fill")
-                                        Text("Add \(category.displayName)")
-                                    }
-                                    .foregroundColor(.blue)
-                                }
                             }
                         }
                     }
                 }
             }
             .navigationTitle("Food")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        selectedCategory = nil
+                        showAddFood = true
+                    }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
             .sheet(isPresented: $showAddFood) {
                 AddFoodView(defaultCategory: selectedCategory)
             }
@@ -898,6 +901,7 @@ struct MedicationView: View {
                 }
             }
             .navigationTitle("Medication")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -1086,6 +1090,7 @@ struct HealthView: View {
                 }
             }
             .navigationTitle("Health Journal")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if !pets.isEmpty {
