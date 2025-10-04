@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EA87EFE32E919056001CE4AD /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = EA87EFE22E919056001CE4AD /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Orest's Journal.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EA87EFE32E919056001CE4AD /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +38,7 @@
 			isa = PBXGroup;
 			children = (
 				EA87EFB92E918B2B001CE4AD /* Orest's Journal */,
+				EA87EFD42E918E92001CE4AD /* Frameworks */,
 				EA87EFB82E918B2B001CE4AD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +49,13 @@
 				EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		EA87EFD42E918E92001CE4AD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -65,6 +78,7 @@
 			);
 			name = "Orest's Journal";
 			packageProductDependencies = (
+				EA87EFE22E919056001CE4AD /* Supabase */,
 			);
 			productName = "Orest's Journal";
 			productReference = EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */;
@@ -94,6 +108,9 @@
 			);
 			mainGroup = EA87EFAE2E918B2B001CE4AD;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				EA87EFD72E91900B001CE4AD /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EA87EFB82E918B2B001CE4AD /* Products */;
 			projectDirPath = "";
@@ -261,6 +278,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -293,6 +311,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -332,6 +351,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		EA87EFD72E91900B001CE4AD /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EA87EFE22E919056001CE4AD /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA87EFD72E91900B001CE4AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EA87EFAF2E918B2B001CE4AD /* Project object */;
 }
