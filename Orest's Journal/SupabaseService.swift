@@ -544,17 +544,17 @@ class SupabaseService {
     }
 
     func getActiveMedications(for petId: UUID) async throws -> [PetMedication] {
-        let today = Calendar.current.startOfDay(for: Date())
+        let now = Date()
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        let todayString = formatter.string(from: today)
+        let nowString = formatter.string(from: now)
 
         let medications: [PetMedication] = try await supabase
             .from("pet_medications")
             .select()
             .eq("pet_id", value: petId.uuidString)
-            .lte("start_date", value: todayString)
-            .or("end_date.is.null,end_date.gte.\(todayString)")
+            .lte("start_date", value: nowString)
+            .or("end_date.is.null,end_date.gte.\(nowString)")
             .order("created_at", ascending: false)
             .execute()
             .value
@@ -884,5 +884,257 @@ class SupabaseService {
         // For other family members, we would need a user_profiles table
         // For now, just return a generic label
         return "Family Member"
+    }
+
+    // MARK: - Semantic Search Functions
+
+    func generateEmbedding(for query: String) async throws -> [Double] {
+        // Call the Edge Function to generate embedding
+        let requestBody: [String: Any] = ["query": query]
+        let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+
+        // Create URLRequest for Edge Function (using ngrok tunnel for local development)
+        let baseURL = "https://climbing-helping-hermit.ngrok-free.app"
+        let url = URL(string: "\(baseURL)/functions/v1/embed-search-query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0", forHTTPHeaderField: "Authorization")
+        request.httpBody = jsonData
+
+        // Execute request
+        let (data, _) = try await URLSession.shared.data(for: request)
+
+        // Decode the response
+        let embeddingResponse = try JSONDecoder().decode(
+            EmbeddingResponse.self,
+            from: data
+        )
+
+        guard embeddingResponse.success, let embedding = embeddingResponse.embedding else {
+            throw NSError(
+                domain: "SupabaseService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: embeddingResponse.error ?? "Failed to generate embedding"]
+            )
+        }
+
+        return embedding
+    }
+
+    func searchHealthEvents(
+        query: String,
+        petId: UUID? = nil,
+        intent: SearchIntent = .all,
+        matchThreshold: Double = 0.7,
+        matchCount: Int = 10
+    ) async throws -> [HealthSearchResult] {
+        // Generate embedding for the search query
+        let embedding = try await generateEmbedding(for: query)
+
+        // For now, return empty results - we'll implement the full RPC call once the app compiles
+        // TODO: Implement proper RPC call to search_health_events function
+        print("Search query: \(query)")
+        print("Generated embedding with \(embedding.count) dimensions")
+
+        return []
+    }
+
+    // MARK: - Test Data Generation
+
+    func generateRandomTestData(for pet: Pet) async throws {
+        let userId = try await supabase.auth.session.user.id
+
+        // 1. Generate calorie goal
+        let calorieGoal = Int.random(in: 600...1200)
+        try await supabase
+            .from("pet_calorie_goals")
+            .insert([
+                "pet_id": pet.id.uuidString,
+                "daily_calories": String(calorieGoal),
+                "effective_from": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30 * 24 * 60 * 60)),
+                "notes": "Generated test goal",
+                "created_by": userId.uuidString
+            ])
+            .execute()
+
+        // 2. Generate 5 types of food
+        let foods = [
+            ("Premium Dry Food", "dry", 3500.0, 5.0, "kg"),
+            ("Chicken Wet Food", "wet", 900.0, 400.0, "g"),
+            ("Beef Wet Food", "wet", 950.0, 400.0, "g"),
+            ("Salmon Wet Food", "wet", 880.0, 400.0, "g"),
+            ("Training Treats", "snack", 4000.0, 250.0, "g")
+        ]
+
+        var foodIds: [UUID] = []
+        for (name, category, caloriesPerKg, containerSize, unit) in foods {
+            let response: [PetFood] = try await supabase
+                .from("pet_foods")
+                .insert([
+                    "family_id": pet.familyId.uuidString,
+                    "name": name,
+                    "category": category,
+                    "calories_per_kg": String(caloriesPerKg),
+                    "container_size": String(containerSize),
+                    "container_size_unit": unit,
+                    "created_by": userId.uuidString
+                ])
+                .select()
+                .execute()
+                .value
+            if let food = response.first {
+                foodIds.append(food.id)
+            }
+        }
+
+        // 3. Generate 2 medications
+        let now = Date()
+        let medications = [
+            ("Allergy Pills", "pill", 2, 30),  // 2x daily for 30 days
+            ("Asthma Inhaler", "inhaler", 3, 60)  // 3x daily for 60 days
+        ]
+
+        for (name, type, timesPerDay, durationDays) in medications {
+            let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: now)!
+
+            let medicationResponse: [PetMedication] = try await supabase
+                .from("pet_medications")
+                .insert([
+                    "pet_id": pet.id.uuidString,
+                    "name": name,
+                    "medication_type": type,
+                    "start_date": ISO8601DateFormatter().string(from: now),
+                    "end_date": ISO8601DateFormatter().string(from: endDate),
+                    "times_per_day": String(timesPerDay),
+                    "notes": "Generated test medication",
+                    "created_by": userId.uuidString
+                ])
+                .select()
+                .execute()
+                .value
+
+            guard let medication = medicationResponse.first else { continue }
+
+            // Generate some doses for the past week
+            for dayOffset in 0...6 {
+                let doseDate = Calendar.current.date(byAdding: .day, value: -dayOffset, to: now)!
+                for _ in 0..<timesPerDay {
+                    let randomHour = Int.random(in: 8...20)
+                    let doseTime = Calendar.current.date(bySettingHour: randomHour, minute: Int.random(in: 0...59), second: 0, of: doseDate)!
+
+                    var doseData: [String: String] = [
+                        "medication_id": medication.id.uuidString,
+                        "given_at": ISO8601DateFormatter().string(from: doseTime),
+                        "given_by": userId.uuidString
+                    ]
+                    if dayOffset == 0 {
+                        doseData["notes"] = "Given today"
+                    }
+
+                    try await supabase
+                        .from("pet_medication_doses")
+                        .insert(doseData)
+                        .execute()
+                }
+            }
+        }
+
+        // 4. Generate 20 health journal entries
+        let healthCategories = [
+            "Asthma Attack",
+            "Vet Visit",
+            "Vaccination",
+            "Injury",
+            "Skin Irritation",
+            "Upset Stomach",
+            "Ear Infection",
+            "Dental Checkup"
+        ]
+
+        let sampleNotes = [
+            "Had trouble breathing after running. Used inhaler.",
+            "Annual checkup. Everything looks good!",
+            "Updated rabies vaccine",
+            "Small cut on paw from playing. Cleaned and bandaged.",
+            "Red patches noticed. Applied ointment.",
+            "Vomited after eating too fast. Monitored throughout day.",
+            "Left ear looked red. Vet prescribed drops.",
+            "Teeth cleaning completed. No cavities found."
+        ]
+
+        for i in 0..<20 {
+            let categoryName = healthCategories[i % healthCategories.count]
+
+            // Create or get category
+            let categories: [HealthCategory] = try await supabase
+                .from("pet_health_categories")
+                .select()
+                .eq("pet_id", value: pet.id.uuidString)
+                .eq("name_normalized", value: categoryName.lowercased())
+                .execute()
+                .value
+
+            let category: HealthCategory
+            if let existingCategory = categories.first {
+                category = existingCategory
+            } else {
+                category = try await supabase
+                    .from("pet_health_categories")
+                    .insert([
+                        "pet_id": pet.id.uuidString,
+                        "name": categoryName,
+                        "name_normalized": categoryName.lowercased(),
+                        "created_by": userId.uuidString
+                    ])
+                    .select()
+                    .single()
+                    .execute()
+                    .value
+            }
+
+            // Create health event
+            let daysAgo = Int.random(in: 1...180)
+            let eventDate = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!
+
+            try await supabase
+                .from("pet_health_events")
+                .insert([
+                    "category_id": category.id.uuidString,
+                    "occurred_at": ISO8601DateFormatter().string(from: eventDate),
+                    "notes": sampleNotes[i % sampleNotes.count],
+                    "created_by": userId.uuidString
+                ])
+                .execute()
+        }
+
+        // 5. Generate feeding records for the past 7 days
+        for dayOffset in 0...6 {
+            let feedDate = Calendar.current.date(byAdding: .day, value: -dayOffset, to: now)!
+
+            // 2-3 feedings per day
+            let feedingsCount = Int.random(in: 2...3)
+            for _ in 0..<feedingsCount {
+                let randomHour = [8, 14, 19].randomElement()!
+                let feedTime = Calendar.current.date(bySettingHour: randomHour, minute: Int.random(in: 0...59), second: 0, of: feedDate)!
+
+                let randomFood = foodIds.randomElement()!
+                let amount = Double.random(in: 100...300)
+                let calories = Int(amount * 3.5) // Approximate
+
+                try await supabase
+                    .from("pet_feedings")
+                    .insert([
+                        "pet_id": pet.id.uuidString,
+                        "food_id": randomFood.uuidString,
+                        "fed_by": userId.uuidString,
+                        "fed_at": ISO8601DateFormatter().string(from: feedTime),
+                        "amount": String(amount),
+                        "amount_unit": "g",
+                        "calories": String(calories)
+                    ])
+                    .execute()
+            }
+        }
     }
 }

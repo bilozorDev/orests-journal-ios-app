@@ -149,6 +149,143 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - Skeleton Views
+struct SkeletonView: View {
+    @State private var isAnimating = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.3))
+            .overlay(
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [.clear, .white.opacity(0.4), .clear]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .offset(x: isAnimating ? 300 : -300)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .onAppear {
+                withAnimation(Animation.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+    }
+}
+
+struct CalorieSkeletonView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                SkeletonView()
+                    .frame(width: 150, height: 20)
+                Spacer()
+                SkeletonView()
+                    .frame(width: 100, height: 20)
+            }
+            .padding(.horizontal)
+
+            VStack(spacing: 12) {
+                VStack(spacing: 8) {
+                    HStack {
+                        SkeletonView()
+                            .frame(width: 120, height: 16)
+                        Spacer()
+                        SkeletonView()
+                            .frame(width: 60, height: 16)
+                    }
+                    .padding(.horizontal, 12)
+
+                    SkeletonView()
+                        .frame(height: 8)
+                        .padding(.horizontal, 12)
+                }
+                .padding(.vertical, 12)
+
+                Divider()
+                    .padding(.horizontal, 12)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    SkeletonView()
+                        .frame(width: 140, height: 14)
+                        .padding(.horizontal, 12)
+
+                    ForEach(0..<3, id: \.self) { _ in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                SkeletonView()
+                                    .frame(width: 120, height: 14)
+                                SkeletonView()
+                                    .frame(width: 180, height: 12)
+                            }
+                            Spacer()
+                            SkeletonView()
+                                .frame(width: 60, height: 12)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(12)
+            .padding(.horizontal)
+        }
+        .padding(.top, 8)
+    }
+}
+
+struct MedicationSkeletonView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                SkeletonView()
+                    .frame(width: 180, height: 20)
+                Spacer()
+            }
+            .padding(.horizontal)
+
+            VStack(spacing: 0) {
+                ForEach(0..<2, id: \.self) { index in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                SkeletonView()
+                                    .frame(width: 100, height: 14)
+                                SkeletonView()
+                                    .frame(width: 60, height: 20)
+                            }
+                            SkeletonView()
+                                .frame(width: 140, height: 12)
+                            SkeletonView()
+                                .frame(width: 120, height: 12)
+                        }
+
+                        Spacer()
+
+                        SkeletonView()
+                            .frame(width: 80, height: 28)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+
+                    if index < 1 {
+                        Divider()
+                    }
+                }
+            }
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(12)
+            .padding(.horizontal)
+        }
+        .padding(.top, 8)
+    }
+}
+
 struct DashboardView: View {
     @State private var pets: [Pet] = []
     @State private var selectedPet: Pet?
@@ -160,6 +297,7 @@ struct DashboardView: View {
     @State private var lastDoses: [UUID: PetMedicationDose] = [:]
     @State private var dosesRemaining: [UUID: Int] = [:]
     @State private var isLoading = true
+    @State private var isRefreshing = false
     @State private var showRecordFeeding = false
     @State private var showSetGoal = false
     @State private var showToast = false
@@ -193,7 +331,20 @@ struct DashboardView: View {
                     petPicker
                 }
 
-                if let pet = selectedPet {
+                if isRefreshing {
+                    // Show skeleton loaders while refreshing
+                    CalorieSkeletonView()
+
+                    SkeletonView()
+                        .frame(height: 50)
+                        .padding(.horizontal)
+
+                    SkeletonView()
+                        .frame(height: 50)
+                        .padding(.horizontal)
+
+                    MedicationSkeletonView()
+                } else if let pet = selectedPet {
                     calorieGaugeSection(pet: pet)
                     recordFeedingButton
                     feedingHistoryLink(pet: pet)
@@ -521,12 +672,14 @@ struct DashboardView: View {
                 await loadPets()
             }
             .refreshable {
+                isRefreshing = true
                 await loadPets()
                 await loadCalorieGoal()
                 await loadTodayCalories()
                 await loadTodayFeedings()
                 await loadFoods()
                 await loadActiveMedications()
+                isRefreshing = false
             }
         }
     }
@@ -1275,15 +1428,327 @@ struct HealthEventRowView: View {
 }
 
 struct SettingsView: View {
+    @State private var user: User?
+    @State private var family: Family?
+    @State private var pets: [Pet] = []
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    @State private var showSignOutError = false
+    @State private var isGeneratingData = false
+    @State private var showGenerateSuccess = false
+    @State private var showGenerateError = false
+
     var body: some View {
         NavigationView {
-            VStack {
-                Text("Settings")
-                    .font(.largeTitle)
-                Text("Placeholder content")
+            Group {
+                if isLoading {
+                    ProgressView("Loading...")
+                } else {
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            // Account Section
+                            if let user = user {
+                                accountSection(user: user)
+                            }
+
+                            // Family Section
+                            if let family = family {
+                                familySection(family: family)
+                            }
+
+                            // Pets Section
+                            petsSection
+
+                            // Generate Test Data Section
+                            if !pets.isEmpty {
+                                generateDataSection
+                            }
+
+                            Spacer()
+
+                            // Sign Out Button
+                            signOutButton
+                        }
+                        .padding()
+                    }
+                }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                await loadData()
+            }
+            .refreshable {
+                await loadData()
+            }
+            .alert("Sign Out Error", isPresented: $showSignOutError) {
+                Button("OK") {
+                    showSignOutError = false
+                }
+            } message: {
+                Text(errorMessage ?? "Failed to sign out")
+            }
+            .alert("Success!", isPresented: $showGenerateSuccess) {
+                Button("OK") { }
+            } message: {
+                Text("Test data generated successfully! Check the Dashboard, Food, Medication, and Health tabs.")
+            }
+            .alert("Error", isPresented: $showGenerateError) {
+                Button("OK") { }
+            } message: {
+                Text(errorMessage ?? "Failed to generate test data")
+            }
         }
+    }
+
+    private func accountSection(user: User) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "person.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(user.email ?? "No email")
+                            .font(.body)
+                            .fontWeight(.medium)
+
+                        Text("ID: \(user.id.uuidString)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private func familySection(family: Family) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Family")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "house.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.green)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(family.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+
+                        Text("Created \(formatDate(family.createdAt))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private var petsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Pets")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            if pets.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "pawprint.circle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
+                    Text("No pets in family")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(pets) { pet in
+                        HStack(spacing: 12) {
+                            // Pet Photo
+                            if let photoUrl = pet.photoUrl, let url = URL(string: photoUrl) {
+                                AsyncImage(url: url) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                } placeholder: {
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.2))
+                                        .overlay(ProgressView())
+                                }
+                                .frame(width: 60, height: 60)
+                                .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(Color.gray.opacity(0.2))
+                                    .frame(width: 60, height: 60)
+                                    .overlay(
+                                        Image(systemName: "pawprint.fill")
+                                            .foregroundColor(.gray)
+                                    )
+                            }
+
+                            // Pet Info
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(pet.name)
+                                    .font(.body)
+                                    .fontWeight(.medium)
+
+                                Text(pet.kind)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+
+                                if let weight = pet.currentWeight {
+                                    Text("\(formatWeight(weight)) lbs")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                }
+            }
+        }
+    }
+
+    private var generateDataSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Test Data")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            Button(action: generateRandomData) {
+                HStack {
+                    if isGeneratingData {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                    }
+                    Text(isGeneratingData ? "Generating..." : "Generate Random Data")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(isGeneratingData ? Color.gray : Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(isGeneratingData)
+
+            Text("Creates: calorie goal, 5 foods, 2 medications, 20 health entries, and feeding records for \(pets.first?.name ?? "pet")")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var signOutButton: some View {
+        Button(action: signOut) {
+            HStack {
+                Image(systemName: "arrow.right.square.fill")
+                Text("Sign Out")
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.red)
+            .foregroundColor(.white)
+            .cornerRadius(12)
+        }
+        .padding(.top, 20)
+    }
+
+    private func loadData() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            // Load user
+            user = try await supabase.auth.session.user
+
+            // Load family
+            family = try await SupabaseService.shared.getCurrentUserFamily()
+
+            // Load pets
+            if let familyId = family?.id {
+                pets = try await SupabaseService.shared.getFamilyPets(familyId: familyId)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error loading settings data: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    private func generateRandomData() {
+        guard let pet = pets.first else { return }
+
+        Task {
+            isGeneratingData = true
+            errorMessage = nil
+
+            do {
+                try await SupabaseService.shared.generateRandomTestData(for: pet)
+                showGenerateSuccess = true
+            } catch {
+                errorMessage = error.localizedDescription
+                showGenerateError = true
+                print("Error generating test data: \(error)")
+            }
+
+            isGeneratingData = false
+        }
+    }
+
+    private func signOut() {
+        Task {
+            do {
+                try await supabase.auth.signOut()
+            } catch {
+                errorMessage = error.localizedDescription
+                showSignOutError = true
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
+    private func formatWeight(_ weight: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        return formatter.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 }
 
