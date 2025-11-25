@@ -6,15 +6,12 @@
 //
 
 import SwiftUI
-import Clerk
 
 @main
 struct Orest_s_JournalApp: App {
     var body: some Scene {
         WindowGroup {
-            ClerkProvider {
-                ContentView()
-            }
+            ContentView()
         }
     }
 }

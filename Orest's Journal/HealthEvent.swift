@@ -16,7 +16,7 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     let createdBy: String?
 }
 
-struct HealthEventWithCategory: Identifiable, Hashable {
+struct HealthEventWithCategory: Codable, Identifiable, Hashable {
     let event: HealthEvent
     let category: HealthCategory
 

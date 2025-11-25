@@ -6,10 +6,9 @@
 //
 
 import SwiftUI
-import Clerk
 
 struct ContentView: View {
-    @ObservedObject private var clerkManager = ClerkManager.shared
+    private var authManager = AuthManager.shared
     @State private var isLoading = true
     @State private var hasPet = false
     @State private var isCheckingStatus = false
@@ -18,12 +17,12 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isLoading || !clerkManager.isLoaded {
+            if isLoading || !authManager.isLoaded {
                 ProgressView("Loading...")
-            } else if clerkManager.isSignedIn {
+            } else if authManager.isAuthenticated {
                 if isCheckingStatus {
                     ProgressView("Setting up...")
-                } else if !clerkManager.hasOrganization {
+                } else if !authManager.hasOrganization {
                     FamilySetupView()
                 } else if !hasPet {
                     AddPetView()
@@ -31,24 +30,23 @@ struct ContentView: View {
                     MainTabView()
                 }
             } else {
-                AuthView()
+                SignInScreen()
             }
         }
         .task {
-            await clerkManager.configure()
-            if clerkManager.isSignedIn {
+            await authManager.loadSession()
+            if authManager.isAuthenticated {
                 await checkPetStatus()
             }
             isLoading = false
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshFamilyStatus"))) { _ in
             Task {
-                await clerkManager.loadOrganizations()
                 await checkPetStatus()
             }
         }
-        .onChange(of: clerkManager.isSignedIn) { _, isSignedIn in
-            if isSignedIn {
+        .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
+            if isAuthenticated {
                 Task {
                     await checkPetStatus()
                 }
@@ -66,7 +64,7 @@ struct ContentView: View {
     }
 
     private func checkPetStatus() async {
-        guard clerkManager.hasOrganization else {
+        guard authManager.hasOrganization else {
             hasPet = false
             return
         }
@@ -1394,7 +1392,7 @@ struct HealthEventRowView: View {
 }
 
 struct SettingsView: View {
-    @ObservedObject private var clerkManager = ClerkManager.shared
+    private var authManager = AuthManager.shared
     @State private var pets: [Pet] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -1412,7 +1410,7 @@ struct SettingsView: View {
                             accountSection
 
                             // Family Section
-                            if let org = clerkManager.currentOrganization {
+                            if let org = authManager.currentOrganization {
                                 familySection(org: org)
                             }
 
@@ -1459,11 +1457,11 @@ struct SettingsView: View {
                         .foregroundColor(.blue)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(clerkManager.userEmail ?? "No email")
+                        Text(authManager.userEmail ?? "No email")
                             .font(.body)
                             .fontWeight(.medium)
 
-                        if let userId = clerkManager.userId {
+                        if let userId = authManager.userId {
                             Text("ID: \(userId)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -1480,7 +1478,7 @@ struct SettingsView: View {
         }
     }
 
-    private func familySection(org: Organization) -> some View {
+    private func familySection(org: AppOrganization) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Family")
                 .font(.headline)
@@ -1616,9 +1614,7 @@ struct SettingsView: View {
     }
 
     private func signOut() {
-        Task {
-            await clerkManager.signOut()
-        }
+        authManager.signOut()
     }
 
     private func formatDate(_ date: Date) -> String {

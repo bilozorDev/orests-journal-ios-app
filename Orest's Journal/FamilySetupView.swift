@@ -6,10 +6,9 @@
 //
 
 import SwiftUI
-import Clerk
 
 struct FamilySetupView: View {
-    @ObservedObject private var clerkManager = ClerkManager.shared
+    private var authManager = AuthManager.shared
     @State private var familyName = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -56,8 +55,7 @@ struct FamilySetupView: View {
                 .navigationBarTitleDisplayMode(.large)
                 .task {
                     // Check if user already has organizations
-                    await clerkManager.loadOrganizations()
-                    if clerkManager.hasOrganization {
+                    if authManager.hasOrganization {
                         NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
                     }
                 }
@@ -88,8 +86,8 @@ struct FamilySetupView: View {
             errorMessage = nil
 
             do {
-                // Create organization (family) in Clerk
-                _ = try await clerkManager.createOrganization(name: familyName)
+                // Create organization (family) via backend API
+                _ = try await authManager.createOrganization(name: familyName)
 
                 // Notify ContentView to refresh
                 NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
@@ -101,9 +99,7 @@ struct FamilySetupView: View {
     }
 
     private func signOut() {
-        Task {
-            await clerkManager.signOut()
-        }
+        authManager.signOut()
     }
 }
 

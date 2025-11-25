@@ -9,7 +9,7 @@ import SwiftUI
 import PhotosUI
 
 struct AddPetView: View {
-    @ObservedObject private var clerkManager = ClerkManager.shared
+    private var authManager = AuthManager.shared
     @State private var petName = ""
     @State private var petKind = "Dog"
     @State private var currentWeight = ""
@@ -157,9 +157,7 @@ struct AddPetView: View {
     }
 
     private func signOut() {
-        Task {
-            await clerkManager.signOut()
-        }
+        authManager.signOut()
     }
 }
 

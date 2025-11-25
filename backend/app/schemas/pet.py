@@ -29,6 +29,7 @@ class PetResponse(BaseModel):
     photo_url: Optional[str] = None
     current_weight: Optional[float] = None
     created_at: datetime
+    created_by: Optional[str] = None
 
 
 class PetListResponse(BaseModel):

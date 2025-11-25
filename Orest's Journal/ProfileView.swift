@@ -8,14 +8,14 @@
 import SwiftUI
 
 struct ProfileView: View {
-    @ObservedObject private var clerkManager = ClerkManager.shared
+    private var authManager = AuthManager.shared
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                if clerkManager.isSignedIn {
+                if authManager.isAuthenticated {
                     Text("Welcome!")
                         .font(.largeTitle)
                         .bold()
@@ -24,13 +24,13 @@ struct ProfileView: View {
                         HStack {
                             Text("Email:")
                                 .bold()
-                            Text(clerkManager.userEmail ?? "No email")
+                            Text(authManager.userEmail ?? "No email")
                         }
 
                         HStack {
                             Text("User ID:")
                                 .bold()
-                            Text(clerkManager.userId ?? "Unknown")
+                            Text(authManager.userId ?? "Unknown")
                                 .font(.caption)
                         }
                     }
@@ -64,9 +64,7 @@ struct ProfileView: View {
     }
 
     private func signOut() {
-        Task {
-            await clerkManager.signOut()
-        }
+        authManager.signOut()
     }
 }
 

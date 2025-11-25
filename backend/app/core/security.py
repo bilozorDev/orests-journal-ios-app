@@ -51,6 +51,12 @@ async def verify_clerk_token(token: str) -> dict:
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
 
+        # Debug: print unverified claims to see issuer
+        unverified_claims = jwt.get_unverified_claims(token)
+        print(f"Token issuer: {unverified_claims.get('iss')}")
+        print(f"Expected issuer: {settings.clerk_jwt_issuer}")
+        print(f"Token kid: {kid}")
+
         # Find the matching key
         rsa_key = None
         for key in jwks.get("keys", []):
@@ -59,6 +65,7 @@ async def verify_clerk_token(token: str) -> dict:
                 break
 
         if rsa_key is None:
+            print(f"Available keys: {[k.get('kid') for k in jwks.get('keys', [])]}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unable to find appropriate key",
@@ -76,6 +83,7 @@ async def verify_clerk_token(token: str) -> dict:
         return payload
 
     except JWTError as e:
+        print(f"JWT verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",

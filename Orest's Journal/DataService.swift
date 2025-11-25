@@ -10,7 +10,7 @@ import Foundation
 /// Data service providing high-level methods for pet health management.
 /// Wraps APIClient and provides organization-scoped data access.
 @MainActor
-class DataService: ObservableObject {
+final class DataService {
     static let shared = DataService()
 
     private let api = APIClient.shared
@@ -216,10 +216,10 @@ class DataService: ObservableObject {
     // MARK: - Helper Functions
 
     func getUserEmail(for userId: String?) async -> String {
-        // In Clerk, we can get user info from the organization membership
+        // Check if this is the current user
         // For now, return a generic label
-        if let userId = userId, userId == ClerkManager.shared.userId {
-            return ClerkManager.shared.userEmail ?? "You"
+        if let userId = userId, userId == AuthManager.shared.userId {
+            return AuthManager.shared.userEmail ?? "You"
         }
         return "Family Member"
     }

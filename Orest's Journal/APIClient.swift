@@ -2,7 +2,7 @@
 //  APIClient.swift
 //  Orest's Journal
 //
-//  Network client for FastAPI backend with Clerk authentication.
+//  Network client for FastAPI backend with authentication.
 //
 
 import Foundation
@@ -10,8 +10,12 @@ import Foundation
 // MARK: - Configuration
 
 struct APIConfiguration {
-    // For local development:
-    static let baseURL = "http://localhost:8000/api/v1"
+    // For local development via ngrok:
+    static let baseURL = "https://climbing-helping-hermit.ngrok-free.app/api/v1"
+    // For local development on device (use Mac's IP address):
+    // static let baseURL = "http://192.168.0.225:8000/api/v1"
+    // For simulator:
+    // static let baseURL = "http://localhost:8000/api/v1"
     // For production (update when deployed to Railway):
     // static let baseURL = "https://your-app.railway.app/api/v1"
 }
@@ -56,10 +60,10 @@ class APIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    // Clerk token provider - set this from ClerkSDK
-    var getToken: (() async throws -> String)?
+    // Token provider - returns the auth token synchronously
+    var getToken: (() -> String)?
 
-    // Current organization ID (family) - set from Clerk
+    // Current organization ID (family)
     var currentOrgId: String?
 
     private init() {
@@ -69,12 +73,55 @@ class APIClient {
         self.session = URLSession(configuration: config)
 
         self.decoder = JSONDecoder()
-        self.decoder.dateDecodingStrategy = .iso8601
+        self.decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // Try ISO8601 with fractional seconds
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = isoFormatter.date(from: dateString) {
+                return date
+            }
+
+            // Try ISO8601 without fractional seconds
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            if let date = isoFormatter.date(from: dateString) {
+                return date
+            }
+
+            // Try without timezone (assume UTC)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            formatter.timeZone = TimeZone(identifier: "UTC")
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
+        }
         self.decoder.keyDecodingStrategy = .convertFromSnakeCase
 
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.keyEncodingStrategy = .convertToSnakeCase
+    }
+
+    // MARK: - Generic Request Method (used by AuthManager)
+
+    func request<T: Decodable>(
+        endpoint: String,
+        method: String,
+        body: Encodable? = nil
+    ) async throws -> T {
+        let request = try buildRequest(path: endpoint, method: method, body: body)
+        let (data, response) = try await session.data(for: request)
+        return try handleResponse(data, response)
     }
 
     // MARK: - Request Builder
@@ -84,7 +131,7 @@ class APIClient {
         method: String = "GET",
         queryItems: [URLQueryItem]? = nil,
         body: Encodable? = nil
-    ) async throws -> URLRequest {
+    ) throws -> URLRequest {
         var components = URLComponents(string: APIConfiguration.baseURL + path)
         components?.queryItems = queryItems
 
@@ -96,9 +143,9 @@ class APIClient {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Add auth token from Clerk
+        // Add auth token if available
         if let getToken = getToken {
-            let token = try await getToken()
+            let token = getToken()
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
@@ -157,7 +204,7 @@ class APIClient {
         _ path: String,
         queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
-        let request = try await buildRequest(path: path, queryItems: queryItems)
+        let request = try buildRequest(path: path, queryItems: queryItems)
         let (data, response) = try await session.data(for: request)
         return try handleResponse(data, response)
     }
@@ -167,7 +214,7 @@ class APIClient {
         body: B,
         queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
-        let request = try await buildRequest(path: path, method: "POST", queryItems: queryItems, body: body)
+        let request = try buildRequest(path: path, method: "POST", queryItems: queryItems, body: body)
         let (data, response) = try await session.data(for: request)
         return try handleResponse(data, response)
     }
@@ -176,13 +223,13 @@ class APIClient {
         _ path: String,
         body: B
     ) async throws -> T {
-        let request = try await buildRequest(path: path, method: "PATCH", body: body)
+        let request = try buildRequest(path: path, method: "PATCH", body: body)
         let (data, response) = try await session.data(for: request)
         return try handleResponse(data, response)
     }
 
     func delete(_ path: String) async throws {
-        let request = try await buildRequest(path: path, method: "DELETE")
+        let request = try buildRequest(path: path, method: "DELETE")
         let (data, response) = try await session.data(for: request)
         try handleEmptyResponse(data, response)
     }
