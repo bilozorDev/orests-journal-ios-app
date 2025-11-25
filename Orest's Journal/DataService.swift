@@ -8,14 +8,47 @@
 import Foundation
 
 /// Data service providing high-level methods for pet health management.
-/// Wraps APIClient and provides organization-scoped data access.
+/// Wraps APIClient and provides organization-scoped data access with caching.
 @MainActor
 final class DataService {
     static let shared = DataService()
 
     private let api = APIClient.shared
 
+    // MARK: - Cache
+
+    private struct CacheEntry<T> {
+        let data: T
+        let timestamp: Date
+    }
+
+    private var dashboardCache: [UUID: CacheEntry<DashboardData>] = [:]
+    private let cacheTTL: TimeInterval = 60  // 1 minute
+
     private init() {}
+
+    /// Returns cached data if still valid, nil otherwise
+    private func getCachedDashboard(for petId: UUID) -> DashboardData? {
+        guard let entry = dashboardCache[petId],
+              Date().timeIntervalSince(entry.timestamp) < cacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    /// Stores data in cache with current timestamp
+    private func cacheDashboard(_ data: DashboardData, for petId: UUID) {
+        dashboardCache[petId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    /// Invalidates dashboard cache for a specific pet or all pets
+    func invalidateDashboardCache(for petId: UUID? = nil) {
+        if let petId = petId {
+            dashboardCache.removeValue(forKey: petId)
+        } else {
+            dashboardCache.removeAll()
+        }
+    }
 
     // MARK: - Pet Functions
 
@@ -100,7 +133,9 @@ final class DataService {
             notes: notes,
             fedAt: nil
         )
-        return try await api.createFeeding(feeding)
+        let result = try await api.createFeeding(feeding)
+        invalidateDashboardCache(for: petId)
+        return result
     }
 
     func getTodayFeedings(for petId: UUID) async throws -> [PetFeeding] {
@@ -111,6 +146,12 @@ final class DataService {
     func getTodayCalories(for petId: UUID) async throws -> Double {
         let response = try await api.getTodayFeedings(petId: petId)
         return response.totalCalories
+    }
+
+    /// Returns both today's feedings and total calories in a single API call
+    func getTodayFeedingsWithCalories(for petId: UUID) async throws -> (feedings: [PetFeeding], totalCalories: Double) {
+        let response = try await api.getTodayFeedings(petId: petId)
+        return (feedings: response.feedings, totalCalories: response.totalCalories)
     }
 
     func getFeedingHistory(for petId: UUID, limit: Int = 50) async throws -> [PetFeeding] {
@@ -124,7 +165,9 @@ final class DataService {
     }
 
     func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String? = nil) async throws -> CalorieGoal {
-        return try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
+        let result = try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
+        invalidateDashboardCache(for: petId)
+        return result
     }
 
     // MARK: - Medication Functions
@@ -164,13 +207,17 @@ final class DataService {
 
     // MARK: - Dose Functions
 
-    func recordDose(medicationId: UUID, notes: String? = nil) async throws -> PetMedicationDose {
+    func recordDose(medicationId: UUID, petId: UUID? = nil, notes: String? = nil) async throws -> PetMedicationDose {
         let dose = DoseCreate(
             medicationId: medicationId,
             notes: notes,
             givenAt: nil
         )
-        return try await api.recordDose(dose)
+        let result = try await api.recordDose(dose)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
+        return result
     }
 
     func getTodayDoses(for medicationId: UUID) async throws -> [PetMedicationDose] {
@@ -211,6 +258,21 @@ final class DataService {
 
     func deleteHealthEvent(id: UUID) async throws {
         try await api.deleteHealthEvent(id: id)
+    }
+
+    // MARK: - Dashboard Functions
+
+    /// Get all dashboard data for a pet in a single call with caching
+    func getDashboardData(for petId: UUID, forceRefresh: Bool = false) async throws -> DashboardData {
+        // Return cached data if available and not forcing refresh
+        if !forceRefresh, let cached = getCachedDashboard(for: petId) {
+            return cached
+        }
+
+        // Fetch from API
+        let data = try await api.getDashboardData(petId: petId)
+        cacheDashboard(data, for: petId)
+        return data
     }
 
     // MARK: - Helper Functions

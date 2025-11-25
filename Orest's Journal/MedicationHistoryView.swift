@@ -11,7 +11,8 @@ struct MedicationHistoryView: View {
     let medicationId: UUID
 
     @State private var doses: [PetMedicationDose] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var errorMessage: String?
 
     var dosesByDate: [Date: [PetMedicationDose]] {
@@ -28,9 +29,7 @@ struct MedicationHistoryView: View {
 
     var body: some View {
         Group {
-            if isLoading {
-                ProgressView()
-            } else if doses.isEmpty {
+            if doses.isEmpty && hasLoaded {
                 VStack(spacing: 16) {
                     Image(systemName: "list.bullet")
                         .font(.system(size: 60))
@@ -53,9 +52,15 @@ struct MedicationHistoryView: View {
                 }
             }
         }
+        .overlay {
+            if isLoading && !hasLoaded {
+                ProgressView()
+            }
+        }
         .navigationTitle("Dose History")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            guard !hasLoaded else { return }
             await loadData()
         }
         .refreshable {
@@ -72,6 +77,7 @@ struct MedicationHistoryView: View {
             print("Error loading medication doses: \(error)")
         }
         isLoading = false
+        hasLoaded = true
     }
 
     private func formatDate(_ date: Date) -> String {

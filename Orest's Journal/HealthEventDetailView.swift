@@ -15,17 +15,14 @@ struct HealthEventDetailView: View {
 
     @State private var petName: String = ""
     @State private var createdByEmail: String = ""
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
     @State private var errorMessage: String?
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView()
-            } else {
-                ScrollView {
+        ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         // Event Category Header
                         VStack(alignment: .leading, spacing: 8) {
@@ -133,11 +130,17 @@ struct HealthEventDetailView: View {
                     }
                     .padding()
                 }
+        .overlay {
+            if isLoading && !hasLoaded {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
             }
         }
         .navigationTitle("Health Event")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            guard !hasLoaded else { return }
             await loadData()
         }
         .alert("Delete Event", isPresented: $showDeleteConfirmation) {
@@ -168,6 +171,7 @@ struct HealthEventDetailView: View {
         createdByEmail = await DataService.shared.getUserEmail(for: eventWithCategory.event.createdBy)
 
         isLoading = false
+        hasLoaded = true
     }
 
     private func deleteEvent() async {

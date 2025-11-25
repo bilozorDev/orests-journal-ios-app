@@ -400,6 +400,17 @@ class APIClient {
     func deleteHealthEvent(id: UUID) async throws {
         try await delete("/health/events/\(id.uuidString)")
     }
+
+    // MARK: - Dashboard
+
+    func getDashboardData(petId: UUID) async throws -> DashboardData {
+        guard let orgId = currentOrgId else {
+            throw APIError.unauthorized
+        }
+        return try await get("/dashboard/pet/\(petId.uuidString)", queryItems: [
+            URLQueryItem(name: "org_id", value: orgId)
+        ])
+    }
 }
 
 // MARK: - Request/Response Types
@@ -484,4 +495,21 @@ struct HealthEventCreate: Encodable {
 
 struct HealthEventListResponse: Decodable {
     let events: [HealthEventWithCategory]
+}
+
+// MARK: - Dashboard Types
+
+struct MedicationWithDoses: Decodable {
+    let medication: PetMedication
+    let lastDose: PetMedicationDose?
+    let todayDoseCount: Int
+    let dosesRemaining: Int
+}
+
+struct DashboardData: Decodable {
+    let calorieGoal: CalorieGoal?
+    let todayFeedings: [PetFeeding]
+    let totalCalories: Double
+    let foods: [PetFood]
+    let medications: [MedicationWithDoses]
 }

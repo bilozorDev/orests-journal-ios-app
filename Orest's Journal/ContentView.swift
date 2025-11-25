@@ -281,7 +281,8 @@ struct DashboardView: View {
     @State private var activeMedications: [PetMedication] = []
     @State private var lastDoses: [UUID: PetMedicationDose] = [:]
     @State private var dosesRemaining: [UUID: Int] = [:]
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var isRefreshing = false
     @State private var showRecordFeeding = false
     @State private var showSetGoal = false
@@ -295,15 +296,20 @@ struct DashboardView: View {
     @ViewBuilder
     private var dashboardContent: some View {
         Group {
-            if isLoading {
-                ProgressView()
-            } else if pets.isEmpty {
+            if pets.isEmpty && hasLoaded {
                 VStack {
                     Text("No pets found")
                         .font(.headline)
                 }
             } else {
                 dashboardScrollContent
+            }
+        }
+        .overlay {
+            if isLoading && !hasLoaded {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
             }
         }
     }
@@ -631,39 +637,30 @@ struct DashboardView: View {
             .onChange(of: showRecordFeeding) { _, isShowing in
                 if !isShowing {
                     Task { @MainActor in
-                        await loadTodayCalories()
-                        await loadTodayFeedings()
+                        await loadDashboardData(forceRefresh: true)
                     }
                 }
             }
             .onChange(of: showSetGoal) { _, isShowing in
                 if !isShowing {
                     Task { @MainActor in
-                        await loadCalorieGoal()
-                        await loadTodayCalories()
-                        await loadTodayFeedings()
+                        await loadDashboardData(forceRefresh: true)
                     }
                 }
             }
             .onChange(of: selectedPet) { _, _ in
                 Task { @MainActor in
-                    await loadCalorieGoal()
-                    await loadTodayCalories()
-                    await loadTodayFeedings()
-                    await loadActiveMedications()
+                    await loadDashboardData()
                 }
             }
             .task {
+                guard !hasLoaded else { return }
                 await loadPets()
             }
             .refreshable {
                 isRefreshing = true
                 await loadPets()
-                await loadCalorieGoal()
-                await loadTodayCalories()
-                await loadTodayFeedings()
-                await loadFoods()
-                await loadActiveMedications()
+                await loadDashboardData(forceRefresh: true)
                 isRefreshing = false
             }
         }
@@ -676,80 +673,58 @@ struct DashboardView: View {
             if selectedPet == nil {
                 selectedPet = pets.first
             }
-            await loadCalorieGoal()
-            await loadTodayCalories()
-            await loadTodayFeedings()
-            await loadFoods()
-            await loadActiveMedications()
+
+            // Load dashboard data using combined endpoint
+            await loadDashboardData()
         } catch {
             print("Error loading pets: \(error)")
         }
         isLoading = false
+        hasLoaded = true
     }
 
     @MainActor
-    private func loadCalorieGoal() async {
+    private func loadDashboardData(forceRefresh: Bool = false) async {
         guard let pet = selectedPet else { return }
         do {
-            let goal = try await DataService.shared.getActiveCalorieGoal(for: pet.id)
-            calorieGoal = goal?.dailyCalories ?? 0
-        } catch {
-            print("Error loading calorie goal: \(error)")
-            calorieGoal = 0
-        }
-    }
+            let data = try await DataService.shared.getDashboardData(for: pet.id, forceRefresh: forceRefresh)
 
-    @MainActor
-    private func loadTodayCalories() async {
-        guard let pet = selectedPet else { return }
-        do {
-            todayCalories = try await DataService.shared.getTodayCalories(for: pet.id)
-        } catch {
-            print("Error loading today's calories: \(error)")
-            todayCalories = 0
-        }
-    }
+            // Update all state from combined response
+            calorieGoal = data.calorieGoal?.dailyCalories ?? 0
+            todayCalories = data.totalCalories
+            todayFeedings = data.todayFeedings
+            foods = Dictionary(uniqueKeysWithValues: data.foods.map { ($0.id, $0) })
 
-    private func loadActiveMedications() async {
-        guard let pet = selectedPet else { return }
-        do {
-            activeMedications = try await DataService.shared.getActiveMedications(for: pet.id)
-            await loadLastDoses()
-            await loadDosesRemaining()
+            // Update medications with dose info
+            activeMedications = data.medications.map { $0.medication }
+            var doses: [UUID: PetMedicationDose] = [:]
+            var remaining: [UUID: Int] = [:]
+            for medWithDoses in data.medications {
+                if let lastDose = medWithDoses.lastDose {
+                    doses[medWithDoses.medication.id] = lastDose
+                }
+                remaining[medWithDoses.medication.id] = medWithDoses.dosesRemaining
+            }
+            lastDoses = doses
+            dosesRemaining = remaining
         } catch {
-            print("Error loading active medications: \(error)")
-            activeMedications = []
-        }
-    }
-
-    private func loadLastDoses() async {
-        var doses: [UUID: PetMedicationDose] = [:]
-        for medication in activeMedications {
-            if let lastDose = try? await DataService.shared.getLastDose(for: medication.id) {
-                doses[medication.id] = lastDose
+            print("Error loading dashboard data: \(error)")
+            // Only reset state if we haven't loaded data yet (initial load failure)
+            // This prevents UI flickering when there's a transient error during refresh
+            if !hasLoaded {
+                calorieGoal = 0
+                todayCalories = 0
+                todayFeedings = []
+                activeMedications = []
             }
         }
-        lastDoses = doses
-    }
-
-    private func loadDosesRemaining() async {
-        var remaining: [UUID: Int] = [:]
-        for medication in activeMedications {
-            if let todayDoses = try? await DataService.shared.getTodayDoses(for: medication.id) {
-                let dosesLeft = medication.timesPerDay - todayDoses.count
-                remaining[medication.id] = max(0, dosesLeft)
-            } else {
-                remaining[medication.id] = medication.timesPerDay
-            }
-        }
-        dosesRemaining = remaining
     }
 
     private func recordDose(for medication: PetMedication) async {
         do {
-            _ = try await DataService.shared.recordDose(medicationId: medication.id)
-            await loadLastDoses()
-            await loadDosesRemaining()
+            _ = try await DataService.shared.recordDose(medicationId: medication.id, petId: selectedPet?.id)
+            // Refresh dashboard data to update dose info
+            await loadDashboardData(forceRefresh: true)
             toastMessage = "\(medication.name) recorded"
             withAnimation {
                 showToast = true
@@ -777,31 +752,12 @@ struct DashboardView: View {
         formatter.maximumFractionDigits = 2
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
-
-    private func loadTodayFeedings() async {
-        guard let pet = selectedPet else { return }
-        do {
-            todayFeedings = try await DataService.shared.getTodayFeedings(for: pet.id)
-        } catch {
-            print("Error loading today's feedings: \(error)")
-            todayFeedings = []
-        }
-    }
-
-    private func loadFoods() async {
-        do {
-            let allFoods = try await DataService.shared.getFoods()
-            foods = Dictionary(uniqueKeysWithValues: allFoods.map { ($0.id, $0) })
-        } catch {
-            print("Error loading foods: \(error)")
-            foods = [:]
-        }
-    }
 }
 
 struct FoodView: View {
     @State private var foods: [PetFood] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var showAddFood = false
     @State private var selectedCategory: FoodCategory?
     @State private var errorMessage: String?
@@ -813,9 +769,7 @@ struct FoodView: View {
     var body: some View {
         NavigationView {
             Group {
-                if isLoading {
-                    ProgressView()
-                } else if foods.isEmpty {
+                if foods.isEmpty && hasLoaded {
                     // Empty state - show plus button
                     VStack(spacing: 16) {
                         Image(systemName: "plus.circle.fill")
@@ -861,6 +815,13 @@ struct FoodView: View {
                     }
                 }
             }
+            .overlay {
+                if isLoading && !hasLoaded {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemBackground))
+                }
+            }
             .navigationTitle("Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -884,6 +845,7 @@ struct FoodView: View {
                 }
             }
             .task {
+                guard !hasLoaded else { return }
                 await loadFoods()
             }
             .refreshable {
@@ -904,6 +866,7 @@ struct FoodView: View {
             print("Error loading foods: \(error)")
         }
         isLoading = false
+        hasLoaded = true
     }
 
     private func deleteFood(_ food: PetFood) async {
@@ -975,7 +938,8 @@ struct FoodRowView: View {
 struct MedicationView: View {
     @State private var medications: [PetMedication] = []
     @State private var pets: [UUID: Pet] = [:]
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var showAddMedication = false
     @State private var showRecordDose = false
     @State private var errorMessage: String?
@@ -991,9 +955,7 @@ struct MedicationView: View {
     var body: some View {
         NavigationView {
             Group {
-                if isLoading {
-                    ProgressView()
-                } else if medications.isEmpty {
+                if medications.isEmpty && hasLoaded {
                     VStack(spacing: 16) {
                         Image(systemName: "pills.fill")
                             .font(.system(size: 60))
@@ -1024,6 +986,13 @@ struct MedicationView: View {
                             }
                         }
                     }
+                }
+            }
+            .overlay {
+                if isLoading && !hasLoaded {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemBackground))
                 }
             }
             .navigationTitle("Medication")
@@ -1067,6 +1036,7 @@ struct MedicationView: View {
                 }
             }
             .task {
+                guard !hasLoaded else { return }
                 await loadMedications()
             }
             .refreshable {
@@ -1087,6 +1057,7 @@ struct MedicationView: View {
             print("Error loading medications: \(error)")
         }
         isLoading = false
+        hasLoaded = true
     }
 }
 
@@ -1166,7 +1137,8 @@ struct HealthView: View {
     @State private var pets: [Pet] = []
     @State private var selectedPet: Pet?
     @State private var events: [HealthEventWithCategory] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var showAddEvent = false
     @State private var errorMessage: String?
 
@@ -1185,9 +1157,7 @@ struct HealthView: View {
     var body: some View {
         NavigationView {
             Group {
-                if isLoading {
-                    ProgressView()
-                } else if pets.isEmpty {
+                if pets.isEmpty && hasLoaded {
                     VStack(spacing: 16) {
                         Text("No pets found")
                             .font(.headline)
@@ -1201,12 +1171,19 @@ struct HealthView: View {
                                 .padding(.top)
                         }
 
-                        if events.isEmpty {
+                        if events.isEmpty && hasLoaded {
                             emptyState
                         } else {
                             eventsList
                         }
                     }
+                }
+            }
+            .overlay {
+                if isLoading && !hasLoaded {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemBackground))
                 }
             }
             .navigationTitle("Health Journal")
@@ -1240,6 +1217,7 @@ struct HealthView: View {
                 }
             }
             .task {
+                guard !hasLoaded else { return }
                 await loadPets()
             }
             .refreshable {
@@ -1311,6 +1289,7 @@ struct HealthView: View {
             print("Error loading pets: \(error)")
         }
         isLoading = false
+        hasLoaded = true
     }
 
     private func loadEvents() async {
@@ -1394,41 +1373,44 @@ struct HealthEventRowView: View {
 struct SettingsView: View {
     private var authManager = AuthManager.shared
     @State private var pets: [Pet] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var errorMessage: String?
     @State private var showSignOutError = false
 
     var body: some View {
         NavigationView {
-            Group {
-                if isLoading {
-                    ProgressView("Loading...")
-                } else {
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            // Account Section
-                            accountSection
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Account Section
+                    accountSection
 
-                            // Family Section
-                            if let family = authManager.currentFamily {
-                                familySection(family: family)
-                            }
-
-                            // Pets Section
-                            petsSection
-
-                            Spacer()
-
-                            // Sign Out Button
-                            signOutButton
-                        }
-                        .padding()
+                    // Family Section
+                    if let family = authManager.currentFamily {
+                        familySection(family: family)
                     }
+
+                    // Pets Section
+                    petsSection
+
+                    Spacer()
+
+                    // Sign Out Button
+                    signOutButton
+                }
+                .padding()
+            }
+            .overlay {
+                if isLoading && !hasLoaded {
+                    ProgressView("Loading...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemBackground))
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .task {
+                guard !hasLoaded else { return }
                 await loadData()
             }
             .refreshable {
@@ -1641,6 +1623,7 @@ struct SettingsView: View {
         }
 
         isLoading = false
+        hasLoaded = true
     }
 
     private func signOut() {
