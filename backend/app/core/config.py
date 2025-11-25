@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 
@@ -16,15 +17,15 @@ class Settings(BaseSettings):
     clerk_secret_key: str
     clerk_jwt_issuer: str
 
-    # Storage (S3/R2)
-    s3_endpoint_url: str
-    s3_access_key_id: str
-    s3_secret_access_key: str
+    # Storage (S3/R2) - Optional for now
+    s3_endpoint_url: Optional[str] = None
+    s3_access_key_id: Optional[str] = None
+    s3_secret_access_key: Optional[str] = None
     s3_bucket_name: str = "orests-journal"
-    s3_public_url: str
+    s3_public_url: Optional[str] = None
 
-    # OpenAI
-    openai_api_key: str
+    # OpenAI - Optional for now
+    openai_api_key: Optional[str] = None
 
     # CORS
     allowed_origins: str = "http://localhost:3000"

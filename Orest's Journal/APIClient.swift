@@ -10,9 +10,10 @@ import Foundation
 // MARK: - Configuration
 
 struct APIConfiguration {
-    // TODO: Update these for your deployment
-    static let baseURL = "https://your-app.railway.app/api/v1"  // Railway URL
-    // static let baseURL = "http://localhost:8000/api/v1"  // Local development
+    // For local development:
+    static let baseURL = "http://localhost:8000/api/v1"
+    // For production (update when deployed to Railway):
+    // static let baseURL = "https://your-app.railway.app/api/v1"
 }
 
 // MARK: - API Errors
