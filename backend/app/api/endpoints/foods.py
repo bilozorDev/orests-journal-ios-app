@@ -37,10 +37,10 @@ async def create_food(
     food = PetFood(
         org_id=org_id,
         name=food_in.name,
-        category=food_in.category,
+        category=food_in.category.value,
         calories_per_kg=food_in.calories_per_kg,
         container_size=food_in.container_size,
-        container_size_unit=food_in.container_size_unit,
+        container_size_unit=food_in.container_size_unit.value,
         image_url=food_in.image_url,
         created_by=user_id,
     )
@@ -91,6 +91,9 @@ async def update_food(
 
     update_data = food_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        # Convert enum values to their string values
+        if field in ('category', 'container_size_unit') and value is not None:
+            value = value.value if hasattr(value, 'value') else value
         setattr(food, field, value)
 
     await db.commit()

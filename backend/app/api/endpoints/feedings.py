@@ -41,7 +41,7 @@ async def create_feeding(
         fed_by=user_id,
         fed_at=feeding_in.fed_at or datetime.utcnow(),
         amount=feeding_in.amount,
-        amount_unit=feeding_in.amount_unit,
+        amount_unit=feeding_in.amount_unit.value,
         calories=feeding_in.calories,
         notes=feeding_in.notes,
     )

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -28,10 +28,10 @@ class PetFood(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id = Column(String(255), nullable=False, index=True)  # Family ID
     name = Column(String(255), nullable=False)
-    category = Column(SQLEnum(FoodCategory), nullable=False)
+    category = Column(String(50), nullable=False)
     calories_per_kg = Column(Float, nullable=False)
     container_size = Column(Float, nullable=False)
-    container_size_unit = Column(SQLEnum(ContainerUnit), default=ContainerUnit.GRAMS, nullable=False)
+    container_size_unit = Column(String(10), nullable=False, server_default='g')
     image_url = Column(String(500), nullable=True)
     created_by = Column(String(255), nullable=False)  # User ID
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -50,7 +50,7 @@ class PetFeeding(Base):
     fed_by = Column(String(255), nullable=False)  # User ID
     fed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     amount = Column(Float, nullable=False)
-    amount_unit = Column(SQLEnum(ContainerUnit), default=ContainerUnit.GRAMS, nullable=False)
+    amount_unit = Column(String(10), nullable=False, server_default='g')
     calories = Column(Float, nullable=False)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

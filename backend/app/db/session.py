@@ -7,12 +7,23 @@ from app.core.config import get_settings
 settings = get_settings()
 
 # Create async engine for Neon PostgreSQL
+# Configuration to fix asyncpg + PostgreSQL enum type issues:
+# - jit=off: Prevents slow enum type introspection (https://github.com/MagicStack/asyncpg/issues/1078)
+# - prepared_statement_cache_size=0: Disables prepared statement caching to avoid InvalidCachedStatementError
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args={
+        "server_settings": {
+            "jit": "off",
+            "plan_cache_mode": "force_custom_plan",
+        },
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0,
+    },
 )
 
 # Session factory

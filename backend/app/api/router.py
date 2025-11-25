@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import pets, foods, feedings, medications, doses, health, auth, families
+from app.api.endpoints import pets, foods, feedings, medications, doses, health, auth, families, dashboard
 
 api_router = APIRouter()
 
@@ -13,3 +13,4 @@ api_router.include_router(feedings.router, prefix="/feedings", tags=["feedings"]
 api_router.include_router(medications.router, prefix="/medications", tags=["medications"])
 api_router.include_router(doses.router, prefix="/doses", tags=["doses"])
 api_router.include_router(health.router, prefix="/health", tags=["health"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
