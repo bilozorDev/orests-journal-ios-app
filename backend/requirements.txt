@@ -1,0 +1,25 @@
+# Core
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+
+# Database
+sqlalchemy>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.1
+pgvector>=0.2.4
+
+# Auth (Clerk JWT validation)
+python-jose[cryptography]>=3.3.0
+httpx>=0.26.0
+
+# Storage (S3/R2 compatible)
+boto3>=1.34.0
+
+# AI/Embeddings
+openai>=1.10.0
+numpy>=1.26.0
+
+# File uploads
+python-multipart>=0.0.6
