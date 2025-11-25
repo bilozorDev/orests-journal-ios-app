@@ -1,16 +1,20 @@
 """
-Authentication endpoints for Sign in with Apple + Clerk backend.
+Authentication endpoints for Sign in with Apple.
+Users are stored directly in PostgreSQL.
 """
 from typing import Optional, List
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 import httpx
 import jwt as pyjwt
-from clerk_backend_api import Clerk
-from clerk_backend_api.models import ClerkErrors
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.core.config import get_settings
-from app.core.security import get_current_user, ClerkUser
+from app.db import get_db
+from app.core.security import create_access_token, get_current_user_id
+from app.models.user import User, Family, FamilyMember
 
 router = APIRouter()
 
@@ -26,11 +30,12 @@ class AppleAuthRequest(BaseModel):
     last_name: Optional[str] = None
 
 
-class OrganizationResponse(BaseModel):
-    """Organization data."""
+class FamilyResponse(BaseModel):
+    """Family data for API responses."""
     id: str
     name: str
-    slug: Optional[str] = None
+    invite_code: str
+    role: str  # User's role in this family
 
 
 class UserResponse(BaseModel):
@@ -43,20 +48,15 @@ class UserResponse(BaseModel):
 
 class AuthResponse(BaseModel):
     """Response from authentication endpoints."""
-    token: str  # Clerk session JWT
+    token: str
     user: UserResponse
-    organizations: List[OrganizationResponse]
+    families: List[FamilyResponse]
 
 
 class MeResponse(BaseModel):
     """Response for /auth/me endpoint."""
     user: UserResponse
-    organizations: List[OrganizationResponse]
-
-
-class CreateOrganizationRequest(BaseModel):
-    """Request to create a new organization."""
-    name: str
+    families: List[FamilyResponse]
 
 
 # --- Helper Functions ---
@@ -64,9 +64,7 @@ class CreateOrganizationRequest(BaseModel):
 async def verify_apple_identity_token(identity_token: str) -> dict:
     """
     Verify Apple's identity token.
-
     Apple's public keys are fetched from their JWKS endpoint.
-    The token is verified against Apple's public keys.
     """
     apple_keys_url = "https://appleid.apple.com/auth/keys"
 
@@ -102,8 +100,7 @@ async def verify_apple_identity_token(identity_token: str) -> dict:
             identity_token,
             public_key,
             algorithms=["RS256"],
-            audience=get_settings().clerk_publishable_key.split("_")[0],  # Your app's bundle ID typically
-            options={"verify_aud": False},  # Skip audience check for now
+            options={"verify_aud": False},  # Skip audience check
         )
 
         return payload
@@ -115,198 +112,134 @@ async def verify_apple_identity_token(identity_token: str) -> dict:
         )
 
 
-def get_clerk_client() -> Clerk:
-    """Get configured Clerk client."""
-    settings = get_settings()
-    return Clerk(bearer_auth=settings.clerk_secret_key)
+async def get_user_families(db: AsyncSession, user_id: UUID) -> List[FamilyResponse]:
+    """Get all families for a user with their role."""
+    query = (
+        select(FamilyMember)
+        .options(selectinload(FamilyMember.family))
+        .where(FamilyMember.user_id == user_id)
+    )
+    result = await db.execute(query)
+    memberships = result.scalars().all()
 
+    families = []
+    for membership in memberships:
+        families.append(FamilyResponse(
+            id=str(membership.family.id),
+            name=membership.family.name,
+            invite_code=membership.family.invite_code,
+            role=membership.role,
+        ))
 
-async def get_user_organizations(clerk: Clerk, user_id: str) -> List[OrganizationResponse]:
-    """Get all organizations for a user."""
-    organizations = []
-
-    try:
-        # Get user's organization memberships
-        memberships = clerk.users.get_organization_memberships(user_id=user_id)
-
-        if memberships and hasattr(memberships, 'data'):
-            for membership in memberships.data:
-                if membership.organization:
-                    org = membership.organization
-                    organizations.append(OrganizationResponse(
-                        id=org.id,
-                        name=org.name,
-                        slug=org.slug if hasattr(org, 'slug') else None,
-                    ))
-    except Exception as e:
-        print(f"Error fetching organizations: {e}")
-
-    return organizations
+    return families
 
 
 # --- Endpoints ---
 
 @router.post("/apple", response_model=AuthResponse)
-async def sign_in_with_apple(request: AppleAuthRequest):
+async def sign_in_with_apple(
+    request: AppleAuthRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Authenticate with Apple Sign-in.
 
     1. Verify Apple's identity token
-    2. Find or create user in Clerk
-    3. Create a Clerk session
-    4. Return session token + user info + organizations
+    2. Find or create user in database
+    3. Return our own JWT + user info + families
     """
     # Verify Apple token
     apple_claims = await verify_apple_identity_token(request.identity_token)
 
-    # Get email from Apple token or request
-    email = request.email or apple_claims.get("email")
-    if not email:
+    # Get Apple's stable user ID from the token
+    apple_user_id = apple_claims.get("sub")
+    if not apple_user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email is required for sign-in",
+            detail="Apple token missing user ID",
         )
 
-    settings = get_settings()
+    # Get email from Apple token or request (Apple only provides email on first sign-in)
+    email = request.email or apple_claims.get("email")
 
-    with get_clerk_client() as clerk:
-        # Try to find existing user by email
-        existing_users = clerk.users.list(request={"email_address": [email]})
+    # Try to find existing user
+    query = select(User).where(User.apple_user_id == apple_user_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
 
-        user = None
-        if existing_users and len(existing_users) > 0:
-            # User exists
-            user = existing_users[0]
-        else:
-            # Create new user
-            # Apple only provides name on first sign-in, use defaults if missing
-            try:
-                user = clerk.users.create(
-                    email_address=[email],
-                    first_name=request.first_name or "User",
-                    last_name=request.last_name or "",
-                    external_id=f"apple_{request.user_id}",  # Link Apple ID
-                    skip_password_requirement=True,
-                )
-            except ClerkErrors as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Failed to create user: {str(e)}",
-                )
-
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to find or create user",
-            )
-
-        # Create a session for the user
-        # Note: sessions.create is for testing only; in production use sign-in tokens
-        try:
-            session = clerk.sessions.create(request={
-                "user_id": user.id,
-            })
-        except ClerkErrors as e:
-            # If sessions.create fails (production), try sign-in tokens
-            try:
-                sign_in_token = clerk.sign_in_tokens.create(request={
-                    "user_id": user.id,
-                })
-                # Sign-in tokens need to be exchanged by the client
-                # For now, return error suggesting alternative approach
-                raise HTTPException(
-                    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                    detail="Session creation not available in production. Use sign-in tokens.",
-                )
-            except Exception:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to create session: {str(e)}",
-                )
-
-        # Get session token
-        token_response = clerk.sessions.create_token(session_id=session.id)
-        jwt_token = token_response.jwt if hasattr(token_response, 'jwt') else str(token_response)
-
-        # Get user's organizations
-        organizations = await get_user_organizations(clerk, user.id)
-
-        # Build response
-        user_email = None
-        if hasattr(user, 'email_addresses') and user.email_addresses:
-            user_email = user.email_addresses[0].email_address
-
-        return AuthResponse(
-            token=jwt_token,
-            user=UserResponse(
-                id=user.id,
-                email=user_email,
-                first_name=user.first_name if hasattr(user, 'first_name') else None,
-                last_name=user.last_name if hasattr(user, 'last_name') else None,
-            ),
-            organizations=organizations,
+    if user is None:
+        # Create new user
+        user = User(
+            apple_user_id=apple_user_id,
+            email=email,
+            first_name=request.first_name,
+            last_name=request.last_name,
         )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    else:
+        # Update user info if provided (Apple only provides name on first sign-in)
+        updated = False
+        if request.email and not user.email:
+            user.email = request.email
+            updated = True
+        if request.first_name and not user.first_name:
+            user.first_name = request.first_name
+            updated = True
+        if request.last_name and not user.last_name:
+            user.last_name = request.last_name
+            updated = True
+        if updated:
+            await db.commit()
+            await db.refresh(user)
+
+    # Create our own JWT
+    token = create_access_token(str(user.id))
+
+    # Get user's families
+    families = await get_user_families(db, user.id)
+
+    return AuthResponse(
+        token=token,
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+        ),
+        families=families,
+    )
 
 
 @router.get("/me", response_model=MeResponse)
-async def get_current_user_info(current_user: ClerkUser = Depends(get_current_user)):
-    """
-    Get current authenticated user's info and organizations.
-    """
-    with get_clerk_client() as clerk:
-        # Get full user info from Clerk
-        try:
-            user = clerk.users.get(user_id=current_user.id)
-        except ClerkErrors:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        # Get organizations
-        organizations = await get_user_organizations(clerk, current_user.id)
-
-        # Build response
-        user_email = None
-        if hasattr(user, 'email_addresses') and user.email_addresses:
-            user_email = user.email_addresses[0].email_address
-
-        return MeResponse(
-            user=UserResponse(
-                id=user.id,
-                email=user_email,
-                first_name=user.first_name if hasattr(user, 'first_name') else None,
-                last_name=user.last_name if hasattr(user, 'last_name') else None,
-            ),
-            organizations=organizations,
-        )
-
-
-@router.post("/organizations", response_model=OrganizationResponse)
-async def create_organization(
-    request: CreateOrganizationRequest,
-    current_user: ClerkUser = Depends(get_current_user),
+async def get_current_user_info(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
-    Create a new organization (family) for the current user.
-    The user becomes the admin of the organization.
+    Get current authenticated user's info and families.
     """
-    with get_clerk_client() as clerk:
-        try:
-            # Create organization with current user as creator
-            org = clerk.organizations.create(request={
-                "name": request.name,
-                "created_by": current_user.id,
-            })
+    # Get user from database
+    query = select(User).where(User.id == UUID(user_id))
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
 
-            return OrganizationResponse(
-                id=org.id,
-                name=org.name,
-                slug=org.slug if hasattr(org, 'slug') else None,
-            )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
-        except ClerkErrors as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to create organization: {str(e)}",
-            )
+    # Get user's families
+    families = await get_user_families(db, user.id)
+
+    return MeResponse(
+        user=UserResponse(
+            id=str(user.id),
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+        ),
+        families=families,
+    )

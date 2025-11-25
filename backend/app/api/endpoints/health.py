@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.pet import Pet
 from app.models.health import PetHealthCategory, PetHealthEvent
 from app.schemas.health import (
@@ -23,7 +23,7 @@ router = APIRouter()
 async def list_categories(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List health categories for a pet."""
     query = (
@@ -80,7 +80,7 @@ async def create_health_event(
     pet_id: UUID,
     event_in: HealthEventCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Create a health event for a pet."""
     # Verify pet exists
@@ -96,7 +96,7 @@ async def create_health_event(
 
     # Get or create category
     category = await get_or_create_category(
-        db, pet_id, event_in.category_name, current_user.id
+        db, pet_id, event_in.category_name, user_id
     )
 
     # Create event
@@ -104,7 +104,7 @@ async def create_health_event(
         category_id=category.id,
         occurred_at=event_in.occurred_at or datetime.utcnow(),
         notes=event_in.notes if event_in.notes else None,
-        created_by=current_user.id,
+        created_by=user_id,
     )
     db.add(event)
     await db.commit()
@@ -118,7 +118,7 @@ async def list_health_events(
     pet_id: UUID,
     limit: int = Query(default=100, le=500),
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List health events for a pet with their categories."""
     # Get categories for this pet
@@ -162,7 +162,7 @@ async def list_health_events(
 async def get_health_event(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific health event with its category."""
     # Get event with category
@@ -196,7 +196,7 @@ async def get_health_event(
 async def delete_health_event(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a health event."""
     query = select(PetHealthEvent).where(PetHealthEvent.id == event_id)

@@ -6,7 +6,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.pet import Pet
 from app.models.food import PetFeeding, PetCalorieGoal
 from app.schemas.food import (
@@ -21,7 +21,7 @@ router = APIRouter()
 async def create_feeding(
     feeding_in: FeedingCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Record a pet feeding."""
     # Verify pet exists
@@ -38,7 +38,7 @@ async def create_feeding(
     feeding = PetFeeding(
         pet_id=feeding_in.pet_id,
         food_id=feeding_in.food_id,
-        fed_by=current_user.id,
+        fed_by=user_id,
         fed_at=feeding_in.fed_at or datetime.utcnow(),
         amount=feeding_in.amount,
         amount_unit=feeding_in.amount_unit,
@@ -57,7 +57,7 @@ async def list_pet_feedings(
     pet_id: UUID,
     limit: int = Query(default=50, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List feedings for a pet."""
     query = (
@@ -81,7 +81,7 @@ async def list_pet_feedings(
 async def get_today_feedings(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get today's feedings and calorie total for a pet."""
     # Get start of today (UTC)
@@ -114,7 +114,7 @@ async def get_today_feedings(
 async def delete_feeding(
     feeding_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a feeding record."""
     query = select(PetFeeding).where(PetFeeding.id == feeding_id)
@@ -136,7 +136,7 @@ async def delete_feeding(
 async def get_active_calorie_goal(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get the active calorie goal for a pet."""
     now = datetime.utcnow()
@@ -170,7 +170,7 @@ async def set_calorie_goal(
     pet_id: UUID,
     goal_in: CalorieGoalCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Set a new calorie goal for a pet."""
     # Verify pet exists
@@ -207,7 +207,7 @@ async def set_calorie_goal(
         daily_calories=goal_in.daily_calories,
         effective_from=now,
         notes=goal_in.notes,
-        created_by=current_user.id,
+        created_by=user_id,
     )
     db.add(goal)
     await db.commit()

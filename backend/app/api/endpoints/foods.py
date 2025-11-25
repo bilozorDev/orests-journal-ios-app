@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.food import PetFood
 from app.schemas.food import FoodCreate, FoodUpdate, FoodResponse, FoodListResponse
 
@@ -16,7 +16,7 @@ router = APIRouter()
 async def list_foods(
     org_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List all foods for the organization (family)."""
     query = select(PetFood).where(PetFood.org_id == org_id).order_by(PetFood.created_at.desc())
@@ -31,7 +31,7 @@ async def create_food(
     food_in: FoodCreate,
     org_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Create a new food item for the organization (family)."""
     food = PetFood(
@@ -42,7 +42,7 @@ async def create_food(
         container_size=food_in.container_size,
         container_size_unit=food_in.container_size_unit,
         image_url=food_in.image_url,
-        created_by=current_user.id,
+        created_by=user_id,
     )
     db.add(food)
     await db.commit()
@@ -55,7 +55,7 @@ async def create_food(
 async def get_food(
     food_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific food item by ID."""
     query = select(PetFood).where(PetFood.id == food_id)
@@ -76,7 +76,7 @@ async def update_food(
     food_id: UUID,
     food_in: FoodUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Update a food item."""
     query = select(PetFood).where(PetFood.id == food_id)
@@ -103,7 +103,7 @@ async def update_food(
 async def delete_food(
     food_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a food item."""
     query = select(PetFood).where(PetFood.id == food_id)

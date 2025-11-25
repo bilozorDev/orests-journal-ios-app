@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.pet import Pet, HealthRecord
 from app.schemas.pet import (
     PetCreate, PetUpdate, PetResponse, PetListResponse,
@@ -18,12 +18,11 @@ router = APIRouter()
 @router.get("", response_model=PetListResponse)
 async def list_pets(
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
     org_id: Optional[str] = None,
 ):
-    """List all pets for the user's organization (family)."""
-    # org_id should come from Clerk's active organization
-    # For now, we require it as a query param
+    """List all pets for the user's family."""
+    # org_id is the family ID
     if not org_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -42,7 +41,7 @@ async def create_pet(
     pet_in: PetCreate,
     org_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Create a new pet for the organization (family)."""
     pet = Pet(
@@ -51,7 +50,7 @@ async def create_pet(
         kind=pet_in.kind,
         photo_url=pet_in.photo_url,
         current_weight=pet_in.current_weight,
-        created_by=current_user.id,
+        created_by=user_id,
     )
     db.add(pet)
     await db.flush()
@@ -75,7 +74,7 @@ async def create_pet(
 async def get_pet(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific pet by ID."""
     query = select(Pet).where(Pet.id == pet_id)
@@ -96,7 +95,7 @@ async def update_pet(
     pet_id: UUID,
     pet_in: PetUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Update a pet."""
     query = select(Pet).where(Pet.id == pet_id)
@@ -124,7 +123,7 @@ async def update_pet(
 async def delete_pet(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a pet."""
     query = select(Pet).where(Pet.id == pet_id)
@@ -147,7 +146,7 @@ async def create_health_record(
     pet_id: UUID,
     record_in: HealthRecordCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Create a health record for a pet."""
     # Verify pet exists
@@ -178,7 +177,7 @@ async def create_health_record(
 async def list_health_records(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List health records for a pet."""
     query = (

@@ -5,7 +5,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.medication import PetMedication, PetMedicationDose
 from app.schemas.medication import DoseCreate, DoseResponse, DoseListResponse
 
@@ -16,7 +16,7 @@ router = APIRouter()
 async def record_dose(
     dose_in: DoseCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Record a medication dose."""
     # Verify medication exists
@@ -33,7 +33,7 @@ async def record_dose(
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
         given_at=dose_in.given_at or datetime.utcnow(),
-        given_by=current_user.id,
+        given_by=user_id,
         notes=dose_in.notes,
     )
     db.add(dose)
@@ -48,7 +48,7 @@ async def list_doses(
     medication_id: UUID,
     limit: int = Query(default=50, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List doses for a medication."""
     query = (
@@ -67,7 +67,7 @@ async def list_doses(
 async def get_today_doses(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get today's doses for a medication."""
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -94,7 +94,7 @@ async def get_today_doses(
 async def get_last_dose(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get the most recent dose for a medication."""
     query = (
@@ -119,7 +119,7 @@ async def get_last_dose(
 async def delete_dose(
     dose_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a dose record."""
     query = select(PetMedicationDose).where(PetMedicationDose.id == dose_id)

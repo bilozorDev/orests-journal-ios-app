@@ -12,10 +12,9 @@ class Settings(BaseSettings):
     # Database (Neon PostgreSQL)
     database_url: str
 
-    # Clerk Authentication
-    clerk_publishable_key: str
-    clerk_secret_key: str
-    clerk_jwt_issuer: str
+    # JWT Authentication (Sign in with Apple + our own tokens)
+    jwt_secret_key: str  # Used to sign/verify our own JWTs
+    jwt_expiration_days: int = 7
 
     # Storage (S3/R2) - Optional for now
     s3_endpoint_url: Optional[str] = None

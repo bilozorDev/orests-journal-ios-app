@@ -8,16 +8,16 @@ from app.db.session import Base
 
 
 class Pet(Base):
-    """Pet belonging to a Clerk organization (family)."""
+    """Pet belonging to a family."""
     __tablename__ = "pets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(String(255), nullable=False, index=True)  # Clerk organization ID (family)
+    org_id = Column(String(255), nullable=False, index=True)  # Family ID
     name = Column(String(255), nullable=False)
     kind = Column(String(100), nullable=False)  # e.g., "cat", "dog"
     photo_url = Column(String(500), nullable=True)
     current_weight = Column(Float, nullable=True)
-    created_by = Column(String(255), nullable=False)  # Clerk user ID
+    created_by = Column(String(255), nullable=False)  # User ID
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

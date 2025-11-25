@@ -57,7 +57,7 @@ enum ContainerUnit: String, Codable, CaseIterable {
 
 struct PetFood: Codable, Identifiable, Hashable {
     let id: UUID
-    let orgId: String  // Clerk organization ID
+    let orgId: String  // Family ID
     let name: String
     let category: FoodCategory
     let caloriesPerKg: Double

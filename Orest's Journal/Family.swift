@@ -7,16 +7,10 @@
 
 import Foundation
 
+/// APIClient uses automatic snake_case conversion
 struct Family: Codable, Identifiable {
     let id: UUID
     let name: String
     let createdAt: Date
     let createdBy: UUID?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case createdAt = "created_at"
-        case createdBy = "created_by"
-    }
 }

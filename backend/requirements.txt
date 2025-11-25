@@ -11,10 +11,10 @@ alembic>=1.13.1
 pgvector>=0.2.4
 greenlet>=3.0.0
 
-# Auth (Clerk JWT validation + backend SDK)
+# Auth (Sign in with Apple + JWT)
 python-jose[cryptography]>=3.3.0
 httpx>=0.26.0
-clerk-backend-api>=1.0.0
+PyJWT>=2.8.0
 
 # Storage (S3/R2 compatible)
 boto3>=1.34.0

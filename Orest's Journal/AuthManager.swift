@@ -9,7 +9,7 @@ import Foundation
 import AuthenticationServices
 import Security
 
-/// User model for the app
+/// User model for the app (uses automatic snake_case conversion from APIClient)
 struct AppUser: Codable {
     let id: String
     let email: String?
@@ -17,24 +17,43 @@ struct AppUser: Codable {
     let lastName: String?
 }
 
-/// Organization model
-struct AppOrganization: Codable, Identifiable {
+/// Family model (was Organization) - uses automatic snake_case conversion from APIClient
+struct AppFamily: Codable, Identifiable {
     let id: String
     let name: String
-    let slug: String?
+    let inviteCode: String
+    let role: String  // "admin" or "member"
 }
 
 /// Auth response from the backend
 struct AuthResponse: Codable {
     let token: String
     let user: AppUser
-    let organizations: [AppOrganization]
+    let families: [AppFamily]
 }
 
 /// Me response from the backend
 struct MeResponse: Codable {
     let user: AppUser
-    let organizations: [AppOrganization]
+    let families: [AppFamily]
+}
+
+/// Response after creating a family (uses automatic snake_case conversion from APIClient)
+struct CreateFamilyResponse: Codable {
+    let id: String
+    let name: String
+    let inviteCode: String
+    let role: String
+
+    var asAppFamily: AppFamily {
+        AppFamily(id: id, name: name, inviteCode: inviteCode, role: role)
+    }
+}
+
+/// Response after joining a family
+struct JoinFamilyResponse: Codable {
+    let family: AppFamily
+    let message: String
 }
 
 /// Manages authentication state using Sign in with Apple
@@ -46,8 +65,8 @@ final class AuthManager {
     var isLoaded = false
     var isAuthenticated = false
     var currentUser: AppUser?
-    var organizations: [AppOrganization] = []
-    var currentOrganization: AppOrganization?
+    var families: [AppFamily] = []
+    var currentFamily: AppFamily?
 
     private let keychainService = "com.notip.orests-journal"
     private let tokenKey = "auth_token"
@@ -78,13 +97,13 @@ final class AuthManager {
             )
 
             self.currentUser = response.user
-            self.organizations = response.organizations
-            self.currentOrganization = response.organizations.first
+            self.families = response.families
+            self.currentFamily = response.families.first
             self.isAuthenticated = true
 
-            // Update API client with org ID
-            if let orgId = currentOrganization?.id {
-                APIClient.shared.currentOrgId = orgId
+            // Update API client with family ID
+            if let familyId = currentFamily?.id {
+                APIClient.shared.currentOrgId = familyId
             }
 
         } catch {
@@ -109,6 +128,7 @@ final class AuthManager {
         let lastName = credential.fullName?.familyName
 
         // Call backend to authenticate
+        // APIClient uses .convertToSnakeCase encoder automatically
         struct AppleAuthRequest: Codable {
             let identityToken: String
             let userId: String
@@ -139,42 +159,65 @@ final class AuthManager {
 
         // Update state
         self.currentUser = response.user
-        self.organizations = response.organizations
-        self.currentOrganization = response.organizations.first
+        self.families = response.families
+        self.currentFamily = response.families.first
         self.isAuthenticated = true
 
         // Set up API client
         let savedToken = response.token
         APIClient.shared.getToken = { savedToken }
-        if let orgId = currentOrganization?.id {
-            APIClient.shared.currentOrgId = orgId
+        if let familyId = currentFamily?.id {
+            APIClient.shared.currentOrgId = familyId
         }
     }
 
-    /// Create a new organization (family)
-    func createOrganization(name: String) async throws -> AppOrganization {
-        struct CreateOrgRequest: Codable {
+    /// Create a new family
+    func createFamily(name: String) async throws -> AppFamily {
+        struct CreateFamilyRequest: Codable {
             let name: String
         }
 
-        let response: AppOrganization = try await APIClient.shared.request(
-            endpoint: "/auth/organizations",
+        let response: CreateFamilyResponse = try await APIClient.shared.request(
+            endpoint: "/families",
             method: "POST",
-            body: CreateOrgRequest(name: name)
+            body: CreateFamilyRequest(name: name)
+        )
+
+        let family = response.asAppFamily
+
+        // Add to list and select it
+        families.append(family)
+        currentFamily = family
+        APIClient.shared.currentOrgId = family.id
+
+        return family
+    }
+
+    /// Join a family with invite code
+    func joinFamily(inviteCode: String) async throws -> AppFamily {
+        struct JoinFamilyRequest: Codable {
+            let inviteCode: String
+            // APIClient uses .convertToSnakeCase encoder automatically
+        }
+
+        let response: JoinFamilyResponse = try await APIClient.shared.request(
+            endpoint: "/families/join",
+            method: "POST",
+            body: JoinFamilyRequest(inviteCode: inviteCode)
         )
 
         // Add to list and select it
-        organizations.append(response)
-        currentOrganization = response
-        APIClient.shared.currentOrgId = response.id
+        families.append(response.family)
+        currentFamily = response.family
+        APIClient.shared.currentOrgId = response.family.id
 
-        return response
+        return response.family
     }
 
-    /// Select an organization
-    func selectOrganization(_ org: AppOrganization) {
-        currentOrganization = org
-        APIClient.shared.currentOrgId = org.id
+    /// Select a family
+    func selectFamily(_ family: AppFamily) {
+        currentFamily = family
+        APIClient.shared.currentOrgId = family.id
     }
 
     /// Sign out
@@ -182,9 +225,9 @@ final class AuthManager {
         clearSession()
     }
 
-    /// Check if user has any organizations
-    var hasOrganization: Bool {
-        !organizations.isEmpty
+    /// Check if user has any families
+    var hasFamily: Bool {
+        !families.isEmpty
     }
 
     /// Get current user's email
@@ -197,9 +240,41 @@ final class AuthManager {
         currentUser?.id
     }
 
-    /// Get current organization ID
+    /// Get current family ID
+    var familyId: String? {
+        currentFamily?.id
+    }
+
+    // MARK: - Legacy Compatibility
+
+    /// Legacy: organizations property (maps to families)
+    var organizations: [AppFamily] {
+        families
+    }
+
+    /// Legacy: currentOrganization property (maps to currentFamily)
+    var currentOrganization: AppFamily? {
+        currentFamily
+    }
+
+    /// Legacy: hasOrganization property (maps to hasFamily)
+    var hasOrganization: Bool {
+        hasFamily
+    }
+
+    /// Legacy: orgId property (maps to familyId)
     var orgId: String? {
-        currentOrganization?.id
+        familyId
+    }
+
+    /// Legacy: createOrganization method (maps to createFamily)
+    func createOrganization(name: String) async throws -> AppFamily {
+        try await createFamily(name: name)
+    }
+
+    /// Legacy: selectOrganization method (maps to selectFamily)
+    func selectOrganization(_ org: AppFamily) {
+        selectFamily(org)
     }
 
     // MARK: - Private Methods
@@ -207,8 +282,8 @@ final class AuthManager {
     private func clearSession() {
         deleteTokenFromKeychain()
         currentUser = nil
-        organizations = []
-        currentOrganization = nil
+        families = []
+        currentFamily = nil
         isAuthenticated = false
         APIClient.shared.getToken = nil
         APIClient.shared.currentOrgId = nil

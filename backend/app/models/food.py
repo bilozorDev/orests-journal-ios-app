@@ -22,18 +22,18 @@ class ContainerUnit(str, enum.Enum):
 
 
 class PetFood(Base):
-    """Food item available for a Clerk organization (family)."""
+    """Food item available for a family."""
     __tablename__ = "pet_foods"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(String(255), nullable=False, index=True)  # Clerk organization ID (family)
+    org_id = Column(String(255), nullable=False, index=True)  # Family ID
     name = Column(String(255), nullable=False)
     category = Column(SQLEnum(FoodCategory), nullable=False)
     calories_per_kg = Column(Float, nullable=False)
     container_size = Column(Float, nullable=False)
     container_size_unit = Column(SQLEnum(ContainerUnit), default=ContainerUnit.GRAMS, nullable=False)
     image_url = Column(String(500), nullable=True)
-    created_by = Column(String(255), nullable=False)  # Clerk user ID
+    created_by = Column(String(255), nullable=False)  # User ID
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -47,7 +47,7 @@ class PetFeeding(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     food_id = Column(UUID(as_uuid=True), ForeignKey("pet_foods.id", ondelete="CASCADE"), nullable=False)
-    fed_by = Column(String(255), nullable=False)  # Clerk user ID
+    fed_by = Column(String(255), nullable=False)  # User ID
     fed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     amount = Column(Float, nullable=False)
     amount_unit = Column(SQLEnum(ContainerUnit), default=ContainerUnit.GRAMS, nullable=False)
@@ -70,7 +70,7 @@ class PetCalorieGoal(Base):
     effective_from = Column(DateTime, default=datetime.utcnow, nullable=False)
     effective_until = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
-    created_by = Column(String(255), nullable=False)  # Clerk user ID
+    created_by = Column(String(255), nullable=False)  # User ID
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

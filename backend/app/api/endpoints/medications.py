@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core.security import ClerkUser, get_current_user
+from app.core.security import get_current_user_id
 from app.models.pet import Pet
 from app.models.medication import PetMedication
 from app.schemas.medication import (
@@ -22,7 +22,7 @@ async def list_medications(
     pet_id: Optional[UUID] = None,
     active_only: bool = False,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List medications for the organization, optionally filtered by pet."""
     # First get pets for this org
@@ -64,7 +64,7 @@ async def list_medications(
 async def create_medication(
     med_in: MedicationCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Create a new medication prescription."""
     # Verify pet exists
@@ -86,7 +86,7 @@ async def create_medication(
         end_date=med_in.end_date,
         times_per_day=med_in.times_per_day,
         notes=med_in.notes,
-        created_by=current_user.id,
+        created_by=user_id,
     )
     db.add(medication)
     await db.commit()
@@ -99,7 +99,7 @@ async def create_medication(
 async def get_medication(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific medication by ID."""
     query = select(PetMedication).where(PetMedication.id == medication_id)
@@ -120,7 +120,7 @@ async def update_medication(
     medication_id: UUID,
     med_in: MedicationUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Update a medication."""
     query = select(PetMedication).where(PetMedication.id == medication_id)
@@ -147,7 +147,7 @@ async def update_medication(
 async def delete_medication(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a medication."""
     query = select(PetMedication).where(PetMedication.id == medication_id)
@@ -168,7 +168,7 @@ async def delete_medication(
 async def get_active_medications_for_pet(
     pet_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: ClerkUser = Depends(get_current_user),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get active medications for a specific pet."""
     now = datetime.utcnow()

@@ -7,6 +7,7 @@
 
 import Foundation
 
+/// APIClient uses automatic snake_case conversion
 struct HealthSearchResult: Codable, Identifiable, Hashable {
     let eventId: UUID
     let categoryId: UUID
@@ -20,19 +21,6 @@ struct HealthSearchResult: Codable, Identifiable, Hashable {
     let similarity: Double
 
     var id: UUID { eventId }
-
-    enum CodingKeys: String, CodingKey {
-        case eventId = "event_id"
-        case categoryId = "category_id"
-        case categoryName = "category_name"
-        case occurredAt = "occurred_at"
-        case notes
-        case petId = "pet_id"
-        case petName = "pet_name"
-        case createdById = "created_by_id"
-        case createdByEmail = "created_by_email"
-        case similarity
-    }
 }
 
 // Response from the embed-search-query Edge Function

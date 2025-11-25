@@ -1410,8 +1410,8 @@ struct SettingsView: View {
                             accountSection
 
                             // Family Section
-                            if let org = authManager.currentOrganization {
-                                familySection(org: org)
+                            if let family = authManager.currentFamily {
+                                familySection(family: family)
                             }
 
                             // Pets Section
@@ -1478,7 +1478,7 @@ struct SettingsView: View {
         }
     }
 
-    private func familySection(org: AppOrganization) -> some View {
+    private func familySection(family: AppFamily) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Family")
                 .font(.headline)
@@ -1491,21 +1491,51 @@ struct SettingsView: View {
                         .foregroundColor(.green)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(org.name)
+                        Text(family.name)
                             .font(.body)
                             .fontWeight(.medium)
 
-                        Text("Organization ID: \(org.id)")
+                        Text("Role: \(family.role.capitalized)")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                     }
+
+                    Spacer()
                 }
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(12)
+
+                // Invite code section
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Invite Code")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Text(family.inviteCode)
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.semibold)
+
+                        Spacer()
+
+                        Button(action: {
+                            UIPasteboard.general.string = family.inviteCode
+                        }) {
+                            Image(systemName: "doc.on.doc")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+                }
+                .padding(.top, 4)
+
+                Text("Share this code to invite family members")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
     }
