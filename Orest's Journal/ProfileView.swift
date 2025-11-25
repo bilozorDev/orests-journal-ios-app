@@ -6,17 +6,16 @@
 //
 
 import SwiftUI
-import Supabase
 
 struct ProfileView: View {
-    @State private var user: User?
+    @ObservedObject private var clerkManager = ClerkManager.shared
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                if let user = user {
+                if clerkManager.isSignedIn {
                     Text("Welcome!")
                         .font(.largeTitle)
                         .bold()
@@ -25,13 +24,13 @@ struct ProfileView: View {
                         HStack {
                             Text("Email:")
                                 .bold()
-                            Text(user.email ?? "No email")
+                            Text(clerkManager.userEmail ?? "No email")
                         }
 
                         HStack {
                             Text("User ID:")
                                 .bold()
-                            Text(user.id.uuidString)
+                            Text(clerkManager.userId ?? "Unknown")
                                 .font(.caption)
                         }
                     }
@@ -61,32 +60,12 @@ struct ProfileView: View {
             }
             .padding()
             .navigationTitle("Profile")
-            .task {
-                await loadUser()
-            }
-        }
-    }
-
-    private func loadUser() async {
-        do {
-            user = try await supabase.auth.session.user
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 
     private func signOut() {
         Task {
-            isLoading = true
-            errorMessage = nil
-
-            do {
-                try await supabase.auth.signOut()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-
-            isLoading = false
+            await clerkManager.signOut()
         }
     }
 }

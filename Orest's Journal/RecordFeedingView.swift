@@ -166,10 +166,7 @@ struct RecordFeedingView: View {
     private func loadFoods() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            foods = try await SupabaseService.shared.getFamilyFoods(familyId: family.id)
+            foods = try await DataService.shared.getFoods()
         } catch {
             errorMessage = error.localizedDescription
             showError = true
@@ -184,7 +181,7 @@ struct RecordFeedingView: View {
 
         isSaving = true
         do {
-            _ = try await SupabaseService.shared.createFeeding(
+            _ = try await DataService.shared.createFeeding(
                 petId: petId,
                 foodId: food.id,
                 amount: feedingAmount,

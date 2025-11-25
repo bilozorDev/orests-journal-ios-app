@@ -91,14 +91,11 @@ struct RecordDoseView: View {
         do {
             if let petId = petId {
                 // Load medications for specific pet
-                medications = try await SupabaseService.shared.getActiveMedications(for: petId)
+                medications = try await DataService.shared.getActiveMedications(for: petId)
             } else {
-                // Load all medications for family
-                guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                    return
-                }
-                let allMedications = try await SupabaseService.shared.getFamilyMedications(familyId: family.id)
-                medications = allMedications.filter { $0.isActive }
+                // Load all active medications
+                let allMedications = try await DataService.shared.getMedications(activeOnly: true)
+                medications = allMedications
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -114,7 +111,7 @@ struct RecordDoseView: View {
 
         isSaving = true
         do {
-            _ = try await SupabaseService.shared.recordDose(
+            _ = try await DataService.shared.recordDose(
                 medicationId: medication.id,
                 notes: notes.isEmpty ? nil : notes
             )

@@ -111,7 +111,7 @@ struct AddHealthEventView: View {
     private func loadCategories() async {
         isLoading = true
         do {
-            existingCategories = try await SupabaseService.shared.getHealthCategories(for: petId)
+            existingCategories = try await DataService.shared.getHealthCategories(for: petId)
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading categories: \(error)")
@@ -125,7 +125,7 @@ struct AddHealthEventView: View {
             errorMessage = nil
 
             do {
-                _ = try await SupabaseService.shared.createHealthEvent(
+                _ = try await DataService.shared.createHealthEvent(
                     petId: petId,
                     categoryName: categoryName,
                     occurredAt: occurredAt,

@@ -57,7 +57,7 @@ enum ContainerUnit: String, Codable, CaseIterable {
 
 struct PetFood: Codable, Identifiable, Hashable {
     let id: UUID
-    let familyId: UUID
+    let orgId: String  // Clerk organization ID
     let name: String
     let category: FoodCategory
     let caloriesPerKg: Double
@@ -65,20 +65,7 @@ struct PetFood: Codable, Identifiable, Hashable {
     let containerSizeUnit: ContainerUnit
     let imageUrl: String?
     let createdAt: Date
-    let createdBy: UUID?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case familyId = "family_id"
-        case name
-        case category
-        case caloriesPerKg = "calories_per_kg"
-        case containerSize = "container_size"
-        case containerSizeUnit = "container_size_unit"
-        case imageUrl = "image_url"
-        case createdAt = "created_at"
-        case createdBy = "created_by"
-    }
+    let createdBy: String?
 
     var caloriesPerGram: Double {
         return caloriesPerKg / 1000
@@ -99,26 +86,13 @@ struct PetFeeding: Codable, Identifiable {
     let id: UUID
     let petId: UUID
     let foodId: UUID
-    let fedBy: UUID
+    let fedBy: String
     let fedAt: Date
     let amount: Double
     let amountUnit: ContainerUnit
     let calories: Double
     let notes: String?
     let createdAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case petId = "pet_id"
-        case foodId = "food_id"
-        case fedBy = "fed_by"
-        case fedAt = "fed_at"
-        case amount
-        case amountUnit = "amount_unit"
-        case calories
-        case notes
-        case createdAt = "created_at"
-    }
 }
 
 struct CalorieGoal: Codable, Identifiable {
@@ -129,16 +103,5 @@ struct CalorieGoal: Codable, Identifiable {
     let effectiveUntil: Date?
     let notes: String?
     let createdAt: Date
-    let createdBy: UUID?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case petId = "pet_id"
-        case dailyCalories = "daily_calories"
-        case effectiveFrom = "effective_from"
-        case effectiveUntil = "effective_until"
-        case notes
-        case createdAt = "created_at"
-        case createdBy = "created_by"
-    }
+    let createdBy: String?
 }

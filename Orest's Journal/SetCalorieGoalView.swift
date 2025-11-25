@@ -90,7 +90,7 @@ struct SetCalorieGoalView: View {
 
         isSaving = true
         do {
-            _ = try await SupabaseService.shared.setCalorieGoal(
+            _ = try await DataService.shared.setCalorieGoal(
                 for: petId,
                 dailyCalories: caloriesValue,
                 notes: notes.isEmpty ? nil : notes

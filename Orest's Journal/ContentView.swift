@@ -6,12 +6,11 @@
 //
 
 import SwiftUI
-import Supabase
+import Clerk
 
 struct ContentView: View {
-    @State private var session: Session?
+    @ObservedObject private var clerkManager = ClerkManager.shared
     @State private var isLoading = true
-    @State private var hasFamily = false
     @State private var hasPet = false
     @State private var isCheckingStatus = false
     @State private var showError = false
@@ -19,12 +18,12 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if isLoading || !clerkManager.isLoaded {
                 ProgressView("Loading...")
-            } else if session != nil {
+            } else if clerkManager.isSignedIn {
                 if isCheckingStatus {
                     ProgressView("Setting up...")
-                } else if !hasFamily {
+                } else if !clerkManager.hasOrganization {
                     FamilySetupView()
                 } else if !hasPet {
                     AddPetView()
@@ -36,11 +35,25 @@ struct ContentView: View {
             }
         }
         .task {
-            await observeAuthState()
+            await clerkManager.configure()
+            if clerkManager.isSignedIn {
+                await checkPetStatus()
+            }
+            isLoading = false
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshFamilyStatus"))) { _ in
             Task {
-                await checkFamilyAndPetStatus()
+                await clerkManager.loadOrganizations()
+                await checkPetStatus()
+            }
+        }
+        .onChange(of: clerkManager.isSignedIn) { _, isSignedIn in
+            if isSignedIn {
+                Task {
+                    await checkPetStatus()
+                }
+            } else {
+                hasPet = false
             }
         }
         .alert("Error Loading Data", isPresented: $showError) {
@@ -52,50 +65,24 @@ struct ContentView: View {
         }
     }
 
-    private func observeAuthState() async {
-        // Get initial session
-        do {
-            session = try await supabase.auth.session
-            if session != nil {
-                await checkFamilyAndPetStatus()
-            }
-        } catch {
-            session = nil
+    private func checkPetStatus() async {
+        guard clerkManager.hasOrganization else {
+            hasPet = false
+            return
         }
-        isLoading = false
 
-        // Listen for auth state changes
-        for await state in supabase.auth.authStateChanges {
-            switch state.event {
-            case .signedIn:
-                session = state.session
-                await checkFamilyAndPetStatus()
-            case .signedOut:
-                session = nil
-                hasFamily = false
-                hasPet = false
-            default:
-                break
-            }
-        }
-    }
-
-    private func checkFamilyAndPetStatus() async {
         isCheckingStatus = true
         do {
-            let status = try await SupabaseService.shared.checkUserFamilyAndPet()
-            hasFamily = status.hasFamily
-            hasPet = status.hasPet
-            print("✅ Family/Pet status loaded: hasFamily=\(hasFamily), hasPet=\(hasPet)")
+            let pets = try await DataService.shared.getPets()
+            hasPet = !pets.isEmpty
+            print("✅ Pet status loaded: hasPet=\(hasPet)")
         } catch {
-            print("❌ Error checking family/pet status: \(error)")
+            print("❌ Error checking pet status: \(error)")
             print("❌ Error details: \(error.localizedDescription)")
 
-            // Show error to user for debugging
-            errorMessage = "Failed to load family/pet data: \(error.localizedDescription)\n\nThis might be a database permissions issue. Check Xcode console for details."
+            errorMessage = "Failed to load pet data: \(error.localizedDescription)"
             showError = true
 
-            hasFamily = false
             hasPet = false
         }
         isCheckingStatus = false
@@ -687,10 +674,7 @@ struct DashboardView: View {
     private func loadPets() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            pets = try await SupabaseService.shared.getFamilyPets(familyId: family.id)
+            pets = try await DataService.shared.getPets()
             if selectedPet == nil {
                 selectedPet = pets.first
             }
@@ -709,7 +693,7 @@ struct DashboardView: View {
     private func loadCalorieGoal() async {
         guard let pet = selectedPet else { return }
         do {
-            let goal = try await SupabaseService.shared.getActiveCalorieGoal(for: pet.id)
+            let goal = try await DataService.shared.getActiveCalorieGoal(for: pet.id)
             calorieGoal = goal?.dailyCalories ?? 0
         } catch {
             print("Error loading calorie goal: \(error)")
@@ -721,7 +705,7 @@ struct DashboardView: View {
     private func loadTodayCalories() async {
         guard let pet = selectedPet else { return }
         do {
-            todayCalories = try await SupabaseService.shared.getTodayCalories(for: pet.id)
+            todayCalories = try await DataService.shared.getTodayCalories(for: pet.id)
         } catch {
             print("Error loading today's calories: \(error)")
             todayCalories = 0
@@ -731,7 +715,7 @@ struct DashboardView: View {
     private func loadActiveMedications() async {
         guard let pet = selectedPet else { return }
         do {
-            activeMedications = try await SupabaseService.shared.getActiveMedications(for: pet.id)
+            activeMedications = try await DataService.shared.getActiveMedications(for: pet.id)
             await loadLastDoses()
             await loadDosesRemaining()
         } catch {
@@ -743,7 +727,7 @@ struct DashboardView: View {
     private func loadLastDoses() async {
         var doses: [UUID: PetMedicationDose] = [:]
         for medication in activeMedications {
-            if let lastDose = try? await SupabaseService.shared.getLastDose(for: medication.id) {
+            if let lastDose = try? await DataService.shared.getLastDose(for: medication.id) {
                 doses[medication.id] = lastDose
             }
         }
@@ -753,7 +737,7 @@ struct DashboardView: View {
     private func loadDosesRemaining() async {
         var remaining: [UUID: Int] = [:]
         for medication in activeMedications {
-            if let todayDoses = try? await SupabaseService.shared.getDosesToday(for: medication.id) {
+            if let todayDoses = try? await DataService.shared.getTodayDoses(for: medication.id) {
                 let dosesLeft = medication.timesPerDay - todayDoses.count
                 remaining[medication.id] = max(0, dosesLeft)
             } else {
@@ -765,7 +749,7 @@ struct DashboardView: View {
 
     private func recordDose(for medication: PetMedication) async {
         do {
-            _ = try await SupabaseService.shared.recordDose(medicationId: medication.id)
+            _ = try await DataService.shared.recordDose(medicationId: medication.id)
             await loadLastDoses()
             await loadDosesRemaining()
             toastMessage = "\(medication.name) recorded"
@@ -799,7 +783,7 @@ struct DashboardView: View {
     private func loadTodayFeedings() async {
         guard let pet = selectedPet else { return }
         do {
-            todayFeedings = try await SupabaseService.shared.getTodayFeedings(for: pet.id)
+            todayFeedings = try await DataService.shared.getTodayFeedings(for: pet.id)
         } catch {
             print("Error loading today's feedings: \(error)")
             todayFeedings = []
@@ -808,10 +792,7 @@ struct DashboardView: View {
 
     private func loadFoods() async {
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            let allFoods = try await SupabaseService.shared.getFamilyFoods(familyId: family.id)
+            let allFoods = try await DataService.shared.getFoods()
             foods = Dictionary(uniqueKeysWithValues: allFoods.map { ($0.id, $0) })
         } catch {
             print("Error loading foods: \(error)")
@@ -919,13 +900,7 @@ struct FoodView: View {
     private func loadFoods() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                errorMessage = "No family found"
-                isLoading = false
-                return
-            }
-
-            foods = try await SupabaseService.shared.getFamilyFoods(familyId: family.id)
+            foods = try await DataService.shared.getFoods()
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading foods: \(error)")
@@ -935,7 +910,7 @@ struct FoodView: View {
 
     private func deleteFood(_ food: PetFood) async {
         do {
-            try await SupabaseService.shared.deleteFood(food.id)
+            try await DataService.shared.deleteFood(id: food.id)
             await loadFoods()
         } catch {
             errorMessage = error.localizedDescription
@@ -1105,16 +1080,10 @@ struct MedicationView: View {
     private func loadMedications() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                errorMessage = "No family found"
-                isLoading = false
-                return
-            }
+            medications = try await DataService.shared.getMedications()
 
-            medications = try await SupabaseService.shared.getFamilyMedications(familyId: family.id)
-
-            let familyPets = try await SupabaseService.shared.getFamilyPets(familyId: family.id)
-            pets = Dictionary(uniqueKeysWithValues: familyPets.map { ($0.id, $0) })
+            let allPets = try await DataService.shared.getPets()
+            pets = Dictionary(uniqueKeysWithValues: allPets.map { ($0.id, $0) })
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading medications: \(error)")
@@ -1335,10 +1304,7 @@ struct HealthView: View {
     private func loadPets() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            pets = try await SupabaseService.shared.getFamilyPets(familyId: family.id)
+            pets = try await DataService.shared.getPets()
             if selectedPet == nil {
                 selectedPet = pets.first
             }
@@ -1352,7 +1318,7 @@ struct HealthView: View {
     private func loadEvents() async {
         guard let pet = selectedPet else { return }
         do {
-            events = try await SupabaseService.shared.getHealthEvents(for: pet.id)
+            events = try await DataService.shared.getHealthEvents(for: pet.id)
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading health events: \(error)")
@@ -1361,7 +1327,7 @@ struct HealthView: View {
 
     private func deleteEvent(_ eventId: UUID) async {
         do {
-            try await SupabaseService.shared.deleteHealthEvent(eventId)
+            try await DataService.shared.deleteHealthEvent(id: eventId)
             await loadEvents()
         } catch {
             errorMessage = error.localizedDescription
@@ -1428,15 +1394,11 @@ struct HealthEventRowView: View {
 }
 
 struct SettingsView: View {
-    @State private var user: User?
-    @State private var family: Family?
+    @ObservedObject private var clerkManager = ClerkManager.shared
     @State private var pets: [Pet] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var showSignOutError = false
-    @State private var isGeneratingData = false
-    @State private var showGenerateSuccess = false
-    @State private var showGenerateError = false
 
     var body: some View {
         NavigationView {
@@ -1447,22 +1409,15 @@ struct SettingsView: View {
                     ScrollView {
                         VStack(spacing: 20) {
                             // Account Section
-                            if let user = user {
-                                accountSection(user: user)
-                            }
+                            accountSection
 
                             // Family Section
-                            if let family = family {
-                                familySection(family: family)
+                            if let org = clerkManager.currentOrganization {
+                                familySection(org: org)
                             }
 
                             // Pets Section
                             petsSection
-
-                            // Generate Test Data Section
-                            if !pets.isEmpty {
-                                generateDataSection
-                            }
 
                             Spacer()
 
@@ -1488,20 +1443,10 @@ struct SettingsView: View {
             } message: {
                 Text(errorMessage ?? "Failed to sign out")
             }
-            .alert("Success!", isPresented: $showGenerateSuccess) {
-                Button("OK") { }
-            } message: {
-                Text("Test data generated successfully! Check the Dashboard, Food, Medication, and Health tabs.")
-            }
-            .alert("Error", isPresented: $showGenerateError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage ?? "Failed to generate test data")
-            }
         }
     }
 
-    private func accountSection(user: User) -> some View {
+    private var accountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Account")
                 .font(.headline)
@@ -1514,15 +1459,17 @@ struct SettingsView: View {
                         .foregroundColor(.blue)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(user.email ?? "No email")
+                        Text(clerkManager.userEmail ?? "No email")
                             .font(.body)
                             .fontWeight(.medium)
 
-                        Text("ID: \(user.id.uuidString)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        if let userId = clerkManager.userId {
+                            Text("ID: \(userId)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                 }
                 .padding()
@@ -1533,7 +1480,7 @@ struct SettingsView: View {
         }
     }
 
-    private func familySection(family: Family) -> some View {
+    private func familySection(org: Organization) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Family")
                 .font(.headline)
@@ -1546,13 +1493,15 @@ struct SettingsView: View {
                         .foregroundColor(.green)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(family.name)
+                        Text(org.name)
                             .font(.body)
                             .fontWeight(.medium)
 
-                        Text("Created \(formatDate(family.createdAt))")
+                        Text("Organization ID: \(org.id)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
                 .padding()
@@ -1637,37 +1586,6 @@ struct SettingsView: View {
         }
     }
 
-    private var generateDataSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Test Data")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            Button(action: generateRandomData) {
-                HStack {
-                    if isGeneratingData {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "wand.and.stars")
-                    }
-                    Text(isGeneratingData ? "Generating..." : "Generate Random Data")
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(isGeneratingData ? Color.gray : Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(12)
-            }
-            .disabled(isGeneratingData)
-
-            Text("Creates: calorie goal, 5 foods, 2 medications, 20 health entries, and feeding records for \(pets.first?.name ?? "pet")")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-
     private var signOutButton: some View {
         Button(action: signOut) {
             HStack {
@@ -1688,16 +1606,7 @@ struct SettingsView: View {
         errorMessage = nil
 
         do {
-            // Load user
-            user = try await supabase.auth.session.user
-
-            // Load family
-            family = try await SupabaseService.shared.getCurrentUserFamily()
-
-            // Load pets
-            if let familyId = family?.id {
-                pets = try await SupabaseService.shared.getFamilyPets(familyId: familyId)
-            }
+            pets = try await DataService.shared.getPets()
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading settings data: \(error)")
@@ -1706,34 +1615,9 @@ struct SettingsView: View {
         isLoading = false
     }
 
-    private func generateRandomData() {
-        guard let pet = pets.first else { return }
-
-        Task {
-            isGeneratingData = true
-            errorMessage = nil
-
-            do {
-                try await SupabaseService.shared.generateRandomTestData(for: pet)
-                showGenerateSuccess = true
-            } catch {
-                errorMessage = error.localizedDescription
-                showGenerateError = true
-                print("Error generating test data: \(error)")
-            }
-
-            isGeneratingData = false
-        }
-    }
-
     private func signOut() {
         Task {
-            do {
-                try await supabase.auth.signOut()
-            } catch {
-                errorMessage = error.localizedDescription
-                showSignOutError = true
-            }
+            await clerkManager.signOut()
         }
     }
 

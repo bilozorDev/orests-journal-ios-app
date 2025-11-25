@@ -160,13 +160,7 @@ struct AddMedicationView: View {
     private func loadPets() async {
         isLoading = true
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                errorMessage = "No family found"
-                isLoading = false
-                return
-            }
-
-            pets = try await SupabaseService.shared.getFamilyPets(familyId: family.id)
+            pets = try await DataService.shared.getPets()
 
             // Auto-select if only one pet
             if pets.count == 1 {
@@ -187,7 +181,7 @@ struct AddMedicationView: View {
             do {
                 let pet = pets.count == 1 ? pets.first! : selectedPet!
 
-                _ = try await SupabaseService.shared.createMedication(
+                _ = try await DataService.shared.createMedication(
                     petId: pet.id,
                     name: medicationName,
                     medicationType: selectedType,

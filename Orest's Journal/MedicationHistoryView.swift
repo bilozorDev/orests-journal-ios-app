@@ -66,7 +66,7 @@ struct MedicationHistoryView: View {
     private func loadData() async {
         isLoading = true
         do {
-            doses = try await SupabaseService.shared.getMedicationDoses(for: medicationId)
+            doses = try await DataService.shared.getDoses(for: medicationId)
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading medication doses: \(error)")

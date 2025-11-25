@@ -67,14 +67,10 @@ struct FeedingHistoryView: View {
     private func loadData() async {
         isLoading = true
         do {
-            feedings = try await SupabaseService.shared.getFeedingHistory(for: petId)
+            feedings = try await DataService.shared.getFeedingHistory(for: petId)
 
-            // Load all unique foods
-            let foodIds = Set(feedings.map { $0.foodId })
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            let allFoods = try await SupabaseService.shared.getFamilyFoods(familyId: family.id)
+            // Load all foods
+            let allFoods = try await DataService.shared.getFoods()
             foods = Dictionary(uniqueKeysWithValues: allFoods.map { ($0.id, $0) })
         } catch {
             errorMessage = error.localizedDescription

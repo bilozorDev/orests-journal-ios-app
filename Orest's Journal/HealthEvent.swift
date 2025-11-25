@@ -13,16 +13,7 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     let occurredAt: Date
     let notes: String?
     let createdAt: Date
-    let createdBy: UUID?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case categoryId = "category_id"
-        case occurredAt = "occurred_at"
-        case notes
-        case createdAt = "created_at"
-        case createdBy = "created_by"
-    }
+    let createdBy: String?
 }
 
 struct HealthEventWithCategory: Identifiable, Hashable {

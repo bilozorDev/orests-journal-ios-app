@@ -175,10 +175,7 @@ struct HealthSearchView: View {
 
     private func loadPets() async {
         do {
-            guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                return
-            }
-            pets = try await SupabaseService.shared.getFamilyPets(familyId: family.id)
+            pets = try await DataService.shared.getPets()
         } catch {
             print("Error loading pets: \(error)")
         }
@@ -189,36 +186,9 @@ struct HealthSearchView: View {
             return
         }
 
-        Task {
-            isSearching = true
-            errorMessage = nil
-
-            do {
-                // Parse the query to detect intent
-                let parsedQuery = SearchQueryParser.parse(searchQuery)
-
-                // Perform the search
-                let results = try await SupabaseService.shared.searchHealthEvents(
-                    query: parsedQuery.cleanedQuery.isEmpty ? parsedQuery.originalQuery : parsedQuery.cleanedQuery,
-                    petId: selectedPet?.id,
-                    intent: parsedQuery.intent,
-                    matchThreshold: 0.65, // Slightly lower threshold for better recall
-                    matchCount: 20
-                )
-
-                // Take only the first result if intent is .first or .last
-                if parsedQuery.intent == .first || parsedQuery.intent == .last {
-                    searchResults = Array(results.prefix(1))
-                } else {
-                    searchResults = results
-                }
-            } catch {
-                errorMessage = error.localizedDescription
-                searchResults = []
-            }
-
-            isSearching = false
-        }
+        // TODO: Implement search using FastAPI backend
+        // Search functionality is planned for a future release
+        errorMessage = "Search is not yet available. This feature is coming soon!"
     }
 }
 

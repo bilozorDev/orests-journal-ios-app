@@ -148,31 +148,19 @@ struct AddFoodView: View {
             errorMessage = nil
 
             do {
-                // Get current user's family
-                guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                    throw NSError(domain: "AddFoodView", code: 500, userInfo: [NSLocalizedDescriptionKey: "No family found. Please contact support."])
-                }
-
-                // Upload photo if selected
-                var imageUrl: String?
-                if let image = selectedImage {
-                    imageUrl = try await SupabaseService.shared.uploadFoodImage(image)
-                }
-
-                // Create food
+                // Create food (photo upload not implemented yet)
                 guard let caloriesKg = Double(caloriesPerKg),
                       let size = Double(containerSize) else {
                     throw NSError(domain: "AddFoodView", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid number format"])
                 }
 
-                let _ = try await SupabaseService.shared.createFood(
-                    familyId: family.id,
+                let _ = try await DataService.shared.createFood(
                     name: foodName,
                     category: selectedCategory,
                     caloriesPerKg: caloriesKg,
                     containerSize: size,
                     containerSizeUnit: selectedUnit,
-                    imageUrl: imageUrl
+                    imageUrl: nil // TODO: Implement image upload to S3/R2
                 )
 
                 dismiss()

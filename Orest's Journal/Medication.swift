@@ -41,20 +41,7 @@ struct PetMedication: Codable, Identifiable, Hashable {
     let timesPerDay: Int
     let notes: String?
     let createdAt: Date
-    let createdBy: UUID?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case petId = "pet_id"
-        case name
-        case medicationType = "medication_type"
-        case startDate = "start_date"
-        case endDate = "end_date"
-        case timesPerDay = "times_per_day"
-        case notes
-        case createdAt = "created_at"
-        case createdBy = "created_by"
-    }
+    let createdBy: String?
 
     var isActive: Bool {
         let today = Calendar.current.startOfDay(for: Date())
@@ -75,16 +62,7 @@ struct PetMedicationDose: Codable, Identifiable {
     let id: UUID
     let medicationId: UUID
     let givenAt: Date
-    let givenBy: UUID
+    let givenBy: String
     let notes: String?
     let createdAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case medicationId = "medication_id"
-        case givenAt = "given_at"
-        case givenBy = "given_by"
-        case notes
-        case createdAt = "created_at"
-    }
 }

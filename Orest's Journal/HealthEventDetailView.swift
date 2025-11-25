@@ -157,9 +157,7 @@ struct HealthEventDetailView: View {
 
         // Load pet name
         do {
-            let pets = try await SupabaseService.shared.getFamilyPets(
-                familyId: (try await SupabaseService.shared.getCurrentUserFamily())?.id ?? UUID()
-            )
+            let pets = try await DataService.shared.getPets()
             petName = pets.first(where: { $0.id == petId })?.name ?? "Unknown Pet"
         } catch {
             petName = "Unknown Pet"
@@ -167,7 +165,7 @@ struct HealthEventDetailView: View {
         }
 
         // Load creator email
-        createdByEmail = await SupabaseService.shared.getUserEmail(for: eventWithCategory.event.createdBy)
+        createdByEmail = await DataService.shared.getUserEmail(for: eventWithCategory.event.createdBy)
 
         isLoading = false
     }
@@ -177,7 +175,7 @@ struct HealthEventDetailView: View {
         errorMessage = nil
 
         do {
-            try await SupabaseService.shared.deleteHealthEvent(eventWithCategory.event.id)
+            try await DataService.shared.deleteHealthEvent(id: eventWithCategory.event.id)
             dismiss()
         } catch {
             errorMessage = "Failed to delete event: \(error.localizedDescription)"
@@ -253,7 +251,7 @@ struct DetailRow: View {
                     occurredAt: Date(),
                     notes: "This is a test note about the health event",
                     createdAt: Date(),
-                    createdBy: UUID()
+                    createdBy: "user_123"
                 ),
                 category: HealthCategory(
                     id: UUID(),
@@ -261,7 +259,7 @@ struct DetailRow: View {
                     name: "Asthma Attack",
                     nameNormalized: "asthma attack",
                     createdAt: Date(),
-                    createdBy: UUID()
+                    createdBy: "user_123"
                 )
             ),
             petId: UUID()

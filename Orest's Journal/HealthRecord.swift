@@ -14,13 +14,4 @@ struct HealthRecord: Codable, Identifiable {
     let ageYears: Double?
     let weightPounds: Double?
     let notes: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case petId = "pet_id"
-        case recordedAt = "recorded_at"
-        case ageYears = "age_years"
-        case weightPounds = "weight_pounds"
-        case notes
-    }
 }

@@ -7,9 +7,9 @@
 
 import SwiftUI
 import PhotosUI
-import Supabase
 
 struct AddPetView: View {
+    @ObservedObject private var clerkManager = ClerkManager.shared
     @State private var petName = ""
     @State private var petKind = "Dog"
     @State private var currentWeight = ""
@@ -34,7 +34,7 @@ struct AddPetView: View {
                         }
                     }
 
-                    Section(header: Text("Photo")) {
+                    Section(header: Text("Photo (Optional)")) {
                         PhotosPicker(
                             selection: $selectedPhoto,
                             matching: .images
@@ -94,9 +94,8 @@ struct AddPetView: View {
                 .task {
                     // Check if family already has pets
                     do {
-                        let status = try await SupabaseService.shared.checkUserFamilyAndPet()
-                        if status.hasPet {
-                            // Family already has pets, trigger refresh to navigate to dashboard
+                        let pets = try await DataService.shared.getPets()
+                        if !pets.isEmpty {
                             NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
                         }
                     } catch {
@@ -136,27 +135,15 @@ struct AddPetView: View {
             errorMessage = nil
 
             do {
-                // Get current user's family
-                guard let family = try await SupabaseService.shared.getCurrentUserFamily() else {
-                    throw NSError(domain: "AddPetView", code: 500, userInfo: [NSLocalizedDescriptionKey: "No family found. Please contact support."])
-                }
-
-                // Upload photo if selected
-                var photoUrl: String?
-                if let image = selectedImage {
-                    photoUrl = try await SupabaseService.shared.uploadPetPhoto(image)
-                }
-
-                // Create pet
+                // Create pet (photo upload not implemented yet - would need separate image hosting)
                 guard let weight = Double(currentWeight) else {
                     throw NSError(domain: "AddPetView", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid weight format"])
                 }
 
-                let _ = try await SupabaseService.shared.createPet(
-                    familyId: family.id,
+                let _ = try await DataService.shared.createPet(
                     name: petName,
                     kind: petKind,
-                    photoUrl: photoUrl,
+                    photoUrl: nil, // TODO: Implement image upload to S3/R2
                     currentWeight: weight
                 )
 
@@ -171,7 +158,7 @@ struct AddPetView: View {
 
     private func signOut() {
         Task {
-            try? await supabase.auth.signOut()
+            await clerkManager.signOut()
         }
     }
 }
