@@ -347,8 +347,6 @@ struct DashboardView: View {
                 } else if let pet = selectedPet {
                     calorieGaugeSection(pet: pet)
                     recordFeedingButton
-                    feedingHistoryLink(pet: pet)
-
                     medicationSection(pet: pet)
                 }
 
@@ -503,18 +501,6 @@ struct DashboardView: View {
         .padding(.horizontal)
     }
 
-    private func feedingHistoryLink(pet: Pet) -> some View {
-        NavigationLink(destination: FeedingHistoryView(petId: pet.id)) {
-            Label("View Feeding History", systemImage: "list.bullet")
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .foregroundColor(.primary)
-                .cornerRadius(12)
-        }
-        .padding(.horizontal)
-    }
-
     private func medicationSection(pet: Pet) -> some View {
         VStack(spacing: 12) {
             HStack {
@@ -539,9 +525,9 @@ struct DashboardView: View {
                 .cornerRadius(12)
                 .padding(.horizontal)
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: 12) {
                     ForEach(activeMedications.prefix(3)) { medication in
-                        HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(medication.name)
@@ -555,6 +541,8 @@ struct DashboardView: View {
                                         .background(Color.blue.opacity(0.2))
                                         .foregroundColor(.blue)
                                         .cornerRadius(4)
+
+                                    Spacer()
                                 }
 
                                 let remaining = dosesRemaining[medication.id] ?? medication.timesPerDay
@@ -563,14 +551,14 @@ struct DashboardView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 } else {
-                                    Text("Completed for today ✓")
+                                    Text("Completed for today")
                                         .font(.caption)
                                         .foregroundColor(.green)
                                 }
 
                                 if let lastDose = lastDoses[medication.id] {
                                     HStack(spacing: 4) {
-                                        Text(relativeTimeString(from: lastDose.givenAt))
+                                        Text(absoluteTimeString(from: lastDose.givenAt))
                                             .font(.caption)
                                             .foregroundColor(.green)
                                         Text("by \(lastDose.givenBy)")
@@ -583,8 +571,8 @@ struct DashboardView: View {
                                         .foregroundColor(.orange)
                                 }
                             }
-
-                            Spacer()
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
 
                             let remaining = dosesRemaining[medication.id] ?? medication.timesPerDay
                             if remaining > 0 {
@@ -593,31 +581,21 @@ struct DashboardView: View {
                                         await recordDose(for: medication)
                                     }
                                 }) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.caption)
-                                        Text("Record")
-                                            .font(.caption)
-                                            .fontWeight(.medium)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(Color.green)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(8)
+                                    Label("Record \(medication.name)", systemImage: "pills.fill")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.green)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
                                 }
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 12)
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 12)
-
-                        if medication.id != activeMedications.prefix(3).last?.id {
-                            Divider()
-                        }
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
                     }
                 }
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
                 .padding(.horizontal)
             }
         }
@@ -782,6 +760,24 @@ struct DashboardView: View {
         }
     }
 
+    private func absoluteTimeString(from date: Date) -> String {
+        let calendar = Calendar.current
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+
+        let timeString = timeFormatter.string(from: date)
+
+        if calendar.isDateInToday(date) {
+            return "\(timeString) Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "\(timeString) Yesterday"
+        } else {
+            let dayFormatter = DateFormatter()
+            dayFormatter.dateFormat = "EEE"
+            return "\(timeString) \(dayFormatter.string(from: date))"
+        }
+    }
+
     private func formatAmount(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
@@ -792,6 +788,8 @@ struct DashboardView: View {
 
 struct FoodView: View {
     @State private var foods: [PetFood] = []
+    @State private var pets: [Pet] = []
+    @State private var selectedPet: Pet?
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var showAddFood = false
@@ -859,6 +857,13 @@ struct FoodView: View {
             .navigationTitle("Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let pet = selectedPet {
+                        NavigationLink(destination: FeedingHistoryView(petId: pet.id)) {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: {
                         selectedCategory = nil
@@ -907,6 +912,7 @@ struct FoodView: View {
             .task {
                 guard !hasLoaded else { return }
                 await loadFoods()
+                await loadPets()
             }
             .refreshable {
                 await loadFoods()
@@ -927,6 +933,17 @@ struct FoodView: View {
         }
         isLoading = false
         hasLoaded = true
+    }
+
+    private func loadPets() async {
+        do {
+            pets = try await DataService.shared.getPets()
+            if selectedPet == nil {
+                selectedPet = pets.first
+            }
+        } catch {
+            print("Error loading pets: \(error)")
+        }
     }
 
     private func deleteFood(_ food: PetFood) async {
