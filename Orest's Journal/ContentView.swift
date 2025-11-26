@@ -556,7 +556,8 @@ struct DashboardView: View {
                                         .foregroundColor(.green)
                                 }
 
-                                if let lastDose = lastDoses[medication.id] {
+                                if let lastDose = lastDoses[medication.id],
+                                   Calendar.current.isDateInToday(lastDose.givenAt) {
                                     HStack(spacing: 4) {
                                         Text(absoluteTimeString(from: lastDose.givenAt))
                                             .font(.caption)
@@ -565,8 +566,8 @@ struct DashboardView: View {
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
-                                } else {
-                                    Text("No doses recorded")
+                                } else if dosesRemaining[medication.id] ?? medication.timesPerDay > 0 {
+                                    Text("No doses recorded today")
                                         .font(.caption)
                                         .foregroundColor(.orange)
                                 }
@@ -842,13 +843,14 @@ struct FoodView: View {
     @State private var showDeleteConfirmation = false
     @State private var showDeleteResultAlert = false
     @State private var deleteResultMessage = ""
+    @State private var feedingHistoryPetId: UUID?
 
     var foodsByCategory: [FoodCategory: [PetFood]] {
         Dictionary(grouping: foods, by: { $0.category })
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if foods.isEmpty && hasLoaded {
                     // Empty state - show plus button
@@ -900,10 +902,17 @@ struct FoodView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if let pet = selectedPet {
-                        NavigationLink(destination: FeedingHistoryView(petId: pet.id)) {
-                            Image(systemName: "clock.arrow.circlepath")
+                    Button(action: {
+                        Task {
+                            if pets.isEmpty {
+                                await loadPets()
+                            }
+                            if let pet = selectedPet ?? pets.first {
+                                feedingHistoryPetId = pet.id
+                            }
                         }
+                    }) {
+                        Image(systemName: "clock.arrow.circlepath")
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -914,6 +923,9 @@ struct FoodView: View {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .navigationDestination(item: $feedingHistoryPetId) { petId in
+                FeedingHistoryView(petId: petId)
             }
             .sheet(isPresented: $showAddFood) {
                 AddFoodView(defaultCategory: selectedCategory)

@@ -23,6 +23,7 @@ final class DataService {
     }
 
     private var dashboardCache: [UUID: CacheEntry<DashboardData>] = [:]
+    private var feedingHistoryCache: [UUID: CacheEntry<FeedingListResponse>] = [:]
     private let cacheTTL: TimeInterval = 60  // 1 minute
 
     private init() {}
@@ -48,6 +49,35 @@ final class DataService {
         } else {
             dashboardCache.removeAll()
         }
+    }
+
+    /// Returns cached feeding history if still valid, nil otherwise
+    private func getCachedFeedingHistory(for petId: UUID) -> FeedingListResponse? {
+        guard let entry = feedingHistoryCache[petId],
+              Date().timeIntervalSince(entry.timestamp) < cacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    /// Stores feeding history in cache with current timestamp
+    private func cacheFeedingHistory(_ data: FeedingListResponse, for petId: UUID) {
+        feedingHistoryCache[petId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    /// Invalidates feeding history cache for a specific pet
+    func invalidateFeedingHistoryCache(for petId: UUID) {
+        feedingHistoryCache.removeValue(forKey: petId)
+    }
+
+    /// Returns true if there's valid cached feeding history for a pet
+    func hasCachedFeedingHistory(for petId: UUID) -> Bool {
+        return getCachedFeedingHistory(for: petId) != nil
+    }
+
+    /// Returns cached feeding history data if available (synchronous)
+    func getCachedFeedingHistoryData(for petId: UUID) -> FeedingListResponse? {
+        return getCachedFeedingHistory(for: petId)
     }
 
     // MARK: - Pet Functions
@@ -155,6 +185,7 @@ final class DataService {
         )
         let result = try await api.createFeeding(feeding)
         invalidateDashboardCache(for: petId)
+        invalidateFeedingHistoryCache(for: petId)
         return result
     }
 
@@ -174,8 +205,20 @@ final class DataService {
         return (feedings: response.feedings, totalCalories: response.totalCalories)
     }
 
-    func getFeedingHistory(for petId: UUID, limit: Int = 50) async throws -> [PetFeeding] {
-        return try await api.getFeedingHistory(petId: petId, limit: limit)
+    func getFeedingHistory(for petId: UUID, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> FeedingListResponse {
+        // Only cache first page (offset=0)
+        if offset == 0, !forceRefresh, let cached = getCachedFeedingHistory(for: petId) {
+            return cached
+        }
+
+        let response = try await api.getFeedingHistory(petId: petId, limit: limit, offset: offset)
+
+        // Only cache first page
+        if offset == 0 {
+            cacheFeedingHistory(response, for: petId)
+        }
+
+        return response
     }
 
     func updateFeeding(
@@ -197,6 +240,7 @@ final class DataService {
         let result = try await api.updateFeeding(id: id, update: update)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateFeedingHistoryCache(for: petId)
         }
         return result
     }
@@ -205,6 +249,7 @@ final class DataService {
         try await api.deleteFeeding(id: id)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateFeedingHistoryCache(for: petId)
         }
     }
 

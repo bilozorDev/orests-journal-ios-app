@@ -12,11 +12,19 @@ struct FeedingHistoryView: View {
 
     @State private var feedings: [PetFeeding] = []
     @State private var foods: [UUID: PetFood] = [:]
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var isLoadingMore = false
+    @State private var totalCount: Int = 0
     @State private var errorMessage: String?
     @State private var feedingToEdit: PetFeeding?
     @State private var feedingToDelete: PetFeeding?
     @State private var showDeleteConfirmation = false
+
+    private let pageSize = 50
+
+    var hasMore: Bool {
+        feedings.count < totalCount
+    }
 
     var feedingsByDate: [Date: [PetFeeding]] {
         let calendar = Calendar.current
@@ -73,16 +81,44 @@ struct FeedingHistoryView: View {
                             }
                         }
                     }
+
+                    // Load More button
+                    if hasMore {
+                        Section {
+                            Button(action: {
+                                Task { await loadMore() }
+                            }) {
+                                HStack {
+                                    Spacer()
+                                    if isLoadingMore {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                    } else {
+                                        Text("Load More")
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .disabled(isLoadingMore)
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Feeding History")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Populate from cache synchronously for instant display
+            if let cached = DataService.shared.getCachedFeedingHistoryData(for: petId) {
+                feedings = cached.feedings
+                totalCount = cached.total
+            }
+        }
         .task {
             await loadData()
         }
         .refreshable {
-            await loadData()
+            await loadData(forceRefresh: true)
         }
         .sheet(item: $feedingToEdit) { feeding in
             EditFeedingView(feeding: feeding, food: foods[feeding.foodId]) { updatedFeeding in
@@ -117,10 +153,16 @@ struct FeedingHistoryView: View {
         return formatter.string(from: date)
     }
 
-    private func loadData() async {
-        isLoading = true
+    private func loadData(forceRefresh: Bool = false) async {
+        // Only show loading indicator if no cached data
+        let hasCachedData = DataService.shared.hasCachedFeedingHistory(for: petId)
+        if !hasCachedData {
+            isLoading = true
+        }
         do {
-            feedings = try await DataService.shared.getFeedingHistory(for: petId)
+            let response = try await DataService.shared.getFeedingHistory(for: petId, limit: pageSize, forceRefresh: forceRefresh)
+            feedings = response.feedings
+            totalCount = response.total
 
             // Load all foods (including archived for historical display)
             let allFoods = try await DataService.shared.getFoods(includeArchived: true)
@@ -130,6 +172,22 @@ struct FeedingHistoryView: View {
             print("Error loading feeding history: \(error)")
         }
         isLoading = false
+    }
+
+    private func loadMore() async {
+        isLoadingMore = true
+        do {
+            let response = try await DataService.shared.getFeedingHistory(
+                for: petId,
+                limit: pageSize,
+                offset: feedings.count
+            )
+            feedings.append(contentsOf: response.feedings)
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error loading more feedings: \(error)")
+        }
+        isLoadingMore = false
     }
 
     private func deleteFeeding(_ feeding: PetFeeding) async {
