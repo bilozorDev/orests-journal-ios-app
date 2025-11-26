@@ -9,6 +9,7 @@ import SwiftUI
 
 struct RecordFeedingView: View {
     let petId: UUID
+    var onSave: ((PetFeeding) -> Void)? = nil
     @Environment(\.dismiss) var dismiss
 
     @State private var foods: [PetFood] = []
@@ -180,6 +181,29 @@ struct RecordFeedingView: View {
         }
 
         isSaving = true
+
+        // Get current user name for optimistic display
+        let userName = AuthManager.shared.currentUser?.firstName ?? "You"
+
+        // Create optimistic feeding entry
+        let optimisticFeeding = PetFeeding(
+            id: UUID(),
+            petId: petId,
+            foodId: food.id,
+            fedBy: userName,
+            fedAt: Date(),
+            amount: feedingAmount,
+            amountUnit: feedingUnit,
+            calories: calculatedCalories,
+            notes: notes.isEmpty ? nil : notes,
+            createdAt: Date()
+        )
+
+        // Call callback for optimistic update and dismiss immediately
+        onSave?(optimisticFeeding)
+        dismiss()
+
+        // Make API call in background
         do {
             _ = try await DataService.shared.createFeeding(
                 petId: petId,
@@ -189,10 +213,9 @@ struct RecordFeedingView: View {
                 calories: calculatedCalories,
                 notes: notes.isEmpty ? nil : notes
             )
-            dismiss()
         } catch {
-            errorMessage = error.localizedDescription
-            showError = true
+            // Log error - dashboard will sync on next refresh
+            print("Error saving feeding: \(error)")
         }
         isSaving = false
     }

@@ -609,7 +609,17 @@ struct DashboardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showRecordFeeding) {
                 if let pet = selectedPet {
-                    RecordFeedingView(petId: pet.id)
+                    RecordFeedingView(petId: pet.id) { feeding in
+                        // Optimistic update - add feeding immediately
+                        todayFeedings.insert(feeding, at: 0)
+                        todayCalories += feeding.calories
+
+                        // Show success toast
+                        toastMessage = "Feeding recorded"
+                        withAnimation {
+                            showToast = true
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showSetGoal) {
@@ -631,13 +641,10 @@ struct DashboardView: View {
                         }
                 }
             }
-            .onChange(of: showRecordFeeding) { _, isShowing in
-                if !isShowing {
-                    Task { @MainActor in
-                        await loadDashboardData(forceRefresh: true)
-                    }
-                }
-            }
+            // Note: No onChange for showRecordFeeding - the optimistic update in the
+            // RecordFeedingView callback already applies changes. Auto-refresh would
+            // race with the API call, potentially overwriting with stale data.
+            // Data syncs on next pull-to-refresh or cache expiration.
             .onChange(of: showSetGoal) { _, isShowing in
                 if !isShowing {
                     Task { @MainActor in
@@ -730,15 +737,50 @@ struct DashboardView: View {
     }
 
     private func recordDose(for medication: PetMedication) async {
+        // Optimistic update - update UI immediately
+        let previousDosesRemaining = dosesRemaining[medication.id]
+        let previousLastDose = lastDoses[medication.id]
+
+        // Get current user name for optimistic display
+        let userName = AuthManager.shared.currentUser?.firstName ?? "You"
+
+        // Create optimistic dose entry
+        let optimisticDose = PetMedicationDose(
+            id: UUID(),
+            medicationId: medication.id,
+            givenAt: Date(),
+            givenBy: userName,
+            notes: nil,
+            createdAt: Date()
+        )
+
+        // Update UI immediately
+        if let remaining = dosesRemaining[medication.id], remaining > 0 {
+            dosesRemaining[medication.id] = remaining - 1
+        }
+        lastDoses[medication.id] = optimisticDose
+
+        // Show success toast immediately
+        toastMessage = "\(medication.name) recorded"
+        withAnimation {
+            showToast = true
+        }
+
+        // Make API call in background
         do {
             _ = try await DataService.shared.recordDose(medicationId: medication.id, petId: selectedPet?.id)
-            // Refresh dashboard data to update dose info
+            // Silently refresh data in background to sync with server
             await loadDashboardData(forceRefresh: true)
-            toastMessage = "\(medication.name) recorded"
+        } catch {
+            // Revert optimistic update on failure
+            dosesRemaining[medication.id] = previousDosesRemaining
+            lastDoses[medication.id] = previousLastDose
+
+            // Show error toast
+            toastMessage = "Failed to record dose"
             withAnimation {
                 showToast = true
             }
-        } catch {
             print("Error recording dose: \(error)")
         }
     }
