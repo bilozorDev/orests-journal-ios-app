@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var isLoading = true
     @State private var hasPet = false
     @State private var isCheckingStatus = false
+    @State private var hasCheckedPetStatus = false  // Prevent duplicate checks
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -35,6 +36,9 @@ struct ContentView: View {
         }
         .task {
             await authManager.loadSession()
+            // After loading session, check pet status if authenticated
+            // onChange won't fire if isAuthenticated was set during loadSession
+            // because the view wasn't fully rendered yet
             if authManager.isAuthenticated {
                 await checkPetStatus()
             }
@@ -46,11 +50,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
-            if isAuthenticated {
-                Task {
-                    await checkPetStatus()
-                }
-            } else {
+            // Only handle sign-out here; sign-in is handled by .task
+            if !isAuthenticated {
                 hasPet = false
             }
         }
@@ -64,6 +65,12 @@ struct ContentView: View {
     }
 
     private func checkPetStatus() async {
+        // Prevent duplicate calls
+        guard !isCheckingStatus else {
+            print("⚠️ checkPetStatus already in progress, skipping")
+            return
+        }
+
         guard authManager.hasOrganization else {
             hasPet = false
             return
@@ -73,6 +80,7 @@ struct ContentView: View {
         do {
             let pets = try await DataService.shared.getPets()
             hasPet = !pets.isEmpty
+            hasCheckedPetStatus = true
             print("✅ Pet status loaded: hasPet=\(hasPet)")
         } catch {
             print("❌ Error checking pet status: \(error)")
@@ -284,6 +292,7 @@ struct DashboardView: View {
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var isRefreshing = false
+    @State private var isLoadingDashboard = false  // Prevent concurrent dashboard loads
     @State private var showRecordFeeding = false
     @State private var showSetGoal = false
     @State private var showToast = false
@@ -685,6 +694,16 @@ struct DashboardView: View {
     @MainActor
     private func loadDashboardData(forceRefresh: Bool = false) async {
         guard let pet = selectedPet else { return }
+
+        // Prevent concurrent loads
+        guard !isLoadingDashboard else {
+            print("⚠️ Dashboard load already in progress, skipping")
+            return
+        }
+
+        isLoadingDashboard = true
+        defer { isLoadingDashboard = false }
+
         do {
             let data = try await DataService.shared.getDashboardData(for: pet.id, forceRefresh: forceRefresh)
 
@@ -706,6 +725,9 @@ struct DashboardView: View {
             }
             lastDoses = doses
             dosesRemaining = remaining
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            // Ignore cancellation errors - these happen when tasks are cancelled during view updates
+            print("Dashboard load cancelled (this is normal during navigation)")
         } catch {
             print("Error loading dashboard data: \(error)")
             // Only reset state if we haven't loaded data yet (initial load failure)
