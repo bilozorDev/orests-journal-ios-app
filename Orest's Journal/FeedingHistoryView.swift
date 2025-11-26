@@ -14,6 +14,9 @@ struct FeedingHistoryView: View {
     @State private var foods: [UUID: PetFood] = [:]
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var feedingToEdit: PetFeeding?
+    @State private var feedingToDelete: PetFeeding?
+    @State private var showDeleteConfirmation = false
 
     var feedingsByDate: [Date: [PetFeeding]] {
         let calendar = Calendar.current
@@ -47,6 +50,25 @@ struct FeedingHistoryView: View {
                             if let dayFeedings = feedingsByDate[date] {
                                 ForEach(dayFeedings.sorted(by: { $0.fedAt > $1.fedAt })) { feeding in
                                     FeedingRowView(feeding: feeding, food: foods[feeding.foodId])
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            feedingToEdit = feeding
+                                        }
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button(role: .destructive) {
+                                                feedingToDelete = feeding
+                                                showDeleteConfirmation = true
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+
+                                            Button {
+                                                feedingToEdit = feeding
+                                            } label: {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+                                            .tint(.blue)
+                                        }
                                 }
                             }
                         }
@@ -62,6 +84,37 @@ struct FeedingHistoryView: View {
         .refreshable {
             await loadData()
         }
+        .sheet(item: $feedingToEdit) { feeding in
+            EditFeedingView(feeding: feeding, food: foods[feeding.foodId]) { updatedFeeding in
+                if let index = feedings.firstIndex(where: { $0.id == updatedFeeding.id }) {
+                    feedings[index] = updatedFeeding
+                }
+            }
+        }
+        .alert("Delete Feeding", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                feedingToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let feeding = feedingToDelete {
+                    Task {
+                        await deleteFeeding(feeding)
+                    }
+                }
+            }
+        } message: {
+            if let feeding = feedingToDelete, let food = foods[feeding.foodId] {
+                Text("Are you sure you want to delete the \(food.name) feeding from \(formatTime(feeding.fedAt))?")
+            } else {
+                Text("Are you sure you want to delete this feeding?")
+            }
+        }
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private func loadData() async {
@@ -69,14 +122,25 @@ struct FeedingHistoryView: View {
         do {
             feedings = try await DataService.shared.getFeedingHistory(for: petId)
 
-            // Load all foods
-            let allFoods = try await DataService.shared.getFoods()
+            // Load all foods (including archived for historical display)
+            let allFoods = try await DataService.shared.getFoods(includeArchived: true)
             foods = Dictionary(uniqueKeysWithValues: allFoods.map { ($0.id, $0) })
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading feeding history: \(error)")
         }
         isLoading = false
+    }
+
+    private func deleteFeeding(_ feeding: PetFeeding) async {
+        do {
+            try await DataService.shared.deleteFeeding(id: feeding.id, petId: petId)
+            feedingToDelete = nil
+            feedings.removeAll { $0.id == feeding.id }
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error deleting feeding: \(error)")
+        }
     }
 
     private func formatDate(_ date: Date) -> String {

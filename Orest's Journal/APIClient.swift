@@ -265,13 +265,15 @@ class APIClient {
 
     // MARK: - Foods
 
-    func getFoods() async throws -> [PetFood] {
+    func getFoods(includeArchived: Bool = false) async throws -> [PetFood] {
         guard let orgId = currentOrgId else {
             throw APIError.unauthorized
         }
-        let response: FoodListResponse = try await get("/foods", queryItems: [
-            URLQueryItem(name: "org_id", value: orgId)
-        ])
+        var queryItems = [URLQueryItem(name: "org_id", value: orgId)]
+        if includeArchived {
+            queryItems.append(URLQueryItem(name: "include_archived", value: "true"))
+        }
+        let response: FoodListResponse = try await get("/foods", queryItems: queryItems)
         return response.foods
     }
 
@@ -284,8 +286,14 @@ class APIClient {
         ])
     }
 
-    func deleteFood(id: UUID) async throws {
-        try await delete("/foods/\(id.uuidString)")
+    func updateFood(id: UUID, update: FoodUpdate) async throws -> PetFood {
+        return try await patch("/foods/\(id.uuidString)", body: update)
+    }
+
+    func deleteFood(id: UUID) async throws -> FoodDeleteResponse {
+        let request = try buildRequest(path: "/foods/\(id.uuidString)", method: "DELETE")
+        let (data, response) = try await session.data(for: request)
+        return try handleResponse(data, response)
     }
 
     // MARK: - Feedings
@@ -303,6 +311,14 @@ class APIClient {
             URLQueryItem(name: "limit", value: String(limit))
         ])
         return response.feedings
+    }
+
+    func updateFeeding(id: UUID, update: FeedingUpdate) async throws -> PetFeeding {
+        return try await patch("/feedings/\(id.uuidString)", body: update)
+    }
+
+    func deleteFeeding(id: UUID) async throws {
+        try await delete("/feedings/\(id.uuidString)")
     }
 
     func getCalorieGoal(petId: UUID) async throws -> CalorieGoal? {
@@ -444,6 +460,15 @@ struct FoodCreate: Encodable {
     let imageUrl: String?
 }
 
+struct FoodUpdate: Encodable {
+    let name: String?
+    let category: String?
+    let caloriesPerKg: Double?
+    let containerSize: Double?
+    let containerSizeUnit: String?
+    let imageUrl: String?
+}
+
 struct FoodListResponse: Decodable {
     let foods: [PetFood]
 }
@@ -454,6 +479,14 @@ struct FeedingCreate: Encodable {
     let amount: Double
     let amountUnit: String
     let calories: Double
+    let notes: String?
+    let fedAt: Date?
+}
+
+struct FeedingUpdate: Encodable {
+    let amount: Double?
+    let amountUnit: String?
+    let calories: Double?
     let notes: String?
     let fedAt: Date?
 }

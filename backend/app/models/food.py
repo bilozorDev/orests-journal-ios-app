@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -33,6 +33,7 @@ class PetFood(Base):
     container_size = Column(Float, nullable=False)
     container_size_unit = Column(String(10), nullable=False, server_default='g')
     image_url = Column(String(500), nullable=True)
+    is_archived = Column(Boolean, nullable=False, server_default='false', default=False)
     created_by = Column(String(255), nullable=False)  # User ID
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

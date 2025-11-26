@@ -87,8 +87,8 @@ final class DataService {
 
     // MARK: - Food Functions
 
-    func getFoods() async throws -> [PetFood] {
-        return try await api.getFoods()
+    func getFoods(includeArchived: Bool = false) async throws -> [PetFood] {
+        return try await api.getFoods(includeArchived: includeArchived)
     }
 
     func createFood(
@@ -110,8 +110,28 @@ final class DataService {
         return try await api.createFood(food)
     }
 
-    func deleteFood(id: UUID) async throws {
-        try await api.deleteFood(id: id)
+    func updateFood(
+        id: UUID,
+        name: String? = nil,
+        category: FoodCategory? = nil,
+        caloriesPerKg: Double? = nil,
+        containerSize: Double? = nil,
+        containerSizeUnit: ContainerUnit? = nil,
+        imageUrl: String? = nil
+    ) async throws -> PetFood {
+        let update = FoodUpdate(
+            name: name,
+            category: category?.rawValue,
+            caloriesPerKg: caloriesPerKg,
+            containerSize: containerSize,
+            containerSizeUnit: containerSizeUnit?.rawValue,
+            imageUrl: imageUrl
+        )
+        return try await api.updateFood(id: id, update: update)
+    }
+
+    func deleteFood(id: UUID) async throws -> FoodDeleteResponse {
+        return try await api.deleteFood(id: id)
     }
 
     // MARK: - Feeding Functions
@@ -158,6 +178,36 @@ final class DataService {
         return try await api.getFeedingHistory(petId: petId, limit: limit)
     }
 
+    func updateFeeding(
+        id: UUID,
+        amount: Double? = nil,
+        amountUnit: ContainerUnit? = nil,
+        calories: Double? = nil,
+        notes: String? = nil,
+        fedAt: Date? = nil,
+        petId: UUID? = nil
+    ) async throws -> PetFeeding {
+        let update = FeedingUpdate(
+            amount: amount,
+            amountUnit: amountUnit?.rawValue,
+            calories: calories,
+            notes: notes,
+            fedAt: fedAt
+        )
+        let result = try await api.updateFeeding(id: id, update: update)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
+        return result
+    }
+
+    func deleteFeeding(id: UUID, petId: UUID? = nil) async throws {
+        try await api.deleteFeeding(id: id)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
+    }
+
     // MARK: - Calorie Goal Functions
 
     func getActiveCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
@@ -198,11 +248,16 @@ final class DataService {
             timesPerDay: timesPerDay,
             notes: notes
         )
-        return try await api.createMedication(medication)
+        let result = try await api.createMedication(medication)
+        invalidateDashboardCache(for: petId)
+        return result
     }
 
-    func deleteMedication(id: UUID) async throws {
+    func deleteMedication(id: UUID, petId: UUID? = nil) async throws {
         try await api.deleteMedication(id: id)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
     }
 
     // MARK: - Dose Functions

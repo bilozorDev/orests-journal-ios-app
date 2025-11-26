@@ -1,13 +1,13 @@
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
-from app.models.food import PetFood
-from app.schemas.food import FoodCreate, FoodUpdate, FoodResponse, FoodListResponse
+from app.models.food import PetFood, PetFeeding
+from app.schemas.food import FoodCreate, FoodUpdate, FoodResponse, FoodListResponse, FoodDeleteResponse
 
 router = APIRouter()
 
@@ -15,11 +15,15 @@ router = APIRouter()
 @router.get("", response_model=FoodListResponse)
 async def list_foods(
     org_id: str,
+    include_archived: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
     """List all foods for the organization (family)."""
-    query = select(PetFood).where(PetFood.org_id == org_id).order_by(PetFood.created_at.desc())
+    query = select(PetFood).where(PetFood.org_id == org_id)
+    if not include_archived:
+        query = query.where(PetFood.is_archived == False)
+    query = query.order_by(PetFood.created_at.desc())
     result = await db.execute(query)
     foods = result.scalars().all()
 
@@ -102,13 +106,13 @@ async def update_food(
     return FoodResponse.model_validate(food)
 
 
-@router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{food_id}", response_model=FoodDeleteResponse)
 async def delete_food(
     food_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Delete a food item."""
+    """Delete or archive a food item based on feeding history."""
     query = select(PetFood).where(PetFood.id == food_id)
     result = await db.execute(query)
     food = result.scalar_one_or_none()
@@ -119,5 +123,26 @@ async def delete_food(
             detail="Food not found",
         )
 
-    await db.delete(food)
-    await db.commit()
+    # Check if food has any feedings
+    feeding_count_query = select(func.count()).select_from(PetFeeding).where(PetFeeding.food_id == food_id)
+    feeding_count_result = await db.execute(feeding_count_query)
+    feeding_count = feeding_count_result.scalar()
+
+    if feeding_count > 0:
+        # Archive instead of delete to preserve feeding history
+        food.is_archived = True
+        await db.commit()
+        return FoodDeleteResponse(
+            deleted=False,
+            archived=True,
+            message=f"Food has {feeding_count} feeding record(s). It has been archived instead of deleted to preserve history."
+        )
+    else:
+        # Hard delete since no feeding records exist
+        await db.delete(food)
+        await db.commit()
+        return FoodDeleteResponse(
+            deleted=True,
+            archived=False,
+            message="Food deleted successfully."
+        )

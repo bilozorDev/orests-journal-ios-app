@@ -64,6 +64,7 @@ struct PetFood: Codable, Identifiable, Hashable {
     let containerSize: Double
     let containerSizeUnit: ContainerUnit
     let imageUrl: String?
+    let isArchived: Bool?
     let createdAt: Date
     let createdBy: String?
 
@@ -80,6 +81,12 @@ struct PetFood: Codable, Identifiable, Hashable {
         let amountInGrams = unit.toGrams(amount)
         return caloriesPerGram * amountInGrams
     }
+}
+
+struct FoodDeleteResponse: Codable {
+    let deleted: Bool
+    let archived: Bool
+    let message: String
 }
 
 struct PetFeeding: Codable, Identifiable {

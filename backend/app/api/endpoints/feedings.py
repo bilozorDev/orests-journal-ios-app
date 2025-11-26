@@ -10,7 +10,7 @@ from app.core.security import get_current_user_id
 from app.models.pet import Pet
 from app.models.food import PetFeeding, PetCalorieGoal
 from app.schemas.food import (
-    FeedingCreate, FeedingResponse, FeedingListResponse,
+    FeedingCreate, FeedingUpdate, FeedingResponse, FeedingListResponse,
     CalorieGoalCreate, CalorieGoalResponse,
 )
 
@@ -129,6 +129,37 @@ async def delete_feeding(
 
     await db.delete(feeding)
     await db.commit()
+
+
+@router.patch("/{feeding_id}", response_model=FeedingResponse)
+async def update_feeding(
+    feeding_id: UUID,
+    feeding_in: FeedingUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update a feeding record."""
+    query = select(PetFeeding).where(PetFeeding.id == feeding_id)
+    result = await db.execute(query)
+    feeding = result.scalar_one_or_none()
+
+    if not feeding:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Feeding not found",
+        )
+
+    update_data = feeding_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        # Convert enum values to their string values
+        if field == 'amount_unit' and value is not None:
+            value = value.value if hasattr(value, 'value') else value
+        setattr(feeding, field, value)
+
+    await db.commit()
+    await db.refresh(feeding)
+
+    return FeedingResponse.model_validate(feeding)
 
 
 # Calorie Goals

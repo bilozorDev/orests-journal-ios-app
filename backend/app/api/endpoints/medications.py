@@ -78,12 +78,16 @@ async def create_medication(
             detail="Pet not found",
         )
 
+    # Strip timezone info from dates (database uses naive UTC)
+    start_date = med_in.start_date.replace(tzinfo=None) if med_in.start_date.tzinfo else med_in.start_date
+    end_date = med_in.end_date.replace(tzinfo=None) if med_in.end_date and med_in.end_date.tzinfo else med_in.end_date
+
     medication = PetMedication(
         pet_id=med_in.pet_id,
         name=med_in.name,
         medication_type=med_in.medication_type,
-        start_date=med_in.start_date,
-        end_date=med_in.end_date,
+        start_date=start_date,
+        end_date=end_date,
         times_per_day=med_in.times_per_day,
         notes=med_in.notes,
         created_by=user_id,

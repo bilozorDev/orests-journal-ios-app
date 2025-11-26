@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -25,7 +25,7 @@ class PetMedication(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
-    medication_type = Column(SQLEnum(MedicationType), nullable=False)
+    medication_type = Column(String(50), nullable=False)
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
     times_per_day = Column(Integer, default=1, nullable=False)

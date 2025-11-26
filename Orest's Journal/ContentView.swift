@@ -659,7 +659,6 @@ struct DashboardView: View {
             }
             .refreshable {
                 isRefreshing = true
-                await loadPets()
                 await loadDashboardData(forceRefresh: true)
                 isRefreshing = false
             }
@@ -761,6 +760,11 @@ struct FoodView: View {
     @State private var showAddFood = false
     @State private var selectedCategory: FoodCategory?
     @State private var errorMessage: String?
+    @State private var foodToEdit: PetFood?
+    @State private var foodToDelete: PetFood?
+    @State private var showDeleteConfirmation = false
+    @State private var showDeleteResultAlert = false
+    @State private var deleteResultMessage = ""
 
     var foodsByCategory: [FoodCategory: [PetFood]] {
         Dictionary(grouping: foods, by: { $0.category })
@@ -789,21 +793,14 @@ struct FoodView: View {
                                         FoodRowView(food: food)
                                             .contextMenu {
                                                 Button(action: {
-                                                    // TODO: Edit food
+                                                    foodToEdit = food
                                                 }) {
                                                     Label("Edit", systemImage: "pencil")
                                                 }
 
-                                                Button(action: {
-                                                    // TODO: Archive food
-                                                }) {
-                                                    Label("Archive", systemImage: "archivebox")
-                                                }
-
                                                 Button(role: .destructive, action: {
-                                                    Task {
-                                                        await deleteFood(food)
-                                                    }
+                                                    foodToDelete = food
+                                                    showDeleteConfirmation = true
                                                 }) {
                                                     Label("Delete", systemImage: "trash")
                                                 }
@@ -837,12 +834,38 @@ struct FoodView: View {
             .sheet(isPresented: $showAddFood) {
                 AddFoodView(defaultCategory: selectedCategory)
             }
+            .sheet(item: $foodToEdit) { food in
+                EditFoodView(food: food) { updatedFood in
+                    if let index = foods.firstIndex(where: { $0.id == updatedFood.id }) {
+                        foods[index] = updatedFood
+                    }
+                }
+            }
             .onChange(of: showAddFood) { _, isShowing in
                 if !isShowing {
                     Task {
                         await loadFoods()
                     }
                 }
+            }
+            .alert("Delete Food", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    foodToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let food = foodToDelete {
+                        Task {
+                            await deleteFood(food)
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete \"\(foodToDelete?.name ?? "")\"? This action cannot be undone.")
+            }
+            .alert("Food Archived", isPresented: $showDeleteResultAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteResultMessage)
             }
             .task {
                 guard !hasLoaded else { return }
@@ -871,8 +894,14 @@ struct FoodView: View {
 
     private func deleteFood(_ food: PetFood) async {
         do {
-            try await DataService.shared.deleteFood(id: food.id)
+            let response = try await DataService.shared.deleteFood(id: food.id)
+            foodToDelete = nil
             await loadFoods()
+
+            if response.archived && !response.deleted {
+                deleteResultMessage = response.message
+                showDeleteResultAlert = true
+            }
         } catch {
             errorMessage = error.localizedDescription
             print("Error deleting food: \(error)")

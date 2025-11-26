@@ -36,11 +36,18 @@ class FoodResponse(BaseModel):
     container_size: float
     container_size_unit: ContainerUnit
     image_url: Optional[str] = None
+    is_archived: bool = False
     created_at: datetime
 
 
 class FoodListResponse(BaseModel):
     foods: list[FoodResponse]
+
+
+class FoodDeleteResponse(BaseModel):
+    deleted: bool
+    archived: bool
+    message: str
 
 
 # Feeding Schemas
@@ -52,6 +59,14 @@ class FeedingCreate(BaseModel):
     calories: float
     notes: Optional[str] = None
     fed_at: Optional[datetime] = None  # Defaults to now
+
+
+class FeedingUpdate(BaseModel):
+    amount: Optional[float] = None
+    amount_unit: Optional[ContainerUnit] = None
+    calories: Optional[float] = None
+    notes: Optional[str] = None
+    fed_at: Optional[datetime] = None
 
 
 class FeedingResponse(BaseModel):
