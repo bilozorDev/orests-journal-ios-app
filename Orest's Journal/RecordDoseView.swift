@@ -113,6 +113,7 @@ struct RecordDoseView: View {
         do {
             _ = try await DataService.shared.recordDose(
                 medicationId: medication.id,
+                petId: medication.petId,
                 notes: notes.isEmpty ? nil : notes
             )
             dismiss()
