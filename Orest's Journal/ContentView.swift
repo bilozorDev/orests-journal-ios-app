@@ -680,11 +680,14 @@ struct DashboardView: View {
 
             // Load dashboard data using combined endpoint
             await loadDashboardData()
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            // Ignore cancellation - will retry on next appear
+            print("Pet load cancelled (this is normal during navigation)")
         } catch {
             print("Error loading pets: \(error)")
         }
         isLoading = false
-        hasLoaded = true
     }
 
     @MainActor
@@ -981,12 +984,14 @@ struct FoodView: View {
         isLoading = true
         do {
             foods = try await DataService.shared.getFoods()
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Food load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading foods: \(error)")
         }
         isLoading = false
-        hasLoaded = true
     }
 
     private func loadPets() async {
@@ -1189,12 +1194,14 @@ struct MedicationView: View {
 
             let allPets = try await DataService.shared.getPets()
             pets = Dictionary(uniqueKeysWithValues: allPets.map { ($0.id, $0) })
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Medication load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading medications: \(error)")
         }
         isLoading = false
-        hasLoaded = true
     }
 }
 
@@ -1422,17 +1429,21 @@ struct HealthView: View {
                 selectedPet = pets.first
             }
             await loadEvents()
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Health pets load cancelled (this is normal during navigation)")
         } catch {
             print("Error loading pets: \(error)")
         }
         isLoading = false
-        hasLoaded = true
     }
 
     private func loadEvents() async {
         guard let pet = selectedPet else { return }
         do {
             events = try await DataService.shared.getHealthEvents(for: pet.id)
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Health events load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading health events: \(error)")
@@ -1752,13 +1763,15 @@ struct SettingsView: View {
 
         do {
             pets = try await DataService.shared.getPets()
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Settings load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading settings data: \(error)")
         }
 
         isLoading = false
-        hasLoaded = true
     }
 
     private func signOut() {

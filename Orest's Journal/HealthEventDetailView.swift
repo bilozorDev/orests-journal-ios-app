@@ -162,16 +162,18 @@ struct HealthEventDetailView: View {
         do {
             let pets = try await DataService.shared.getPets()
             petName = pets.first(where: { $0.id == petId })?.name ?? "Unknown Pet"
+
+            // Load creator email
+            createdByEmail = await DataService.shared.getUserEmail(for: eventWithCategory.event.createdBy)
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Health event detail load cancelled (this is normal during navigation)")
         } catch {
             petName = "Unknown Pet"
             print("Error loading pet: \(error)")
         }
 
-        // Load creator email
-        createdByEmail = await DataService.shared.getUserEmail(for: eventWithCategory.event.createdBy)
-
         isLoading = false
-        hasLoaded = true
     }
 
     private func deleteEvent() async {

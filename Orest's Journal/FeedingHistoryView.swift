@@ -167,6 +167,8 @@ struct FeedingHistoryView: View {
             // Load all foods (including archived for historical display)
             let allFoods = try await DataService.shared.getFoods(includeArchived: true)
             foods = Dictionary(uniqueKeysWithValues: allFoods.map { ($0.id, $0) })
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Feeding history load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading feeding history: \(error)")

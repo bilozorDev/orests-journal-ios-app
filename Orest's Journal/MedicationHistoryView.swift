@@ -72,12 +72,14 @@ struct MedicationHistoryView: View {
         isLoading = true
         do {
             doses = try await DataService.shared.getDoses(for: medicationId)
+            hasLoaded = true
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            print("Medication history load cancelled (this is normal during navigation)")
         } catch {
             errorMessage = error.localizedDescription
             print("Error loading medication doses: \(error)")
         }
         isLoading = false
-        hasLoaded = true
     }
 
     private func formatDate(_ date: Date) -> String {
