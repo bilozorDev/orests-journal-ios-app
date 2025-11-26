@@ -1,4 +1,5 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -50,3 +51,34 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+
+async def set_rls_user(session: AsyncSession, user_id: str) -> None:
+    """
+    Set the current user ID for Row-Level Security (RLS) policies.
+
+    This must be called at the start of each request that requires RLS
+    protection. It sets a session-level variable that RLS policies use
+    to determine which rows the user can access.
+
+    Args:
+        session: The database session
+        user_id: The authenticated user's UUID as a string
+    """
+    await session.execute(
+        text("SET LOCAL app.current_user_id = :user_id"),
+        {"user_id": user_id}
+    )
+
+
+async def clear_rls_user(session: AsyncSession) -> None:
+    """
+    Clear the current user ID for Row-Level Security (RLS) policies.
+
+    This should be called at the end of each request or when the user
+    context is no longer valid.
+
+    Args:
+        session: The database session
+    """
+    await session.execute(text("RESET app.current_user_id"))

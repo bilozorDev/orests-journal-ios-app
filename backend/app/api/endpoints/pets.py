@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_family_access, verify_pet_access
 from app.models.pet import Pet, HealthRecord
 from app.schemas.pet import (
     PetCreate, PetUpdate, PetResponse, PetListResponse,
@@ -29,6 +30,9 @@ async def list_pets(
             detail="org_id query parameter is required",
         )
 
+    # Verify user belongs to this family
+    await verify_family_access(db, user_id, org_id)
+
     query = select(Pet).where(Pet.org_id == org_id).order_by(Pet.created_at.desc())
     result = await db.execute(query)
     pets = result.scalars().all()
@@ -44,6 +48,9 @@ async def create_pet(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new pet for the organization (family)."""
+    # Verify user belongs to this family
+    await verify_family_access(db, user_id, org_id)
+
     pet = Pet(
         org_id=org_id,
         name=pet_in.name,
@@ -77,15 +84,8 @@ async def get_pet(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific pet by ID."""
-    query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    pet = await verify_pet_access(db, user_id, pet_id)
 
     return PetResponse.model_validate(pet)
 
@@ -98,15 +98,8 @@ async def update_pet(
     user_id: str = Depends(get_current_user_id),
 ):
     """Update a pet."""
-    query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    pet = await verify_pet_access(db, user_id, pet_id)
 
     # Update fields
     update_data = pet_in.model_dump(exclude_unset=True)
@@ -126,15 +119,8 @@ async def delete_pet(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete a pet."""
-    query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    pet = await verify_pet_access(db, user_id, pet_id)
 
     await db.delete(pet)
     await db.commit()
@@ -149,16 +135,8 @@ async def create_health_record(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a health record for a pet."""
-    # Verify pet exists
-    pet_query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
 
     record = HealthRecord(
         pet_id=pet_id,
@@ -180,6 +158,9 @@ async def list_health_records(
     user_id: str = Depends(get_current_user_id),
 ):
     """List health records for a pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     query = (
         select(HealthRecord)
         .where(HealthRecord.pet_id == pet_id)

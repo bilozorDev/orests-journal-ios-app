@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_family_access, verify_food_access
 from app.models.food import PetFood, PetFeeding
 from app.schemas.food import FoodCreate, FoodUpdate, FoodResponse, FoodListResponse, FoodDeleteResponse
 
@@ -20,6 +21,9 @@ async def list_foods(
     user_id: str = Depends(get_current_user_id),
 ):
     """List all foods for the organization (family)."""
+    # Verify user belongs to this family
+    await verify_family_access(db, user_id, org_id)
+
     query = select(PetFood).where(PetFood.org_id == org_id)
     if not include_archived:
         query = query.where(PetFood.is_archived == False)
@@ -38,6 +42,9 @@ async def create_food(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new food item for the organization (family)."""
+    # Verify user belongs to this family
+    await verify_family_access(db, user_id, org_id)
+
     food = PetFood(
         org_id=org_id,
         name=food_in.name,
@@ -62,15 +69,8 @@ async def get_food(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific food item by ID."""
-    query = select(PetFood).where(PetFood.id == food_id)
-    result = await db.execute(query)
-    food = result.scalar_one_or_none()
-
-    if not food:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Food not found",
-        )
+    # Verify user has access to this food through family membership
+    food = await verify_food_access(db, user_id, food_id)
 
     return FoodResponse.model_validate(food)
 
@@ -83,15 +83,8 @@ async def update_food(
     user_id: str = Depends(get_current_user_id),
 ):
     """Update a food item."""
-    query = select(PetFood).where(PetFood.id == food_id)
-    result = await db.execute(query)
-    food = result.scalar_one_or_none()
-
-    if not food:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Food not found",
-        )
+    # Verify user has access to this food through family membership
+    food = await verify_food_access(db, user_id, food_id)
 
     update_data = food_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -113,20 +106,13 @@ async def delete_food(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete or archive a food item based on feeding history."""
-    query = select(PetFood).where(PetFood.id == food_id)
-    result = await db.execute(query)
-    food = result.scalar_one_or_none()
-
-    if not food:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Food not found",
-        )
+    # Verify user has access to this food through family membership
+    food = await verify_food_access(db, user_id, food_id)
 
     # Check if food has any feedings
     feeding_count_query = select(func.count()).select_from(PetFeeding).where(PetFeeding.food_id == food_id)
     feeding_count_result = await db.execute(feeding_count_query)
-    feeding_count = feeding_count_result.scalar()
+    feeding_count = feeding_count_result.scalar() or 0
 
     if feeding_count > 0:
         # Archive instead of delete to preserve feeding history

@@ -30,7 +30,7 @@ class PetMedication(Base):
     end_date = Column(DateTime, nullable=True)
     times_per_day = Column(Integer, default=1, nullable=False)
     notes = Column(Text, nullable=True)
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -44,7 +44,7 @@ class PetMedicationDose(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     given_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    given_by = Column(String(255), nullable=False)  # User ID
+    given_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

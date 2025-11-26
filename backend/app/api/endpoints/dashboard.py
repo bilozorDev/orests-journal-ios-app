@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.core.security import get_current_user_id
 from app.core.utils import format_user_name
+from app.core.authorization import verify_pet_access
 from app.models.pet import Pet
 from app.models.food import PetFood, PetFeeding, PetCalorieGoal
 from app.models.medication import PetMedication, PetMedicationDose
@@ -31,16 +32,8 @@ async def get_dashboard_data(
     This endpoint combines multiple queries to reduce the number of API calls
     from the client, eliminating the N+1 problem for medication doses.
     """
-    # Verify pet exists and belongs to org
-    pet_query = select(Pet).where(and_(Pet.id == pet_id, Pet.org_id == org_id))
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet (also sets RLS context)
+    pet = await verify_pet_access(db, user_id, pet_id)
 
     now = datetime.utcnow()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -84,9 +77,10 @@ async def get_dashboard_data(
     total_calories = sum(f.calories for f in feedings)
 
     # 3. Get foods for the org (for name lookup in UI)
+    # Use pet.org_id from verified pet, not the untrusted org_id parameter
     foods_query = (
         select(PetFood)
-        .where(PetFood.org_id == org_id)
+        .where(PetFood.org_id == pet.org_id)
         .order_by(PetFood.created_at.desc())
     )
     foods_result = await db.execute(foods_query)

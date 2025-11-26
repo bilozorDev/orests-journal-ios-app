@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_pet_access, verify_health_event_access
 from app.models.pet import Pet
 from app.models.health import PetHealthCategory, PetHealthEvent
 from app.schemas.health import (
@@ -26,6 +27,9 @@ async def list_categories(
     user_id: str = Depends(get_current_user_id),
 ):
     """List health categories for a pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     query = (
         select(PetHealthCategory)
         .where(PetHealthCategory.pet_id == pet_id)
@@ -83,16 +87,8 @@ async def create_health_event(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a health event for a pet."""
-    # Verify pet exists
-    pet_query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
 
     # Get or create category
     category = await get_or_create_category(
@@ -121,6 +117,9 @@ async def list_health_events(
     user_id: str = Depends(get_current_user_id),
 ):
     """List health events for a pet with their categories."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     # Get categories for this pet
     cat_query = select(PetHealthCategory).where(PetHealthCategory.pet_id == pet_id)
     cat_result = await db.execute(cat_query)
@@ -165,21 +164,17 @@ async def get_health_event(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific health event with its category."""
-    # Get event with category
+    # Verify user has access to this event through family membership
+    event = await verify_health_event_access(db, user_id, event_id)
+
+    # Get event with category for response
     query = (
         select(PetHealthEvent, PetHealthCategory)
         .join(PetHealthCategory, PetHealthEvent.category_id == PetHealthCategory.id)
         .where(PetHealthEvent.id == event_id)
     )
     result = await db.execute(query)
-    row = result.one_or_none()
-
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Health event not found",
-        )
-
+    row = result.one()  # Event verified to exist by verify_health_event_access
     event, category = row
 
     return HealthEventWithCategory(
@@ -199,15 +194,8 @@ async def delete_health_event(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete a health event."""
-    query = select(PetHealthEvent).where(PetHealthEvent.id == event_id)
-    result = await db.execute(query)
-    event = result.scalar_one_or_none()
-
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Health event not found",
-        )
+    # Verify user has access to this event through family membership
+    event = await verify_health_event_access(db, user_id, event_id)
 
     await db.delete(event)
     await db.commit()

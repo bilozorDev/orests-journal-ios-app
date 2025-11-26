@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_family_access, verify_pet_access, verify_medication_access
 from app.models.pet import Pet
 from app.models.medication import PetMedication
 from app.schemas.medication import (
@@ -25,6 +26,9 @@ async def list_medications(
     user_id: str = Depends(get_current_user_id),
 ):
     """List medications for the organization, optionally filtered by pet."""
+    # Verify user belongs to this family
+    await verify_family_access(db, user_id, org_id)
+
     # First get pets for this org
     pets_query = select(Pet.id).where(Pet.org_id == org_id)
     pets_result = await db.execute(pets_query)
@@ -67,16 +71,8 @@ async def create_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new medication prescription."""
-    # Verify pet exists
-    pet_query = select(Pet).where(Pet.id == med_in.pet_id)
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, med_in.pet_id)
 
     # Strip timezone info from dates (database uses naive UTC)
     start_date = med_in.start_date.replace(tzinfo=None) if med_in.start_date.tzinfo else med_in.start_date
@@ -106,15 +102,8 @@ async def get_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get a specific medication by ID."""
-    query = select(PetMedication).where(PetMedication.id == medication_id)
-    result = await db.execute(query)
-    medication = result.scalar_one_or_none()
-
-    if not medication:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
-        )
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
 
     return MedicationResponse.model_validate(medication)
 
@@ -127,15 +116,8 @@ async def update_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Update a medication."""
-    query = select(PetMedication).where(PetMedication.id == medication_id)
-    result = await db.execute(query)
-    medication = result.scalar_one_or_none()
-
-    if not medication:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
-        )
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
 
     update_data = med_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -154,15 +136,8 @@ async def delete_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete a medication."""
-    query = select(PetMedication).where(PetMedication.id == medication_id)
-    result = await db.execute(query)
-    medication = result.scalar_one_or_none()
-
-    if not medication:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
-        )
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
 
     await db.delete(medication)
     await db.commit()
@@ -175,6 +150,9 @@ async def get_active_medications_for_pet(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get active medications for a specific pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     now = datetime.utcnow()
 
     query = (

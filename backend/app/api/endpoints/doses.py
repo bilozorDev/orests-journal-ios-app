@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_medication_access, verify_dose_access
 from app.models.medication import PetMedication, PetMedicationDose
 from app.schemas.medication import DoseCreate, DoseResponse, DoseListResponse
 
@@ -19,16 +20,8 @@ async def record_dose(
     user_id: str = Depends(get_current_user_id),
 ):
     """Record a medication dose."""
-    # Verify medication exists
-    med_query = select(PetMedication).where(PetMedication.id == dose_in.medication_id)
-    result = await db.execute(med_query)
-    medication = result.scalar_one_or_none()
-
-    if not medication:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
-        )
+    # Verify user has access to this medication through family membership
+    await verify_medication_access(db, user_id, dose_in.medication_id)
 
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
@@ -51,6 +44,9 @@ async def list_doses(
     user_id: str = Depends(get_current_user_id),
 ):
     """List doses for a medication."""
+    # Verify user has access to this medication through family membership
+    await verify_medication_access(db, user_id, medication_id)
+
     query = (
         select(PetMedicationDose)
         .where(PetMedicationDose.medication_id == medication_id)
@@ -70,6 +66,9 @@ async def get_today_doses(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get today's doses for a medication."""
+    # Verify user has access to this medication through family membership
+    await verify_medication_access(db, user_id, medication_id)
+
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
@@ -97,6 +96,9 @@ async def get_last_dose(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get the most recent dose for a medication."""
+    # Verify user has access to this medication through family membership
+    await verify_medication_access(db, user_id, medication_id)
+
     query = (
         select(PetMedicationDose)
         .where(PetMedicationDose.medication_id == medication_id)
@@ -122,15 +124,8 @@ async def delete_dose(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete a dose record."""
-    query = select(PetMedicationDose).where(PetMedicationDose.id == dose_id)
-    result = await db.execute(query)
-    dose = result.scalar_one_or_none()
-
-    if not dose:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dose not found",
-        )
+    # Verify user has access to this dose through family membership
+    dose = await verify_dose_access(db, user_id, dose_id)
 
     await db.delete(dose)
     await db.commit()

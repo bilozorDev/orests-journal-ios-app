@@ -16,7 +16,7 @@ class PetHealthCategory(Base):
     name = Column(String(255), nullable=False)
     name_normalized = Column(String(255), nullable=False)  # Lowercase for matching
     embedding = Column(Vector(1536), nullable=True)  # OpenAI embedding dimension
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -32,7 +32,7 @@ class PetHealthEvent(Base):
     occurred_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     notes = Column(Text, nullable=True)
     embedding = Column(Vector(1536), nullable=True)  # OpenAI embedding dimension
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

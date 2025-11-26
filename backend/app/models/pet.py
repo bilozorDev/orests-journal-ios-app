@@ -12,12 +12,12 @@ class Pet(Base):
     __tablename__ = "pets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(String(255), nullable=False, index=True)  # Family ID
+    org_id = Column(UUID(as_uuid=True), ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     kind = Column(String(100), nullable=False)  # e.g., "cat", "dog"
     photo_url = Column(String(500), nullable=True)
     current_weight = Column(Float, nullable=True)
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

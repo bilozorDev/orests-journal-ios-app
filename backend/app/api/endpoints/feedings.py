@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.authorization import verify_pet_access, verify_feeding_access
 from app.models.pet import Pet
 from app.models.food import PetFeeding, PetCalorieGoal
 from app.schemas.food import (
@@ -24,16 +25,8 @@ async def create_feeding(
     user_id: str = Depends(get_current_user_id),
 ):
     """Record a pet feeding."""
-    # Verify pet exists
-    pet_query = select(Pet).where(Pet.id == feeding_in.pet_id)
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, feeding_in.pet_id)
 
     feeding = PetFeeding(
         pet_id=feeding_in.pet_id,
@@ -60,6 +53,9 @@ async def list_pet_feedings(
     user_id: str = Depends(get_current_user_id),
 ):
     """List feedings for a pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     query = (
         select(PetFeeding)
         .where(PetFeeding.pet_id == pet_id)
@@ -84,6 +80,9 @@ async def get_today_feedings(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get today's feedings and calorie total for a pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     # Get start of today (UTC)
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
@@ -117,15 +116,8 @@ async def delete_feeding(
     user_id: str = Depends(get_current_user_id),
 ):
     """Delete a feeding record."""
-    query = select(PetFeeding).where(PetFeeding.id == feeding_id)
-    result = await db.execute(query)
-    feeding = result.scalar_one_or_none()
-
-    if not feeding:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Feeding not found",
-        )
+    # Verify user has access to this feeding through family membership
+    feeding = await verify_feeding_access(db, user_id, feeding_id)
 
     await db.delete(feeding)
     await db.commit()
@@ -139,15 +131,8 @@ async def update_feeding(
     user_id: str = Depends(get_current_user_id),
 ):
     """Update a feeding record."""
-    query = select(PetFeeding).where(PetFeeding.id == feeding_id)
-    result = await db.execute(query)
-    feeding = result.scalar_one_or_none()
-
-    if not feeding:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Feeding not found",
-        )
+    # Verify user has access to this feeding through family membership
+    feeding = await verify_feeding_access(db, user_id, feeding_id)
 
     update_data = feeding_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -170,6 +155,9 @@ async def get_active_calorie_goal(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get the active calorie goal for a pet."""
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
     now = datetime.utcnow()
 
     query = (
@@ -204,16 +192,8 @@ async def set_calorie_goal(
     user_id: str = Depends(get_current_user_id),
 ):
     """Set a new calorie goal for a pet."""
-    # Verify pet exists
-    pet_query = select(Pet).where(Pet.id == pet_id)
-    result = await db.execute(pet_query)
-    pet = result.scalar_one_or_none()
-
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pet not found",
-        )
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
 
     # Optionally: End previous goal
     now = datetime.utcnow()

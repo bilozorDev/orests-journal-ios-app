@@ -26,7 +26,7 @@ class PetFood(Base):
     __tablename__ = "pet_foods"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(String(255), nullable=False, index=True)  # Family ID
+    org_id = Column(UUID(as_uuid=True), ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     category = Column(String(50), nullable=False)
     calories_per_kg = Column(Float, nullable=False)
@@ -34,7 +34,7 @@ class PetFood(Base):
     container_size_unit = Column(String(10), nullable=False, server_default='g')
     image_url = Column(String(500), nullable=True)
     is_archived = Column(Boolean, nullable=False, server_default='false', default=False)
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -48,7 +48,7 @@ class PetFeeding(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     food_id = Column(UUID(as_uuid=True), ForeignKey("pet_foods.id", ondelete="CASCADE"), nullable=False)
-    fed_by = Column(String(255), nullable=False)  # User ID
+    fed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     fed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     amount = Column(Float, nullable=False)
     amount_unit = Column(String(10), nullable=False, server_default='g')
@@ -71,7 +71,7 @@ class PetCalorieGoal(Base):
     effective_from = Column(DateTime, default=datetime.utcnow, nullable=False)
     effective_until = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
-    created_by = Column(String(255), nullable=False)  # User ID
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
