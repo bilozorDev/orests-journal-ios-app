@@ -441,9 +441,14 @@ struct DashboardView: View {
 
                                         Spacer()
 
-                                        Text(relativeTimeString(from: feeding.fedAt))
-                                            .font(.caption)
-                                            .foregroundColor(.green)
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text(relativeTimeString(from: feeding.fedAt))
+                                                .font(.caption)
+                                                .foregroundColor(.green)
+                                            Text("by \(feeding.fedBy)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
                                     }
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
@@ -564,9 +569,14 @@ struct DashboardView: View {
                                 }
 
                                 if let lastDose = lastDoses[medication.id] {
-                                    Text("Last dose: \(relativeTimeString(from: lastDose.givenAt))")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
+                                    HStack(spacing: 4) {
+                                        Text(relativeTimeString(from: lastDose.givenAt))
+                                            .font(.caption)
+                                            .foregroundColor(.green)
+                                        Text("by \(lastDose.givenBy)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 } else {
                                     Text("No doses recorded")
                                         .font(.caption)
@@ -757,11 +767,16 @@ struct DashboardView: View {
 
     private func relativeTimeString(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
+        let minutes = Int(interval / 60)
         let hours = Int(interval / 3600)
         let days = Int(interval / 86400)
 
-        if hours < 48 {
-            return hours == 0 ? "Just now" : "\(hours)h ago"
+        if minutes < 1 {
+            return "Just now"
+        } else if minutes < 60 {
+            return "\(minutes)m ago"
+        } else if hours < 48 {
+            return "\(hours)h ago"
         } else {
             return "\(days)d ago"
         }
@@ -1490,16 +1505,14 @@ struct SettingsView: View {
                         .foregroundColor(.blue)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(authManager.userEmail ?? "No email")
+                        Text(authManager.displayName ?? authManager.userEmail ?? "Unknown")
                             .font(.body)
                             .fontWeight(.medium)
 
-                        if let userId = authManager.userId {
-                            Text("ID: \(userId)")
+                        if let email = authManager.userEmail, authManager.displayName != nil {
+                            Text(email)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                         }
                     }
                 }

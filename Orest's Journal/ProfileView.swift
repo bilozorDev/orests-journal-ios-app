@@ -22,16 +22,18 @@ struct ProfileView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Email:")
+                            Text("Name:")
                                 .bold()
-                            Text(authManager.userEmail ?? "No email")
+                            Text(authManager.displayName ?? authManager.userEmail ?? "Unknown")
                         }
 
-                        HStack {
-                            Text("User ID:")
-                                .bold()
-                            Text(authManager.userId ?? "Unknown")
-                                .font(.caption)
+                        if let email = authManager.userEmail, authManager.displayName != nil {
+                            HStack {
+                                Text("Email:")
+                                    .bold()
+                                Text(email)
+                                    .font(.caption)
+                            }
                         }
                     }
                     .padding()

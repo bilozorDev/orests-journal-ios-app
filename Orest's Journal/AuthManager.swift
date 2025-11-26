@@ -240,6 +240,15 @@ final class AuthManager {
         currentUser?.id
     }
 
+    /// Get current user's display name
+    var displayName: String? {
+        guard let user = currentUser else { return nil }
+        let first = user.firstName ?? ""
+        let last = user.lastName ?? ""
+        let fullName = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+        return fullName.isEmpty ? nil : fullName
+    }
+
     /// Get current family ID
     var familyId: String? {
         currentFamily?.id

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Dict
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_, or_, func
@@ -6,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.utils import format_user_name
 from app.models.pet import Pet
 from app.models.food import PetFood, PetFeeding, PetCalorieGoal
 from app.models.medication import PetMedication, PetMedicationDose
+from app.models.user import User
 from app.schemas.food import FoodResponse, FeedingResponse, CalorieGoalResponse
 from app.schemas.medication import MedicationResponse, DoseResponse
 from app.schemas.dashboard import DashboardResponse, MedicationWithDoses
@@ -78,7 +81,6 @@ async def get_dashboard_data(
     feedings_result = await db.execute(feedings_query)
     feedings = feedings_result.scalars().all()
 
-    today_feedings = [FeedingResponse.model_validate(f) for f in feedings]
     total_calories = sum(f.calories for f in feedings)
 
     # 3. Get foods for the org (for name lookup in UI)
@@ -92,15 +94,17 @@ async def get_dashboard_data(
     foods_list = [FoodResponse.model_validate(f) for f in foods]
 
     # 4. Get active medications for this pet
+    # Use date comparison (not datetime) since start_date/end_date are calendar dates
+    today_date = today.date()
     meds_query = (
         select(PetMedication)
         .where(
             and_(
                 PetMedication.pet_id == pet_id,
-                PetMedication.start_date <= now,
+                func.date(PetMedication.start_date) <= today_date,
                 or_(
                     PetMedication.end_date.is_(None),
-                    PetMedication.end_date >= now,
+                    func.date(PetMedication.end_date) >= today_date,
                 ),
             )
         )
@@ -160,6 +164,43 @@ async def get_dashboard_data(
         for dose in last_doses_result.scalars().all():
             last_doses[dose.medication_id] = dose
 
+    # 6. Get user names for all fed_by and given_by user IDs
+    user_ids = set()
+    for f in feedings:
+        if f.fed_by:
+            user_ids.add(f.fed_by)
+    for dose in last_doses.values():
+        if dose.given_by:
+            user_ids.add(dose.given_by)
+
+    user_name_map: Dict[str, str] = {}
+    if user_ids:
+        users_query = select(User).where(User.id.in_([UUID(uid) for uid in user_ids]))
+        users_result = await db.execute(users_query)
+        for user in users_result.scalars().all():
+            # Show "You" for current user, formatted name for others
+            if str(user.id) == user_id:
+                user_name_map[str(user.id)] = "You"
+            else:
+                user_name_map[str(user.id)] = format_user_name(user.first_name, user.last_name)
+
+    # Build feeding responses with formatted names
+    today_feedings = []
+    for f in feedings:
+        feeding_dict = {
+            "id": f.id,
+            "pet_id": f.pet_id,
+            "food_id": f.food_id,
+            "fed_by": user_name_map.get(f.fed_by, "Unknown"),
+            "fed_at": f.fed_at,
+            "amount": f.amount,
+            "amount_unit": f.amount_unit,
+            "calories": f.calories,
+            "notes": f.notes,
+            "created_at": f.created_at,
+        }
+        today_feedings.append(FeedingResponse.model_validate(feeding_dict))
+
     # Build medication responses with dose info
     medications_with_doses = []
     for med in medications:
@@ -167,10 +208,23 @@ async def get_dashboard_data(
         doses_remaining = max(0, med.times_per_day - today_count)
         last_dose = last_doses.get(med.id)
 
+        # Build dose response with formatted name
+        last_dose_response = None
+        if last_dose:
+            dose_dict = {
+                "id": last_dose.id,
+                "medication_id": last_dose.medication_id,
+                "given_at": last_dose.given_at,
+                "given_by": user_name_map.get(last_dose.given_by, "Unknown"),
+                "notes": last_dose.notes,
+                "created_at": last_dose.created_at,
+            }
+            last_dose_response = DoseResponse.model_validate(dose_dict)
+
         medications_with_doses.append(
             MedicationWithDoses(
                 medication=MedicationResponse.model_validate(med),
-                last_dose=DoseResponse.model_validate(last_dose) if last_dose else None,
+                last_dose=last_dose_response,
                 today_dose_count=today_count,
                 doses_remaining=doses_remaining,
             )
