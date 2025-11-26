@@ -297,6 +297,8 @@ struct DashboardView: View {
     @State private var showSetGoal = false
     @State private var showToast = false
     @State private var toastMessage = ""
+    @State private var feedingHistoryPetId: UUID?
+    @State private var medicationHistoryId: UUID?
 
     private var gaugeColor: Color {
         todayCalories >= calorieGoal ? .red : .blue
@@ -410,55 +412,67 @@ struct DashboardView: View {
                         Divider()
                             .padding(.horizontal, 12)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Today's Feedings")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
+                        Button(action: {
+                            feedingHistoryPetId = pet.id
+                        }) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Today's Feedings")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                                 .padding(.horizontal, 12)
 
-                            VStack(spacing: 0) {
-                                ForEach(todayFeedings.prefix(5)) { feeding in
-                                    HStack(alignment: .top, spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            if let food = foods[feeding.foodId] {
-                                                Text(food.name)
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                            } else {
-                                                Text("Unknown Food")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
+                                VStack(spacing: 0) {
+                                    ForEach(todayFeedings.prefix(5)) { feeding in
+                                        HStack(alignment: .top, spacing: 12) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                if let food = foods[feeding.foodId] {
+                                                    Text(food.name)
+                                                        .font(.subheadline)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(.primary)
+                                                } else {
+                                                    Text("Unknown Food")
+                                                        .font(.subheadline)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(.secondary)
+                                                }
+
+                                                Text("\(Int(feeding.calories)) cal • \(formatAmount(feeding.amount)) \(feeding.amountUnit.abbreviation)")
+                                                    .font(.caption)
                                                     .foregroundColor(.secondary)
                                             }
 
-                                            Text("\(Int(feeding.calories)) cal • \(formatAmount(feeding.amount)) \(feeding.amountUnit.abbreviation)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
+                                            Spacer()
+
+                                            VStack(alignment: .trailing, spacing: 2) {
+                                                Text(relativeTimeString(from: feeding.fedAt))
+                                                    .font(.caption)
+                                                    .foregroundColor(.green)
+                                                Text("by \(feeding.fedBy)")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
                                         }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
 
-                                        Spacer()
-
-                                        VStack(alignment: .trailing, spacing: 2) {
-                                            Text(relativeTimeString(from: feeding.fedAt))
-                                                .font(.caption)
-                                                .foregroundColor(.green)
-                                            Text("by \(feeding.fedBy)")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                        if feeding.id != todayFeedings.prefix(5).last?.id {
+                                            Divider()
+                                                .padding(.horizontal, 12)
                                         }
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-
-                                    if feeding.id != todayFeedings.prefix(5).last?.id {
-                                        Divider()
-                                            .padding(.horizontal, 12)
                                     }
                                 }
                             }
+                            .padding(.bottom, 8)
                         }
-                        .padding(.bottom, 8)
+                        .buttonStyle(.plain)
                     }
                 }
                 .background(Color.gray.opacity(0.1))
@@ -530,9 +544,19 @@ struct DashboardView: View {
                         VStack(spacing: 0) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(medication.name)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
+                                    Button(action: {
+                                        medicationHistoryId = medication.id
+                                    }) {
+                                        HStack(spacing: 6) {
+                                            Text(medication.name)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
 
                                     Text(medication.medicationType.displayName)
                                         .font(.caption)
@@ -604,10 +628,16 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             dashboardContent
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $feedingHistoryPetId) { petId in
+                FeedingHistoryView(petId: petId)
+            }
+            .navigationDestination(item: $medicationHistoryId) { medicationId in
+                MedicationHistoryView(medicationId: medicationId)
+            }
             .sheet(isPresented: $showRecordFeeding) {
                 if let pet = selectedPet {
                     RecordFeedingView(petId: pet.id) { feeding in

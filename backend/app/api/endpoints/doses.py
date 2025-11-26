@@ -1,5 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from typing import Dict
 from uuid import UUID
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,10 +9,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.core.security import get_current_user_id
 from app.core.authorization import verify_medication_access, verify_dose_access
+from app.core.utils import format_user_name
 from app.models.medication import PetMedication, PetMedicationDose
-from app.schemas.medication import DoseCreate, DoseResponse, DoseListResponse
+from app.models.user import User
+from app.schemas.medication import DoseCreate, DoseUpdate, DoseResponse, DoseDetailResponse, DoseListResponse
+from app.cache.helpers import cache_delete_pattern
 
 router = APIRouter()
+
+
+async def invalidate_dose_caches(db: AsyncSession, medication_id: UUID) -> None:
+    """Invalidate dashboard caches when doses change."""
+    # Get the pet_id from the medication
+    result = await db.execute(
+        select(PetMedication.pet_id).where(PetMedication.id == medication_id)
+    )
+    pet_id = result.scalar_one_or_none()
+    if pet_id:
+        await cache_delete_pattern(f"dashboard:{pet_id}:*")
 
 
 @router.post("", response_model=DoseResponse, status_code=status.HTTP_201_CREATED)
@@ -26,14 +42,32 @@ async def record_dose(
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
         given_at=dose_in.given_at or datetime.utcnow(),
-        given_by=user_id,
+        given_by=UUID(user_id),
         notes=dose_in.notes,
     )
     db.add(dose)
     await db.commit()
     await db.refresh(dose)
 
+    # Invalidate dashboard cache
+    await invalidate_dose_caches(db, dose_in.medication_id)
+
     return DoseResponse.model_validate(dose)
+
+
+async def get_user_name_map(db: AsyncSession, user_ids: set, current_user_id: str) -> Dict[str, str]:
+    """Build a map of user IDs to formatted names."""
+    user_name_map: Dict[str, str] = {}
+    if user_ids:
+        users_query = select(User).where(User.id.in_(list(user_ids)))
+        users_result = await db.execute(users_query)
+        for user in users_result.scalars().all():
+            user_id_str = str(user.id)
+            if user_id_str == current_user_id:
+                user_name_map[user_id_str] = "You"
+            else:
+                user_name_map[user_id_str] = format_user_name(user.first_name, user.last_name)
+    return user_name_map
 
 
 @router.get("/medication/{medication_id}", response_model=DoseListResponse)
@@ -56,21 +90,59 @@ async def list_doses(
     result = await db.execute(query)
     doses = result.scalars().all()
 
-    return DoseListResponse(doses=[DoseResponse.model_validate(d) for d in doses])
+    # Get user names for all doses
+    user_ids = {d.given_by for d in doses if d.given_by}
+    user_name_map = await get_user_name_map(db, user_ids, user_id)
+
+    # Build responses with formatted names
+    dose_responses = []
+    for d in doses:
+        dose_dict = {
+            "id": d.id,
+            "medication_id": d.medication_id,
+            "given_at": d.given_at,
+            "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "notes": d.notes,
+            "created_at": d.created_at,
+        }
+        dose_responses.append(DoseDetailResponse.model_validate(dose_dict))
+
+    return DoseListResponse(doses=dose_responses)
 
 
 @router.get("/medication/{medication_id}/today", response_model=DoseListResponse)
 async def get_today_doses(
     medication_id: UUID,
+    timezone: str = "UTC",
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get today's doses for a medication."""
+    """Get today's doses for a medication.
+
+    Args:
+        timezone: IANA timezone identifier (e.g., "America/Los_Angeles")
+                  Used to calculate "today" in the user's local timezone.
+    """
     # Verify user has access to this medication through family membership
     await verify_medication_access(db, user_id, medication_id)
 
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow = today + timedelta(days=1)
+    # Parse timezone, fallback to UTC if invalid
+    try:
+        tz = ZoneInfo(timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    # Get current time in UTC and convert to user's timezone
+    now_utc = datetime.now(dt_timezone.utc)
+    now_local = now_utc.astimezone(tz)
+
+    # Calculate today's boundaries in user's local timezone
+    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_local = today_local + timedelta(days=1)
+
+    # Convert back to naive UTC datetimes for database queries
+    today = today_local.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    tomorrow = tomorrow_local.astimezone(dt_timezone.utc).replace(tzinfo=None)
 
     query = (
         select(PetMedicationDose)
@@ -86,10 +158,27 @@ async def get_today_doses(
     result = await db.execute(query)
     doses = result.scalars().all()
 
-    return DoseListResponse(doses=[DoseResponse.model_validate(d) for d in doses])
+    # Get user names for all doses
+    user_ids = {d.given_by for d in doses if d.given_by}
+    user_name_map = await get_user_name_map(db, user_ids, user_id)
+
+    # Build responses with formatted names
+    dose_responses = []
+    for d in doses:
+        dose_dict = {
+            "id": d.id,
+            "medication_id": d.medication_id,
+            "given_at": d.given_at,
+            "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "notes": d.notes,
+            "created_at": d.created_at,
+        }
+        dose_responses.append(DoseDetailResponse.model_validate(dose_dict))
+
+    return DoseListResponse(doses=dose_responses)
 
 
-@router.get("/medication/{medication_id}/last", response_model=DoseResponse)
+@router.get("/medication/{medication_id}/last", response_model=DoseDetailResponse)
 async def get_last_dose(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -114,7 +203,17 @@ async def get_last_dose(
             detail="No doses recorded",
         )
 
-    return DoseResponse.model_validate(dose)
+    # Get user name
+    user_name_map = await get_user_name_map(db, {dose.given_by}, user_id)
+    dose_dict = {
+        "id": dose.id,
+        "medication_id": dose.medication_id,
+        "given_at": dose.given_at,
+        "given_by": user_name_map.get(str(dose.given_by), "Unknown"),
+        "notes": dose.notes,
+        "created_at": dose.created_at,
+    }
+    return DoseDetailResponse.model_validate(dose_dict)
 
 
 @router.delete("/{dose_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -126,6 +225,44 @@ async def delete_dose(
     """Delete a dose record."""
     # Verify user has access to this dose through family membership
     dose = await verify_dose_access(db, user_id, dose_id)
+    medication_id = dose.medication_id
 
     await db.delete(dose)
     await db.commit()
+
+    # Invalidate dashboard cache
+    await invalidate_dose_caches(db, medication_id)
+
+
+@router.patch("/{dose_id}", response_model=DoseDetailResponse)
+async def update_dose(
+    dose_id: UUID,
+    dose_in: DoseUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update a dose record."""
+    # Verify user has access to this dose through family membership
+    dose = await verify_dose_access(db, user_id, dose_id)
+
+    update_data = dose_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(dose, field, value)
+
+    await db.commit()
+    await db.refresh(dose)
+
+    # Invalidate dashboard cache
+    await invalidate_dose_caches(db, dose.medication_id)
+
+    # Get user name
+    user_name_map = await get_user_name_map(db, {dose.given_by}, user_id)
+    dose_dict = {
+        "id": dose.id,
+        "medication_id": dose.medication_id,
+        "given_at": dose.given_at,
+        "given_by": user_name_map.get(str(dose.given_by), "Unknown"),
+        "notes": dose.notes,
+        "created_at": dose.created_at,
+    }
+    return DoseDetailResponse.model_validate(dose_dict)

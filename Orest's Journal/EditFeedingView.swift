@@ -18,8 +18,12 @@ struct EditFeedingView: View {
     @State private var selectedUnit: ContainerUnit
     @State private var notes: String
     @State private var fedAt: Date
+    @State private var selectedFedByUserId: String
+    @State private var originalFedByName: String
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var familyMembers: [FamilyMemberResponse] = []
+    @State private var isLoadingMembers = false
 
     init(feeding: PetFeeding, food: PetFood?, onSave: ((PetFeeding) -> Void)? = nil) {
         self.feeding = feeding
@@ -29,6 +33,8 @@ struct EditFeedingView: View {
         _selectedUnit = State(initialValue: feeding.amountUnit)
         _notes = State(initialValue: feeding.notes ?? "")
         _fedAt = State(initialValue: feeding.fedAt)
+        _selectedFedByUserId = State(initialValue: "")  // Will be set when members load
+        _originalFedByName = State(initialValue: feeding.fedBy)
     }
 
     var body: some View {
@@ -74,6 +80,18 @@ struct EditFeedingView: View {
                     DatePicker("Fed at", selection: $fedAt, displayedComponents: [.date, .hourAndMinute])
                 }
 
+                // Only show "Who fed" if there are multiple family members
+                if familyMembers.count > 1 {
+                    Section(header: Text("Who fed")) {
+                        Picker("Fed by", selection: $selectedFedByUserId) {
+                            ForEach(familyMembers) { member in
+                                Text(member.displayName).tag(member.userId)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+
                 Section(header: Text("Notes (Optional)")) {
                     TextEditor(text: $notes)
                         .frame(minHeight: 80)
@@ -113,7 +131,34 @@ struct EditFeedingView: View {
                     }
                 }
             }
+            .task {
+                await loadFamilyMembers()
+            }
         }
+    }
+
+    private func loadFamilyMembers() async {
+        guard let familyId = AuthManager.shared.currentFamily?.id else { return }
+
+        isLoadingMembers = true
+        do {
+            familyMembers = try await DataService.shared.getFamilyMembers(familyId: familyId)
+            // Find and select the member whose name matches the original fedBy
+            if let matchingMember = familyMembers.first(where: { $0.displayName == originalFedByName }) {
+                selectedFedByUserId = matchingMember.userId
+            } else if let firstMember = familyMembers.first {
+                // Fallback to first member if no match found
+                selectedFedByUserId = firstMember.userId
+            }
+        } catch {
+            print("Error loading family members: \(error)")
+            // Don't show error - just don't show the picker
+        }
+        isLoadingMembers = false
+    }
+
+    private var selectedMemberName: String {
+        familyMembers.first { $0.userId == selectedFedByUserId }?.displayName ?? originalFedByName
     }
 
     private var isFormValid: Bool {
@@ -124,7 +169,8 @@ struct EditFeedingView: View {
         Double(amount) != feeding.amount ||
         selectedUnit != feeding.amountUnit ||
         notes != (feeding.notes ?? "") ||
-        fedAt != feeding.fedAt
+        fedAt != feeding.fedAt ||
+        (selectedFedByUserId.isEmpty ? false : selectedMemberName != originalFedByName)
     }
 
     private func saveFeeding() {
@@ -146,6 +192,9 @@ struct EditFeedingView: View {
                     newCalories = nil
                 }
 
+                // Determine if fedBy changed (compare names, send UUID)
+                let newFedBy: UUID? = selectedMemberName != originalFedByName ? UUID(uuidString: selectedFedByUserId) : nil
+
                 let updatedFeeding = try await DataService.shared.updateFeeding(
                     id: feeding.id,
                     amount: amountValue != feeding.amount ? amountValue : nil,
@@ -153,6 +202,7 @@ struct EditFeedingView: View {
                     calories: newCalories,
                     notes: notes != (feeding.notes ?? "") ? (notes.isEmpty ? nil : notes) : nil,
                     fedAt: fedAt != feeding.fedAt ? fedAt : nil,
+                    fedBy: newFedBy,
                     petId: feeding.petId
                 )
 

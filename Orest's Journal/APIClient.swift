@@ -306,11 +306,11 @@ class APIClient {
         return try await get("/feedings/pet/\(petId.uuidString)/today")
     }
 
-    func getFeedingHistory(petId: UUID, limit: Int = 50) async throws -> [PetFeeding] {
-        let response: FeedingListResponse = try await get("/feedings/pet/\(petId.uuidString)", queryItems: [
-            URLQueryItem(name: "limit", value: String(limit))
+    func getFeedingHistory(petId: UUID, limit: Int = 50, offset: Int = 0) async throws -> FeedingListResponse {
+        return try await get("/feedings/pet/\(petId.uuidString)", queryItems: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
         ])
-        return response.feedings
     }
 
     func updateFeeding(id: UUID, update: FeedingUpdate) async throws -> PetFeeding {
@@ -346,7 +346,10 @@ class APIClient {
         guard let orgId = currentOrgId else {
             throw APIError.unauthorized
         }
-        var queryItems = [URLQueryItem(name: "org_id", value: orgId)]
+        var queryItems = [
+            URLQueryItem(name: "org_id", value: orgId),
+            URLQueryItem(name: "timezone", value: TimeZone.current.identifier)
+        ]
         if let petId = petId {
             queryItems.append(URLQueryItem(name: "pet_id", value: petId.uuidString))
         }
@@ -358,7 +361,9 @@ class APIClient {
     }
 
     func getActiveMedications(petId: UUID) async throws -> [PetMedication] {
-        let response: MedicationListResponse = try await get("/medications/pet/\(petId.uuidString)/active")
+        let response: MedicationListResponse = try await get("/medications/pet/\(petId.uuidString)/active", queryItems: [
+            URLQueryItem(name: "timezone", value: TimeZone.current.identifier)
+        ])
         return response.medications
     }
 
@@ -377,7 +382,9 @@ class APIClient {
     }
 
     func getTodayDoses(medicationId: UUID) async throws -> [PetMedicationDose] {
-        let response: DoseListResponse = try await get("/doses/medication/\(medicationId.uuidString)/today")
+        let response: DoseListResponse = try await get("/doses/medication/\(medicationId.uuidString)/today", queryItems: [
+            URLQueryItem(name: "timezone", value: TimeZone.current.identifier)
+        ])
         return response.doses
     }
 
@@ -394,6 +401,20 @@ class APIClient {
             URLQueryItem(name: "limit", value: String(limit))
         ])
         return response.doses
+    }
+
+    func updateDose(id: UUID, update: DoseUpdate) async throws -> PetMedicationDose {
+        return try await patch("/doses/\(id.uuidString)", body: update)
+    }
+
+    func deleteDose(id: UUID) async throws {
+        try await delete("/doses/\(id.uuidString)")
+    }
+
+    // MARK: - Family
+
+    func getFamilyMembers(familyId: String) async throws -> FamilyDetailResponse {
+        return try await get("/families/\(familyId)")
     }
 
     // MARK: - Health Events
@@ -424,7 +445,8 @@ class APIClient {
             throw APIError.unauthorized
         }
         return try await get("/dashboard/pet/\(petId.uuidString)", queryItems: [
-            URLQueryItem(name: "org_id", value: orgId)
+            URLQueryItem(name: "org_id", value: orgId),
+            URLQueryItem(name: "timezone", value: TimeZone.current.identifier)
         ])
     }
 }
@@ -489,11 +511,13 @@ struct FeedingUpdate: Encodable {
     let calories: Double?
     let notes: String?
     let fedAt: Date?
+    let fedBy: UUID?
 }
 
 struct FeedingListResponse: Decodable {
     let feedings: [PetFeeding]
     let totalCalories: Double
+    let total: Int
 }
 
 struct MedicationCreate: Encodable {
@@ -514,6 +538,12 @@ struct DoseCreate: Encodable {
     let medicationId: UUID
     let notes: String?
     let givenAt: Date?
+}
+
+struct DoseUpdate: Encodable {
+    let givenAt: Date?
+    let givenBy: UUID?
+    let notes: String?
 }
 
 struct DoseListResponse: Decodable {
@@ -545,4 +575,34 @@ struct DashboardData: Decodable {
     let totalCalories: Double
     let foods: [PetFood]
     let medications: [MedicationWithDoses]
+}
+
+// MARK: - Family Types
+
+struct FamilyMemberResponse: Decodable, Identifiable {
+    let id: String
+    let userId: String
+    let email: String?
+    let firstName: String?
+    let lastName: String?
+    let role: String
+    let joinedAt: Date
+
+    var displayName: String {
+        if let firstName = firstName, !firstName.isEmpty {
+            if let lastName = lastName, !lastName.isEmpty {
+                return "\(firstName) \(lastName)"
+            }
+            return firstName
+        }
+        return email ?? "Unknown"
+    }
+}
+
+struct FamilyDetailResponse: Decodable {
+    let id: String
+    let name: String
+    let inviteCode: String
+    let createdAt: Date
+    let members: [FamilyMemberResponse]
 }

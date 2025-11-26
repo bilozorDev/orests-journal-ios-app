@@ -270,6 +270,7 @@ final class DataService {
         calories: Double? = nil,
         notes: String? = nil,
         fedAt: Date? = nil,
+        fedBy: UUID? = nil,
         petId: UUID? = nil
     ) async throws -> PetFeeding {
         let update = FeedingUpdate(
@@ -277,7 +278,8 @@ final class DataService {
             amountUnit: amountUnit?.rawValue,
             calories: calories,
             notes: notes,
-            fedAt: fedAt
+            fedAt: fedAt,
+            fedBy: fedBy
         )
         let result = try await api.updateFeeding(id: id, update: update)
         if let petId = petId {
@@ -372,6 +374,51 @@ final class DataService {
 
     func getDoses(for medicationId: UUID, limit: Int = 50) async throws -> [PetMedicationDose] {
         return try await api.getDoses(medicationId: medicationId, limit: limit)
+    }
+
+    func updateDose(
+        id: UUID,
+        givenAt: Date? = nil,
+        givenBy: UUID? = nil,
+        notes: String? = nil,
+        petId: UUID? = nil
+    ) async throws -> PetMedicationDose {
+        let update = DoseUpdate(
+            givenAt: givenAt,
+            givenBy: givenBy,
+            notes: notes
+        )
+        let result = try await api.updateDose(id: id, update: update)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
+        return result
+    }
+
+    func deleteDose(id: UUID, petId: UUID? = nil) async throws {
+        try await api.deleteDose(id: id)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+        }
+    }
+
+    // MARK: - Family Functions
+
+    private var familyMembersCache: [String: CacheEntry<[FamilyMemberResponse]>] = [:]
+    private let familyMembersCacheTTL: TimeInterval = 300  // 5 minutes
+
+    func getFamilyMembers(familyId: String, forceRefresh: Bool = false) async throws -> [FamilyMemberResponse] {
+        // Check cache first
+        if !forceRefresh,
+           let entry = familyMembersCache[familyId],
+           Date().timeIntervalSince(entry.timestamp) < familyMembersCacheTTL {
+            return entry.data
+        }
+
+        // Fetch from API
+        let response = try await api.getFamilyMembers(familyId: familyId)
+        familyMembersCache[familyId] = CacheEntry(data: response.members, timestamp: Date())
+        return response.members
     }
 
     // MARK: - Health Journal Functions

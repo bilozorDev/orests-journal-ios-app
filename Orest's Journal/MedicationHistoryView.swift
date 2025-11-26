@@ -11,9 +11,13 @@ struct MedicationHistoryView: View {
     let medicationId: UUID
 
     @State private var doses: [PetMedicationDose] = []
+    @State private var medication: PetMedication?
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var errorMessage: String?
+    @State private var doseToEdit: PetMedicationDose?
+    @State private var doseToDelete: PetMedicationDose?
+    @State private var showDeleteConfirmation = false
 
     var dosesByDate: [Date: [PetMedicationDose]] {
         let calendar = Calendar.current
@@ -45,6 +49,25 @@ struct MedicationHistoryView: View {
                             if let dayDoses = dosesByDate[date] {
                                 ForEach(dayDoses.sorted(by: { $0.givenAt > $1.givenAt })) { dose in
                                     DoseRowView(dose: dose)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            doseToEdit = dose
+                                        }
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button(role: .destructive) {
+                                                doseToDelete = dose
+                                                showDeleteConfirmation = true
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+
+                                            Button {
+                                                doseToEdit = dose
+                                            } label: {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+                                            .tint(.blue)
+                                        }
                                 }
                             }
                         }
@@ -57,7 +80,7 @@ struct MedicationHistoryView: View {
                 ProgressView()
             }
         }
-        .navigationTitle("Dose History")
+        .navigationTitle(medication?.name ?? "Dose History")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard !hasLoaded else { return }
@@ -66,11 +89,40 @@ struct MedicationHistoryView: View {
         .refreshable {
             await loadData()
         }
+        .sheet(item: $doseToEdit) { dose in
+            EditDoseView(dose: dose, medication: medication, petId: medication?.petId) { updatedDose in
+                if let index = doses.firstIndex(where: { $0.id == updatedDose.id }) {
+                    doses[index] = updatedDose
+                }
+            }
+        }
+        .alert("Delete Dose", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                doseToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let dose = doseToDelete {
+                    Task {
+                        await deleteDose(dose)
+                    }
+                }
+            }
+        } message: {
+            if let dose = doseToDelete {
+                Text("Are you sure you want to delete the dose from \(formatTime(dose.givenAt))?")
+            } else {
+                Text("Are you sure you want to delete this dose?")
+            }
+        }
     }
 
     private func loadData() async {
         isLoading = true
         do {
+            // Load medication info for the title and petId
+            let medications = try await DataService.shared.getMedications()
+            medication = medications.first { $0.id == medicationId }
+
             doses = try await DataService.shared.getDoses(for: medicationId)
             hasLoaded = true
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
@@ -80,6 +132,17 @@ struct MedicationHistoryView: View {
             print("Error loading medication doses: \(error)")
         }
         isLoading = false
+    }
+
+    private func deleteDose(_ dose: PetMedicationDose) async {
+        do {
+            try await DataService.shared.deleteDose(id: dose.id, petId: medication?.petId)
+            doseToDelete = nil
+            doses.removeAll { $0.id == dose.id }
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error deleting dose: \(error)")
+        }
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -95,6 +158,12 @@ struct MedicationHistoryView: View {
             return formatter.string(from: date)
         }
     }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
 }
 
 struct DoseRowView: View {
@@ -106,9 +175,14 @@ struct DoseRowView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Dose given")
                         .font(.headline)
-                    Text(formatTime(dose.givenAt))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Text(formatTime(dose.givenAt))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text("by \(dose.givenBy)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Spacer()

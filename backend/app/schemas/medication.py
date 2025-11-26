@@ -62,16 +62,34 @@ class DoseCreate(BaseModel):
     given_at: Optional[datetime] = None  # Defaults to now
 
 
+class DoseUpdate(BaseModel):
+    given_at: Optional[datetime] = None
+    given_by: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
 class DoseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     medication_id: UUID
     given_at: datetime
-    given_by: str
+    given_by: UUID
+    notes: Optional[str] = None
+    created_at: datetime
+
+
+class DoseDetailResponse(BaseModel):
+    """Dose response with formatted user name instead of UUID."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    medication_id: UUID
+    given_at: datetime
+    given_by: str  # Formatted user name
     notes: Optional[str] = None
     created_at: datetime
 
 
 class DoseListResponse(BaseModel):
-    doses: list[DoseResponse]
+    doses: list[DoseDetailResponse]

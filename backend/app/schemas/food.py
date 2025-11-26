@@ -29,7 +29,7 @@ class FoodResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    org_id: str
+    org_id: UUID
     name: str
     category: FoodCategory
     calories_per_kg: float
@@ -67,6 +67,7 @@ class FeedingUpdate(BaseModel):
     calories: Optional[float] = None
     notes: Optional[str] = None
     fed_at: Optional[datetime] = None
+    fed_by: Optional[UUID] = None
 
 
 class FeedingResponse(BaseModel):
@@ -75,7 +76,7 @@ class FeedingResponse(BaseModel):
     id: UUID
     pet_id: UUID
     food_id: UUID
-    fed_by: str
+    fed_by: UUID
     fed_at: datetime
     amount: float
     amount_unit: ContainerUnit
@@ -87,6 +88,7 @@ class FeedingResponse(BaseModel):
 class FeedingListResponse(BaseModel):
     feedings: list[FeedingResponse]
     total_calories: float = 0
+    total: int = 0  # Total count for pagination
 
 
 # Calorie Goal Schemas
