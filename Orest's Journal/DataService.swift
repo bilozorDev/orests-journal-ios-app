@@ -24,7 +24,9 @@ final class DataService {
 
     private var dashboardCache: [UUID: CacheEntry<DashboardData>] = [:]
     private var feedingHistoryCache: [UUID: CacheEntry<FeedingListResponse>] = [:]
+    private var foodsCache: [Bool: CacheEntry<[PetFood]>] = [:]  // Key: includeArchived flag
     private let cacheTTL: TimeInterval = 60  // 1 minute
+    private let foodsCacheTTL: TimeInterval = 300  // 5 minutes (foods change rarely)
 
     private init() {}
 
@@ -80,6 +82,35 @@ final class DataService {
         return getCachedFeedingHistory(for: petId)
     }
 
+    /// Returns cached foods if still valid, nil otherwise
+    private func getCachedFoods(includeArchived: Bool) -> [PetFood]? {
+        guard let entry = foodsCache[includeArchived],
+              Date().timeIntervalSince(entry.timestamp) < foodsCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    /// Stores foods in cache with current timestamp
+    private func cacheFoods(_ foods: [PetFood], includeArchived: Bool) {
+        foodsCache[includeArchived] = CacheEntry(data: foods, timestamp: Date())
+    }
+
+    /// Invalidates foods cache
+    func invalidateFoodsCache() {
+        foodsCache.removeAll()
+    }
+
+    /// Returns true if there's valid cached foods
+    func hasCachedFoods(includeArchived: Bool = false) -> Bool {
+        return getCachedFoods(includeArchived: includeArchived) != nil
+    }
+
+    /// Returns cached foods data if available (synchronous)
+    func getCachedFoodsData(includeArchived: Bool = false) -> [PetFood]? {
+        return getCachedFoods(includeArchived: includeArchived)
+    }
+
     // MARK: - Pet Functions
 
     func getPets() async throws -> [Pet] {
@@ -117,8 +148,13 @@ final class DataService {
 
     // MARK: - Food Functions
 
-    func getFoods(includeArchived: Bool = false) async throws -> [PetFood] {
-        return try await api.getFoods(includeArchived: includeArchived)
+    func getFoods(includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [PetFood] {
+        if !forceRefresh, let cached = getCachedFoods(includeArchived: includeArchived) {
+            return cached
+        }
+        let foods = try await api.getFoods(includeArchived: includeArchived)
+        cacheFoods(foods, includeArchived: includeArchived)
+        return foods
     }
 
     func createFood(
@@ -137,7 +173,9 @@ final class DataService {
             containerSizeUnit: containerSizeUnit.rawValue,
             imageUrl: imageUrl
         )
-        return try await api.createFood(food)
+        let result = try await api.createFood(food)
+        invalidateFoodsCache()
+        return result
     }
 
     func updateFood(
@@ -157,11 +195,15 @@ final class DataService {
             containerSizeUnit: containerSizeUnit?.rawValue,
             imageUrl: imageUrl
         )
-        return try await api.updateFood(id: id, update: update)
+        let result = try await api.updateFood(id: id, update: update)
+        invalidateFoodsCache()
+        return result
     }
 
     func deleteFood(id: UUID) async throws -> FoodDeleteResponse {
-        return try await api.deleteFood(id: id)
+        let result = try await api.deleteFood(id: id)
+        invalidateFoodsCache()
+        return result
     }
 
     // MARK: - Feeding Functions
