@@ -107,6 +107,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
+
+        // Register background refresh task
+        BackgroundTaskManager.shared.registerBackgroundTasks()
+
         return true
     }
 

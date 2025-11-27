@@ -533,7 +533,7 @@ struct FeedingUpdate: Encodable {
     let fedBy: UUID?
 }
 
-struct FeedingListResponse: Decodable {
+struct FeedingListResponse: Codable {
     let feedings: [PetFeeding]
     let totalCalories: Double
     let total: Int
@@ -584,14 +584,14 @@ struct HealthEventListResponse: Decodable {
 
 // MARK: - Dashboard Types
 
-struct MedicationWithDoses: Decodable {
+struct MedicationWithDoses: Codable {
     let medication: PetMedication
     let lastDose: PetMedicationDose?
     let todayDoseCount: Int
     let dosesRemaining: Int
 }
 
-struct DashboardData: Decodable {
+struct DashboardData: Codable {
     let calorieGoal: CalorieGoal?
     let todayFeedings: [PetFeeding]
     let totalCalories: Double
@@ -601,7 +601,7 @@ struct DashboardData: Decodable {
 
 // MARK: - Family Types
 
-struct FamilyMemberResponse: Decodable, Identifiable {
+struct FamilyMemberResponse: Codable, Identifiable {
     let id: String
     let userId: String
     let email: String?

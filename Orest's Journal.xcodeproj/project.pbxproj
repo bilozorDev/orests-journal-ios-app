@@ -10,22 +10,9 @@
 		EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Orest's Journal.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EA84EFB22ED7D80A00B38A22 /* Exceptions for "Orest's Journal" folder in "Orest's Journal" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Orest-s-Journal-Info.plist",
-			);
-			target = EA87EFB62E918B2B001CE4AD /* Orest's Journal */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EA87EFB92E918B2B001CE4AD /* Orest's Journal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				EA84EFB22ED7D80A00B38A22 /* Exceptions for "Orest's Journal" folder in "Orest's Journal" target */,
-			);
 			path = "Orest's Journal";
 			sourceTree = "<group>";
 		};

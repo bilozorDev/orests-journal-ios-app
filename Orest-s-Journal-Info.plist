@@ -8,5 +8,9 @@
 		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.notip.orests-journal.refresh</string>
+	</array>
 </dict>
 </plist>

@@ -689,7 +689,7 @@ struct DashboardView: View {
                 }
             }
             .onAppear {
-                // Show cached dashboard data immediately if pet is already selected
+                // Show memory-cached dashboard data immediately if pet is already selected
                 if let pet = selectedPet,
                    let cached = DataService.shared.getCachedDashboardData(for: pet.id) {
                     applyDashboardData(cached)
@@ -697,6 +697,20 @@ struct DashboardView: View {
             }
             .task {
                 guard !hasLoaded else { return }
+
+                // Try to show disk-cached data instantly while network loads
+                if let cachedPets = await DataService.shared.getCachedPetsFromDisk(), !cachedPets.isEmpty {
+                    pets = cachedPets
+                    if selectedPet == nil {
+                        selectedPet = cachedPets.first
+                    }
+                    // Show disk-cached dashboard data for selected pet
+                    if let pet = selectedPet,
+                       let cachedDashboard = await DataService.shared.getCachedDashboardDataFromDisk(for: pet.id) {
+                        applyDashboardData(cachedDashboard)
+                    }
+                }
+
                 await loadPets()
             }
             .refreshable {
