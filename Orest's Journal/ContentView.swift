@@ -1450,6 +1450,7 @@ struct HealthView: View {
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var showAddEvent = false
+    @State private var showRecordWeight = false
     @State private var errorMessage: String?
 
     var eventsByDate: [Date: [HealthEventWithCategory]] {
@@ -1501,10 +1502,17 @@ struct HealthView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if !pets.isEmpty {
-                        Button(action: {
-                            showAddEvent = true
-                        }) {
-                            Image(systemName: "plus")
+                        HStack(spacing: 16) {
+                            Button(action: {
+                                showRecordWeight = true
+                            }) {
+                                Image(systemName: "gauge.with.needle")
+                            }
+                            Button(action: {
+                                showAddEvent = true
+                            }) {
+                                Image(systemName: "plus")
+                            }
                         }
                     }
                 }
@@ -1514,10 +1522,22 @@ struct HealthView: View {
                     AddHealthEventView(petId: pet.id)
                 }
             }
+            .sheet(isPresented: $showRecordWeight) {
+                if let pet = selectedPet {
+                    RecordWeightView(petId: pet.id, petName: pet.name, currentWeight: pet.currentWeight)
+                }
+            }
             .onChange(of: showAddEvent) { _, isShowing in
                 if !isShowing {
                     Task {
                         await loadEvents()
+                    }
+                }
+            }
+            .onChange(of: showRecordWeight) { _, isShowing in
+                if !isShowing {
+                    Task {
+                        await loadPets(forceRefresh: true)  // Reload to get updated current_weight
                     }
                 }
             }
@@ -1587,10 +1607,14 @@ struct HealthView: View {
         }
     }
 
-    private func loadPets() async {
+    private func loadPets(forceRefresh: Bool = false) async {
         isLoading = true
         do {
-            pets = try await DataService.shared.getPets()
+            pets = try await DataService.shared.getPets(forceRefresh: forceRefresh)
+            // Update selectedPet with fresh data (e.g., new currentWeight)
+            if let currentId = selectedPet?.id {
+                selectedPet = pets.first { $0.id == currentId }
+            }
             if selectedPet == nil {
                 selectedPet = pets.first
             }

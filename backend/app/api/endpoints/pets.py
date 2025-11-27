@@ -145,6 +145,13 @@ async def create_health_record(
         notes=record_in.notes,
     )
     db.add(record)
+
+    # Update pet's current_weight if weight was recorded
+    if record_in.weight_pounds is not None:
+        pet = await db.get(Pet, pet_id)
+        if pet:
+            pet.current_weight = record_in.weight_pounds
+
     await db.commit()
     await db.refresh(record)
 

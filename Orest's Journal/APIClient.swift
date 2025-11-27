@@ -276,6 +276,17 @@ class APIClient {
         try await delete("/pets/\(id.uuidString)")
     }
 
+    // MARK: - Health Records
+
+    func createHealthRecord(petId: UUID, weightPounds: Double?, ageYears: Double?, notes: String?) async throws -> HealthRecord {
+        let record = HealthRecordCreate(weightPounds: weightPounds, ageYears: ageYears, notes: notes)
+        return try await post("/pets/\(petId.uuidString)/health-records", body: record)
+    }
+
+    func getHealthRecords(petId: UUID) async throws -> [HealthRecord] {
+        return try await get("/pets/\(petId.uuidString)/health-records")
+    }
+
     // MARK: - Foods
 
     func getFoods(includeArchived: Bool = false) async throws -> [PetFood] {

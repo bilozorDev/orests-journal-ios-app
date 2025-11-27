@@ -15,3 +15,9 @@ struct HealthRecord: Codable, Identifiable {
     let weightPounds: Double?
     let notes: String?
 }
+
+struct HealthRecordCreate: Encodable {
+    let weightPounds: Double?
+    let ageYears: Double?
+    let notes: String?
+}

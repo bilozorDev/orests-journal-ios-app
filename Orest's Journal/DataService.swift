@@ -337,6 +337,19 @@ final class DataService {
         try await api.deletePet(id: id)
     }
 
+    // MARK: - Health Records
+
+    func recordWeight(petId: UUID, weight: Double, notes: String? = nil) async throws -> HealthRecord {
+        let record = try await api.createHealthRecord(petId: petId, weightPounds: weight, ageYears: nil, notes: notes)
+        // Invalidate pet cache since current_weight was updated
+        petsCache = nil
+        return record
+    }
+
+    func getHealthRecords(petId: UUID) async throws -> [HealthRecord] {
+        return try await api.getHealthRecords(petId: petId)
+    }
+
     // MARK: - Food Functions
 
     func getFoods(includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [PetFood] {
