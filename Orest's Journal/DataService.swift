@@ -401,8 +401,34 @@ final class DataService {
         )
         let result = try await api.createFeeding(feeding)
         invalidateDashboardCache(for: petId)
-        invalidateFeedingHistoryCache(for: petId)
+
+        // Update feeding history cache by prepending new feeding (for quick actions)
+        updateFeedingHistoryCache(with: result, for: petId)
+
         return result
+    }
+
+    /// Updates feeding history cache by prepending a new feeding
+    private func updateFeedingHistoryCache(with newFeeding: PetFeeding, for petId: UUID) {
+        if let cached = feedingHistoryCache[petId] {
+            // Prepend new feeding to the list
+            var feedings = cached.data.feedings
+            feedings.insert(newFeeding, at: 0)
+
+            // Update the cached response
+            let updatedResponse = FeedingListResponse(
+                feedings: feedings,
+                totalCalories: cached.data.totalCalories + newFeeding.calories,
+                total: cached.data.total + 1
+            )
+            feedingHistoryCache[petId] = CacheEntry(data: updatedResponse, timestamp: Date())
+
+            // Also update disk cache
+            let responseToSave = updatedResponse
+            Task { [persistentCache] in
+                await persistentCache.save(responseToSave, forKey: .feedingHistory(petId: petId))
+            }
+        }
     }
 
     func getTodayFeedings(for petId: UUID) async throws -> [PetFeeding] {
@@ -464,6 +490,64 @@ final class DataService {
         let response = try await api.getFeedingHistory(petId: petId, limit: limit, offset: 0)
         cacheFeedingHistory(response, for: petId)
         await persistentCache.save(response, forKey: .feedingHistory(petId: petId))
+    }
+
+    // MARK: - Quick Feeding Actions
+
+    /// Get quick feeding actions for a pet - derives from cached feeding history
+    /// Returns up to 5 unique foods with their most recent amount/unit combination
+    func getQuickFeedingActions(for petId: UUID, foods: [PetFood]) -> [QuickFeedingAction] {
+        guard let cached = getCachedFeedingHistoryData(for: petId) else {
+            return []
+        }
+        return deriveQuickActions(from: cached.feedings, foods: foods)
+    }
+
+    /// Async version that loads from disk cache if memory cache is empty
+    func getQuickFeedingActionsAsync(for petId: UUID, foods: [PetFood]) async -> [QuickFeedingAction] {
+        // Try memory cache first
+        if let cached = getCachedFeedingHistoryData(for: petId) {
+            let actions = deriveQuickActions(from: cached.feedings, foods: foods)
+            if !actions.isEmpty {
+                return actions
+            }
+        }
+
+        // Try disk cache
+        let diskCached: PersistentCacheManager.CachedData<FeedingListResponse>? =
+            await persistentCache.load(forKey: .feedingHistory(petId: petId))
+
+        if let diskCached = diskCached {
+            // Populate memory cache
+            cacheFeedingHistory(diskCached.data, for: petId)
+            return deriveQuickActions(from: diskCached.data.feedings, foods: foods)
+        }
+
+        return []
+    }
+
+    /// Helper to derive quick actions from feedings
+    private func deriveQuickActions(from feedings: [PetFeeding], foods: [PetFood]) -> [QuickFeedingAction] {
+        let foodsDict = Dictionary(uniqueKeysWithValues: foods.map { ($0.id, $0) })
+        var seenFoodIds = Set<UUID>()
+        var actions: [QuickFeedingAction] = []
+
+        // Feedings are already sorted by fedAt descending (most recent first)
+        for feeding in feedings {
+            guard !seenFoodIds.contains(feeding.foodId),
+                  let food = foodsDict[feeding.foodId] else {
+                continue
+            }
+
+            seenFoodIds.insert(feeding.foodId)
+            actions.append(QuickFeedingAction(from: feeding, food: food))
+
+            if actions.count >= 5 {
+                break
+            }
+        }
+
+        return actions
     }
 
     func updateFeeding(

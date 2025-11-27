@@ -102,6 +102,25 @@ struct PetFeeding: Codable, Identifiable {
     let createdAt: Date
 }
 
+/// Represents a quick action for repeating a recent feeding
+struct QuickFeedingAction: Identifiable, Equatable {
+    let id: UUID  // Uses foodId for deduplication
+    let foodId: UUID
+    let foodName: String
+    let amount: Double
+    let amountUnit: ContainerUnit
+    let calories: Double
+
+    init(from feeding: PetFeeding, food: PetFood) {
+        self.id = feeding.foodId
+        self.foodId = feeding.foodId
+        self.foodName = food.name
+        self.amount = feeding.amount
+        self.amountUnit = feeding.amountUnit
+        self.calories = feeding.calories
+    }
+}
+
 struct CalorieGoal: Codable, Identifiable {
     let id: UUID
     let petId: UUID
