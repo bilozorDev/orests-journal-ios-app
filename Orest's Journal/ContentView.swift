@@ -1152,6 +1152,14 @@ struct MedicationView: View {
     @State private var showRecordDose = false
     @State private var errorMessage: String?
 
+    // Edit/Delete/History state
+    @State private var medicationToEdit: PetMedication?
+    @State private var medicationToDelete: PetMedication?
+    @State private var showDeleteConfirmation = false
+    @State private var showDeleteResultAlert = false
+    @State private var deleteResultMessage = ""
+    @State private var showAllHistory = false
+
     var activeMedications: [PetMedication] {
         medications.filter { $0.isActive }
     }
@@ -1161,7 +1169,7 @@ struct MedicationView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if medications.isEmpty && hasLoaded {
                     VStack(spacing: 16) {
@@ -1181,6 +1189,20 @@ struct MedicationView: View {
                             Section(header: Text("Active Medications")) {
                                 ForEach(activeMedications) { medication in
                                     MedicationRowView(medication: medication, pet: pets[medication.petId])
+                                        .contextMenu {
+                                            Button(action: {
+                                                medicationToEdit = medication
+                                            }) {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+
+                                            Button(role: .destructive, action: {
+                                                medicationToDelete = medication
+                                                showDeleteConfirmation = true
+                                            }) {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -1190,6 +1212,20 @@ struct MedicationView: View {
                                 ForEach(endedMedications) { medication in
                                     MedicationRowView(medication: medication, pet: pets[medication.petId])
                                         .opacity(0.6)
+                                        .contextMenu {
+                                            Button(action: {
+                                                medicationToEdit = medication
+                                            }) {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+
+                                            Button(role: .destructive, action: {
+                                                medicationToDelete = medication
+                                                showDeleteConfirmation = true
+                                            }) {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -1206,6 +1242,13 @@ struct MedicationView: View {
             .navigationTitle("Medication")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        showAllHistory = true
+                    }) {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button(action: {
@@ -1228,6 +1271,35 @@ struct MedicationView: View {
             }
             .sheet(isPresented: $showRecordDose) {
                 RecordDoseView()
+            }
+            .sheet(item: $medicationToEdit) { medication in
+                EditMedicationView(medication: medication) { updatedMedication in
+                    if let index = medications.firstIndex(where: { $0.id == updatedMedication.id }) {
+                        medications[index] = updatedMedication
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showAllHistory) {
+                AllMedicationHistoryView()
+            }
+            .alert("Delete Medication", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    medicationToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let medication = medicationToDelete {
+                        Task {
+                            await deleteMedication(medication)
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete \"\(medicationToDelete?.name ?? "")\"? This action cannot be undone.")
+            }
+            .alert("Medication Archived", isPresented: $showDeleteResultAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteResultMessage)
             }
             .onChange(of: showAddMedication) { _, isShowing in
                 if !isShowing {
@@ -1277,6 +1349,25 @@ struct MedicationView: View {
             print("Error loading medications: \(error)")
         }
         isLoading = false
+    }
+
+    private func deleteMedication(_ medication: PetMedication) async {
+        do {
+            let response = try await DataService.shared.deleteMedication(
+                id: medication.id,
+                petId: medication.petId
+            )
+            medicationToDelete = nil
+            await loadMedications(forceRefresh: true, showLoading: false)
+
+            if response.archived && !response.deleted {
+                deleteResultMessage = response.message
+                showDeleteResultAlert = true
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error deleting medication: \(error)")
+        }
     }
 }
 

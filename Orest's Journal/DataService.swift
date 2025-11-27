@@ -29,6 +29,7 @@ final class DataService {
     private var feedingHistoryCache: [UUID: CacheEntry<FeedingListResponse>] = [:]
     private var foodsCache: [Bool: CacheEntry<[PetFood]>] = [:]  // Key: includeArchived flag
     private var medicationsCache: [UUID: CacheEntry<[PetMedication]>] = [:]  // Key: petId (nil stored as UUID())
+    private var medicationHistoryCache: [UUID: CacheEntry<AllDosesListResponse>] = [:]
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let foodsCacheTTL: TimeInterval = 300  // 5 minutes (foods change rarely)
     private let medicationsCacheTTL: TimeInterval = 60  // 1 minute
@@ -53,6 +54,7 @@ final class DataService {
         foodsCache.removeAll()
         familyMembersCache.removeAll()
         medicationsCache.removeAll()
+        medicationHistoryCache.removeAll()
         petsCache = nil
 
         // Clear disk cache
@@ -206,6 +208,52 @@ final class DataService {
     /// Returns cached medications data if available (synchronous)
     func getCachedMedicationsData(for petId: UUID? = nil) -> [PetMedication]? {
         return getCachedMedications(for: petId)
+    }
+
+    // MARK: - Medication History Cache
+
+    /// Returns cached medication history if still valid, nil otherwise
+    private func getCachedMedicationHistory(for petId: UUID) -> AllDosesListResponse? {
+        guard let entry = medicationHistoryCache[petId],
+              Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    /// Stores medication history in cache with current timestamp
+    private func cacheMedicationHistory(_ data: AllDosesListResponse, for petId: UUID) {
+        medicationHistoryCache[petId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    /// Invalidates medication history cache for a specific pet (memory + disk)
+    func invalidateMedicationHistoryCache(for petId: UUID) {
+        medicationHistoryCache.removeValue(forKey: petId)
+        Task { await persistentCache.delete(forKey: .medicationHistory(petId: petId)) }
+    }
+
+    /// Returns true if there's valid cached medication history for a pet
+    func hasCachedMedicationHistory(for petId: UUID) -> Bool {
+        return getCachedMedicationHistory(for: petId) != nil
+    }
+
+    /// Returns cached medication history data if available from memory or disk (synchronous check, but may hit disk)
+    func getCachedMedicationHistoryData(for petId: UUID) -> AllDosesListResponse? {
+        // First check memory cache
+        if let memoryCache = medicationHistoryCache[petId] {
+            return memoryCache.data
+        }
+        return nil
+    }
+
+    /// Returns cached medication history from disk if available (async)
+    func getCachedMedicationHistoryFromDisk(for petId: UUID) async -> AllDosesListResponse? {
+        let cached: PersistentCacheManager.CachedData<AllDosesListResponse>? = await persistentCache.load(forKey: .medicationHistory(petId: petId))
+        if let cached = cached {
+            // Also populate memory cache
+            cacheMedicationHistory(cached.data, for: petId)
+        }
+        return cached?.data
     }
 
     // MARK: - Pet Functions
@@ -676,14 +724,48 @@ final class DataService {
         return result
     }
 
-    func deleteMedication(id: UUID, petId: UUID? = nil) async throws {
-        try await api.deleteMedication(id: id)
+    func updateMedication(
+        id: UUID,
+        name: String? = nil,
+        medicationType: MedicationType? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        timesPerDay: Int? = nil,
+        notes: String? = nil,
+        remindersEnabled: Bool? = nil,
+        scheduledTimes: [ScheduledTimeCreate]? = nil,
+        petId: UUID? = nil
+    ) async throws -> PetMedication {
+        let update = MedicationUpdate(
+            name: name,
+            medicationType: medicationType?.rawValue,
+            startDate: startDate,
+            endDate: endDate,
+            timesPerDay: timesPerDay,
+            notes: notes,
+            remindersEnabled: remindersEnabled,
+            timezone: remindersEnabled == true ? TimeZone.current.identifier : nil,
+            scheduledTimes: remindersEnabled == true ? scheduledTimes : nil
+        )
+        let result = try await api.updateMedication(id: id, update: update)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
             invalidateMedicationsCache(for: petId)
         } else {
             invalidateMedicationsCache()
         }
+        return result
+    }
+
+    func deleteMedication(id: UUID, petId: UUID? = nil) async throws -> MedicationDeleteResponse {
+        let result = try await api.deleteMedication(id: id)
+        if let petId = petId {
+            invalidateDashboardCache(for: petId)
+            invalidateMedicationsCache(for: petId)
+        } else {
+            invalidateMedicationsCache()
+        }
+        return result
     }
 
     // MARK: - Dose Functions
@@ -697,6 +779,7 @@ final class DataService {
         let result = try await api.recordDose(dose)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateMedicationHistoryCache(for: petId)
         }
         return result
     }
@@ -728,6 +811,7 @@ final class DataService {
         let result = try await api.updateDose(id: id, update: update)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateMedicationHistoryCache(for: petId)
         }
         return result
     }
@@ -736,7 +820,42 @@ final class DataService {
         try await api.deleteDose(id: id)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateMedicationHistoryCache(for: petId)
         }
+    }
+
+    func getAllDoses(petId: UUID, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> AllDosesListResponse {
+        // Only cache first page
+        let shouldCache = offset == 0
+
+        // Check memory cache first (fast path)
+        if shouldCache && !forceRefresh, let cached = getCachedMedicationHistory(for: petId) {
+            return cached
+        }
+
+        // Check disk cache (instant display, trigger background refresh)
+        if shouldCache && !forceRefresh,
+           let diskCached = await getCachedMedicationHistoryFromDisk(for: petId) {
+            // Trigger background refresh
+            Task {
+                if let fresh = try? await api.getAllDoses(petId: petId, limit: limit, offset: offset) {
+                    cacheMedicationHistory(fresh, for: petId)
+                    await persistentCache.save(fresh, forKey: .medicationHistory(petId: petId))
+                }
+            }
+            return diskCached
+        }
+
+        // Fetch from network
+        let response = try await api.getAllDoses(petId: petId, limit: limit, offset: offset)
+
+        // Update caches for first page
+        if shouldCache {
+            cacheMedicationHistory(response, for: petId)
+            await persistentCache.save(response, forKey: .medicationHistory(petId: petId))
+        }
+
+        return response
     }
 
     // MARK: - Family Functions

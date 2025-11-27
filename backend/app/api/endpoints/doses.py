@@ -3,16 +3,20 @@ from typing import Dict
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
-from app.core.authorization import verify_medication_access, verify_dose_access
+from app.core.authorization import verify_medication_access, verify_dose_access, verify_family_access, verify_pet_access
 from app.core.utils import format_user_name
 from app.models.medication import PetMedication, PetMedicationDose
+from app.models.pet import Pet
 from app.models.user import User
-from app.schemas.medication import DoseCreate, DoseUpdate, DoseResponse, DoseDetailResponse, DoseListResponse
+from app.schemas.medication import (
+    DoseCreate, DoseUpdate, DoseResponse, DoseDetailResponse, DoseListResponse,
+    AllDoseDetailResponse, AllDosesListResponse,
+)
 from app.cache.helpers import cache_delete_pattern
 
 router = APIRouter()
@@ -266,3 +270,69 @@ async def update_dose(
         "created_at": dose.created_at,
     }
     return DoseDetailResponse.model_validate(dose_dict)
+
+
+@router.get("/all/{pet_id}", response_model=AllDosesListResponse)
+async def list_all_doses(
+    pet_id: UUID,
+    limit: int = Query(default=50, le=100),
+    offset: int = Query(default=0),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """List all doses across all medications for a pet (for history view).
+
+    Returns doses with medication info included, sorted by given_at descending.
+    Includes doses from archived medications to preserve history.
+    """
+    # Verify user has access to this pet through family membership
+    await verify_pet_access(db, user_id, pet_id)
+
+    # Get all medication IDs for this pet (including archived for history)
+    meds_query = select(PetMedication.id, PetMedication.name).where(
+        PetMedication.pet_id == pet_id
+    )
+    meds_result = await db.execute(meds_query)
+    medications = {row.id: row.name for row in meds_result.all()}
+    medication_ids = list(medications.keys())
+
+    if not medication_ids:
+        return AllDosesListResponse(doses=[], total=0)
+
+    # Count total doses
+    count_query = select(func.count()).select_from(PetMedicationDose).where(
+        PetMedicationDose.medication_id.in_(medication_ids)
+    )
+    total = (await db.execute(count_query)).scalar() or 0
+
+    # Get doses with pagination
+    query = (
+        select(PetMedicationDose)
+        .where(PetMedicationDose.medication_id.in_(medication_ids))
+        .order_by(PetMedicationDose.given_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    doses = result.scalars().all()
+
+    # Get user names for all doses
+    user_ids = {d.given_by for d in doses if d.given_by}
+    user_name_map = await get_user_name_map(db, user_ids, user_id)
+
+    # Build responses with medication info and formatted names
+    dose_responses = []
+    for d in doses:
+        dose_dict = {
+            "id": d.id,
+            "medication_id": d.medication_id,
+            "medication_name": medications.get(d.medication_id, "Unknown"),
+            "pet_id": pet_id,
+            "given_at": d.given_at,
+            "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "notes": d.notes,
+            "created_at": d.created_at,
+        }
+        dose_responses.append(AllDoseDetailResponse.model_validate(dose_dict))
+
+    return AllDosesListResponse(doses=dose_responses, total=total)

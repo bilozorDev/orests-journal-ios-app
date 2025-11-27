@@ -3,18 +3,18 @@ from typing import Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
 from app.core.authorization import verify_family_access, verify_pet_access, verify_medication_access
 from app.models.pet import Pet
-from app.models.medication import PetMedication
+from app.models.medication import PetMedication, PetMedicationDose
 from app.models.notification import MedicationSchedule
 from app.schemas.medication import (
     MedicationCreate, MedicationUpdate, MedicationResponse, MedicationListResponse,
-    MedicationWithSchedulesResponse, ScheduledTimeResponse,
+    MedicationWithSchedulesResponse, ScheduledTimeResponse, MedicationDeleteResponse,
 )
 from app.cache.helpers import cache_get, cache_set, cache_delete_pattern
 from app.cache.keys import key_medications, TTL_ACTIVE_MEDS
@@ -35,6 +35,7 @@ async def list_medications(
     response: Response,
     pet_id: Optional[UUID] = None,
     active_only: bool = False,
+    include_archived: bool = False,
     timezone: str = "UTC",
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
@@ -44,6 +45,8 @@ async def list_medications(
     Args:
         timezone: IANA timezone identifier (e.g., "America/Los_Angeles")
                   Used to determine "today" for active medication filtering.
+        include_archived: If True, include archived medications in the response.
+                         Default is False (archived medications are excluded).
     """
     # Set cache control header for client-side caching
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=300"
@@ -53,7 +56,7 @@ async def list_medications(
 
     # Try cache first (only for non-active queries which don't depend on timezone)
     if not active_only:
-        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only)
+        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only, include_archived)
         cached = await cache_get(cache_key, MedicationListResponse)
         if cached:
             return cached
@@ -68,6 +71,10 @@ async def list_medications(
 
     # Build medication query
     query = select(PetMedication).where(PetMedication.pet_id.in_(pet_ids))
+
+    # Filter out archived medications unless explicitly requested
+    if not include_archived:
+        query = query.where(PetMedication.is_archived == False)
 
     if pet_id:
         query = query.where(PetMedication.pet_id == pet_id)
@@ -104,7 +111,7 @@ async def list_medications(
 
     # Cache the response (only for non-active queries)
     if not active_only:
-        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only)
+        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only, include_archived)
         await cache_set(cache_key, response, TTL_ACTIVE_MEDS)
 
     return response
@@ -204,6 +211,17 @@ async def update_medication(
     # Handle scheduled_times separately
     scheduled_times_data = update_data.pop('scheduled_times', None)
 
+    # Strip timezone info from dates (database uses naive UTC)
+    if 'start_date' in update_data and update_data['start_date'] is not None:
+        start_date = update_data['start_date']
+        if hasattr(start_date, 'tzinfo') and start_date.tzinfo is not None:
+            update_data['start_date'] = start_date.replace(tzinfo=None)
+
+    if 'end_date' in update_data and update_data['end_date'] is not None:
+        end_date = update_data['end_date']
+        if hasattr(end_date, 'tzinfo') and end_date.tzinfo is not None:
+            update_data['end_date'] = end_date.replace(tzinfo=None)
+
     for field, value in update_data.items():
         setattr(medication, field, value)
 
@@ -247,13 +265,17 @@ async def update_medication(
     return response
 
 
-@router.delete("/{medication_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{medication_id}", response_model=MedicationDeleteResponse)
 async def delete_medication(
     medication_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Delete a medication."""
+    """Delete or archive a medication based on dose history.
+
+    If the medication has recorded doses, it will be archived to preserve history.
+    If no doses exist, the medication will be hard deleted.
+    """
     # Verify user has access to this medication through family membership
     medication = await verify_medication_access(db, user_id, medication_id)
     pet_id = medication.pet_id
@@ -262,11 +284,33 @@ async def delete_medication(
     pet_result = await db.execute(select(Pet.org_id).where(Pet.id == pet_id))
     org_id = str(pet_result.scalar_one())
 
-    await db.delete(medication)
-    await db.commit()
+    # Check if medication has any doses
+    dose_count_query = select(func.count()).select_from(PetMedicationDose).where(
+        PetMedicationDose.medication_id == medication_id
+    )
+    dose_count_result = await db.execute(dose_count_query)
+    dose_count = dose_count_result.scalar() or 0
 
-    # Invalidate caches
-    await invalidate_medication_caches(pet_id, org_id)
+    if dose_count > 0:
+        # Archive instead of delete to preserve history
+        medication.is_archived = True
+        await db.commit()
+        await invalidate_medication_caches(pet_id, org_id)
+        return MedicationDeleteResponse(
+            deleted=False,
+            archived=True,
+            message=f"Medication has {dose_count} dose record(s). It has been archived instead of deleted to preserve history."
+        )
+    else:
+        # Hard delete since no doses exist
+        await db.delete(medication)
+        await db.commit()
+        await invalidate_medication_caches(pet_id, org_id)
+        return MedicationDeleteResponse(
+            deleted=True,
+            archived=False,
+            message="Medication deleted successfully."
+        )
 
 
 @router.get("/pet/{pet_id}/active", response_model=MedicationListResponse)
@@ -301,6 +345,7 @@ async def get_active_medications_for_pet(
         .where(
             and_(
                 PetMedication.pet_id == pet_id,
+                PetMedication.is_archived == False,  # Exclude archived medications
                 PetMedication.start_date <= today_date,
                 or_(
                     PetMedication.end_date.is_(None),

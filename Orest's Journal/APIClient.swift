@@ -241,6 +241,12 @@ class APIClient {
         try handleEmptyResponse(data, response)
     }
 
+    func deleteWithResponse<T: Decodable>(_ path: String) async throws -> T {
+        let request = try buildRequest(path: path, method: "DELETE")
+        let (data, response) = try await session.data(for: request)
+        return try handleResponse(data, response)
+    }
+
     // MARK: - Pets
 
     func getPets() async throws -> [Pet] {
@@ -349,7 +355,7 @@ class APIClient {
 
     // MARK: - Medications
 
-    func getMedications(petId: UUID? = nil, activeOnly: Bool = false) async throws -> [PetMedication] {
+    func getMedications(petId: UUID? = nil, activeOnly: Bool = false, includeArchived: Bool = false) async throws -> [PetMedication] {
         guard let orgId = currentOrgId else {
             throw APIError.unauthorized
         }
@@ -362,6 +368,9 @@ class APIClient {
         }
         if activeOnly {
             queryItems.append(URLQueryItem(name: "active_only", value: "true"))
+        }
+        if includeArchived {
+            queryItems.append(URLQueryItem(name: "include_archived", value: "true"))
         }
         let response: MedicationListResponse = try await get("/medications", queryItems: queryItems)
         return response.medications
@@ -378,8 +387,12 @@ class APIClient {
         return try await post("/medications", body: medication)
     }
 
-    func deleteMedication(id: UUID) async throws {
-        try await delete("/medications/\(id.uuidString)")
+    func updateMedication(id: UUID, update: MedicationUpdate) async throws -> PetMedication {
+        return try await patch("/medications/\(id.uuidString)", body: update)
+    }
+
+    func deleteMedication(id: UUID) async throws -> MedicationDeleteResponse {
+        return try await deleteWithResponse("/medications/\(id.uuidString)")
     }
 
     // MARK: - Doses
@@ -416,6 +429,13 @@ class APIClient {
 
     func deleteDose(id: UUID) async throws {
         try await delete("/doses/\(id.uuidString)")
+    }
+
+    func getAllDoses(petId: UUID, limit: Int = 50, offset: Int = 0) async throws -> AllDosesListResponse {
+        return try await get("/doses/all/\(petId.uuidString)", queryItems: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ])
     }
 
     // MARK: - Family

@@ -60,6 +60,7 @@ class MedicationResponse(BaseModel):
     notes: Optional[str] = None
     reminders_enabled: bool = False
     timezone: str = "UTC"
+    is_archived: bool = False
     created_at: datetime
 
     @property
@@ -121,3 +122,30 @@ class DoseDetailResponse(BaseModel):
 
 class DoseListResponse(BaseModel):
     doses: list[DoseDetailResponse]
+
+
+class MedicationDeleteResponse(BaseModel):
+    """Response from deleting/archiving a medication."""
+    deleted: bool
+    archived: bool
+    message: str
+
+
+class AllDoseDetailResponse(BaseModel):
+    """Dose response with medication info for all-doses endpoint."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    medication_id: UUID
+    medication_name: str
+    pet_id: UUID
+    given_at: datetime
+    given_by: str
+    notes: Optional[str] = None
+    created_at: datetime
+
+
+class AllDosesListResponse(BaseModel):
+    """Response for all-doses endpoint with pagination."""
+    doses: list[AllDoseDetailResponse]
+    total: int

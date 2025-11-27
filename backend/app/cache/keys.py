@@ -51,8 +51,15 @@ def key_feeding_history(pet_id: str, offset: int, limit: int) -> str:
     return f"feeding_history:{pet_id}:{offset}:{limit}"
 
 
-def key_medications(org_id: str, pet_id: str = None, active_only: bool = False) -> str:
+def key_medications(org_id: str, pet_id: str = None, active_only: bool = False, include_archived: bool = False) -> str:
     """Cache key for medications list."""
     if pet_id:
-        return f"medications:{org_id}:{pet_id}:{active_only}"
-    return f"medications:{org_id}:all:{active_only}"
+        return f"medications:{org_id}:{pet_id}:{active_only}:{include_archived}"
+    return f"medications:{org_id}:all:{active_only}:{include_archived}"
+
+
+def key_all_doses(org_id: str, pet_id: str = None, offset: int = 0, limit: int = 50) -> str:
+    """Cache key for all doses history."""
+    if pet_id:
+        return f"all_doses:{org_id}:{pet_id}:{offset}:{limit}"
+    return f"all_doses:{org_id}:all:{offset}:{limit}"

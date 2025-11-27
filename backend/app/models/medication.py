@@ -32,6 +32,7 @@ class PetMedication(Base):
     notes = Column(Text, nullable=True)
     reminders_enabled = Column(Boolean, default=False, nullable=False)
     timezone = Column(String(50), default="UTC", nullable=False)
+    is_archived = Column(Boolean, default=False, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

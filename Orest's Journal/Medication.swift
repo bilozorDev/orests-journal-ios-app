@@ -82,6 +82,7 @@ struct PetMedication: Codable, Identifiable, Hashable {
     let notes: String?
     let remindersEnabled: Bool
     let timezone: String
+    let isArchived: Bool
     let createdAt: Date
     let createdBy: String?
     var scheduledTimes: [ScheduledTime]?
@@ -100,6 +101,39 @@ struct PetMedication: Codable, Identifiable, Hashable {
         return true
     }
 
+    // Memberwise initializer for programmatic creation
+    init(
+        id: UUID,
+        petId: UUID,
+        name: String,
+        medicationType: MedicationType,
+        startDate: Date,
+        endDate: Date?,
+        timesPerDay: Int,
+        notes: String?,
+        remindersEnabled: Bool,
+        timezone: String,
+        isArchived: Bool,
+        createdAt: Date,
+        createdBy: String?,
+        scheduledTimes: [ScheduledTime]?
+    ) {
+        self.id = id
+        self.petId = petId
+        self.name = name
+        self.medicationType = medicationType
+        self.startDate = startDate
+        self.endDate = endDate
+        self.timesPerDay = timesPerDay
+        self.notes = notes
+        self.remindersEnabled = remindersEnabled
+        self.timezone = timezone
+        self.isArchived = isArchived
+        self.createdAt = createdAt
+        self.createdBy = createdBy
+        self.scheduledTimes = scheduledTimes
+    }
+
     // Default initializer for decoding
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -113,6 +147,7 @@ struct PetMedication: Codable, Identifiable, Hashable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
         remindersEnabled = try container.decodeIfPresent(Bool.self, forKey: .remindersEnabled) ?? false
         timezone = try container.decodeIfPresent(String.self, forKey: .timezone) ?? TimeZone.current.identifier
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
         scheduledTimes = try container.decodeIfPresent([ScheduledTime].self, forKey: .scheduledTimes)
@@ -126,4 +161,42 @@ struct PetMedicationDose: Codable, Identifiable {
     let givenBy: String
     let notes: String?
     let createdAt: Date
+}
+
+// MARK: - Medication Management Types
+
+struct MedicationDeleteResponse: Codable {
+    let deleted: Bool
+    let archived: Bool
+    let message: String
+}
+
+struct MedicationUpdate: Codable {
+    var name: String?
+    var medicationType: String?
+    var startDate: Date?
+    var endDate: Date?
+    var timesPerDay: Int?
+    var notes: String?
+    var remindersEnabled: Bool?
+    var timezone: String?
+    var scheduledTimes: [ScheduledTimeCreate]?
+}
+
+// MARK: - All Doses History Types
+
+struct AllMedicationDose: Codable, Identifiable {
+    let id: UUID
+    let medicationId: UUID
+    let medicationName: String
+    let petId: UUID
+    let givenAt: Date
+    let givenBy: String
+    let notes: String?
+    let createdAt: Date
+}
+
+struct AllDosesListResponse: Codable {
+    let doses: [AllMedicationDose]
+    let total: Int
 }

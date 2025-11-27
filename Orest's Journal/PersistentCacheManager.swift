@@ -36,6 +36,7 @@ final class PersistentCacheManager {
         case foods(includeArchived: Bool)
         case medications(petId: UUID?)
         case feedingHistory(petId: UUID)
+        case medicationHistory(petId: UUID)
         case familyMembers(familyId: String)
         case pets
 
@@ -52,6 +53,8 @@ final class PersistentCacheManager {
                 return "medications_all.json"
             case .feedingHistory(let petId):
                 return "feeding_history_\(petId.uuidString).json"
+            case .medicationHistory(let petId):
+                return "medication_history_\(petId.uuidString).json"
             case .familyMembers(let familyId):
                 return "family_members_\(familyId).json"
             case .pets:
