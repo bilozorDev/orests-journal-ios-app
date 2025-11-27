@@ -663,13 +663,15 @@ struct DashboardView: View {
                     Toast(message: toastMessage)
                         .padding(.top, 50)
                         .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation {
-                                    showToast = false
-                                }
-                            }
+                }
+            }
+            .onChange(of: showToast) { _, isShowing in
+                if isShowing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation {
+                            showToast = false
                         }
+                    }
                 }
             }
             // Note: No onChange for showRecordFeeding - the optimistic update in the
@@ -825,10 +827,11 @@ struct DashboardView: View {
         }
 
         // Make API call in background
+        // Note: No auto-refresh after API call - the optimistic update is already applied.
+        // Auto-refresh would race with the API, potentially overwriting with stale data.
+        // Data syncs on next pull-to-refresh or background refresh.
         do {
             _ = try await DataService.shared.recordDose(medicationId: medication.id, petId: selectedPet?.id)
-            // Silently refresh data in background to sync with server
-            await loadDashboardData(forceRefresh: true)
         } catch {
             // Revert optimistic update on failure
             dosesRemaining[medication.id] = previousDosesRemaining

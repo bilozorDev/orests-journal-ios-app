@@ -40,7 +40,9 @@ final class DataService {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.clearAllCaches()
+            Task { @MainActor in
+                self?.clearAllCaches()
+            }
         }
     }
 
@@ -826,10 +828,7 @@ final class DataService {
 
         // These calls will return disk cache instantly if available,
         // and trigger background refresh if stale
-        async let _ = try? getFoods()
-        async let _ = try? getMedications()
-
-        // Wait for both to complete their cache checks
-        _ = await ((), ())
+        _ = try? await getFoods()
+        _ = try? await getMedications()
     }
 }
