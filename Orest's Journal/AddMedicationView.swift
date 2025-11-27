@@ -19,6 +19,8 @@ struct AddMedicationView: View {
     @State private var endDate = Date()
     @State private var timesPerDay = 1
     @State private var notes = ""
+    @State private var remindersEnabled = false
+    @State private var scheduledTimes: [Date] = [defaultTime(hour: 9)]
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -81,6 +83,7 @@ struct AddMedicationView: View {
                                 Button(action: {
                                     if timesPerDay > 1 {
                                         timesPerDay -= 1
+                                        updateScheduledTimesCount()
                                     }
                                 }) {
                                     Image(systemName: "minus.circle.fill")
@@ -94,6 +97,7 @@ struct AddMedicationView: View {
                                 Button(action: {
                                     if timesPerDay < 10 {
                                         timesPerDay += 1
+                                        updateScheduledTimesCount()
                                     }
                                 }) {
                                     Image(systemName: "plus.circle.fill")
@@ -101,6 +105,26 @@ struct AddMedicationView: View {
                                 }
                                 .disabled(timesPerDay >= 10)
                             }
+                        }
+                    }
+
+                    Section {
+                        Toggle("Enable Reminders", isOn: $remindersEnabled)
+
+                        if remindersEnabled {
+                            ForEach(0..<timesPerDay, id: \.self) { index in
+                                DatePicker(
+                                    "Dose \(index + 1)",
+                                    selection: binding(for: index),
+                                    displayedComponents: .hourAndMinute
+                                )
+                            }
+                        }
+                    } header: {
+                        Text("Reminders")
+                    } footer: {
+                        if remindersEnabled {
+                            Text("You'll receive notifications at these times to give the medication.")
                         }
                     }
 
@@ -147,6 +171,11 @@ struct AddMedicationView: View {
             .task {
                 await loadPets()
             }
+            .onChange(of: remindersEnabled) { _, enabled in
+                if enabled {
+                    requestNotificationPermission()
+                }
+            }
         }
     }
 
@@ -155,6 +184,48 @@ struct AddMedicationView: View {
         let nameValid = !medicationName.isEmpty
         let dateValid = !hasEndDate || endDate >= startDate
         return petSelected && nameValid && dateValid
+    }
+
+    private func binding(for index: Int) -> Binding<Date> {
+        Binding(
+            get: {
+                if index < scheduledTimes.count {
+                    return scheduledTimes[index]
+                }
+                return Self.defaultTime(hour: 9 + index * 4)
+            },
+            set: { newValue in
+                while scheduledTimes.count <= index {
+                    scheduledTimes.append(Self.defaultTime(hour: 9 + scheduledTimes.count * 4))
+                }
+                scheduledTimes[index] = newValue
+            }
+        )
+    }
+
+    private func updateScheduledTimesCount() {
+        // Ensure we have enough scheduled times
+        while scheduledTimes.count < timesPerDay {
+            let hour = 9 + scheduledTimes.count * 4
+            scheduledTimes.append(Self.defaultTime(hour: min(hour, 21)))
+        }
+        // Remove excess times
+        if scheduledTimes.count > timesPerDay {
+            scheduledTimes = Array(scheduledTimes.prefix(timesPerDay))
+        }
+    }
+
+    private static func defaultTime(hour: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = 0
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
+    private func requestNotificationPermission() {
+        Task {
+            await NotificationManager.shared.requestAuthorization()
+        }
     }
 
     private func loadPets() async {
@@ -181,6 +252,11 @@ struct AddMedicationView: View {
             do {
                 let pet = pets.count == 1 ? pets.first! : selectedPet!
 
+                // Convert scheduled times to ScheduledTimeCreate
+                let schedules: [ScheduledTimeCreate]? = remindersEnabled ? scheduledTimes.prefix(timesPerDay).map { date in
+                    ScheduledTimeCreate(from: date)
+                } : nil
+
                 _ = try await DataService.shared.createMedication(
                     petId: pet.id,
                     name: medicationName,
@@ -188,7 +264,9 @@ struct AddMedicationView: View {
                     startDate: startDate,
                     endDate: hasEndDate ? endDate : nil,
                     timesPerDay: timesPerDay,
-                    notes: notes.isEmpty ? nil : notes
+                    notes: notes.isEmpty ? nil : notes,
+                    remindersEnabled: remindersEnabled,
+                    scheduledTimes: schedules
                 )
 
                 dismiss()

@@ -6,6 +6,21 @@ from pydantic import BaseModel, ConfigDict
 from app.models.medication import MedicationType
 
 
+# Schedule Schemas
+class ScheduledTimeCreate(BaseModel):
+    hour: int  # 0-23
+    minute: int = 0  # 0-59
+
+
+class ScheduledTimeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    medication_id: UUID
+    scheduled_hour: int
+    scheduled_minute: int
+
+
 # Medication Schemas
 class MedicationCreate(BaseModel):
     pet_id: UUID
@@ -15,6 +30,9 @@ class MedicationCreate(BaseModel):
     end_date: Optional[datetime] = None
     times_per_day: int = 1
     notes: Optional[str] = None
+    reminders_enabled: bool = False
+    timezone: str = "UTC"
+    scheduled_times: Optional[list[ScheduledTimeCreate]] = None  # Optional: set reminder times
 
 
 class MedicationUpdate(BaseModel):
@@ -24,6 +42,9 @@ class MedicationUpdate(BaseModel):
     end_date: Optional[datetime] = None
     times_per_day: Optional[int] = None
     notes: Optional[str] = None
+    reminders_enabled: Optional[bool] = None
+    timezone: Optional[str] = None
+    scheduled_times: Optional[list[ScheduledTimeCreate]] = None
 
 
 class MedicationResponse(BaseModel):
@@ -37,6 +58,8 @@ class MedicationResponse(BaseModel):
     end_date: Optional[datetime] = None
     times_per_day: int
     notes: Optional[str] = None
+    reminders_enabled: bool = False
+    timezone: str = "UTC"
     created_at: datetime
 
     @property
@@ -49,6 +72,11 @@ class MedicationResponse(BaseModel):
         if self.end_date and now > self.end_date:
             return False
         return True
+
+
+class MedicationWithSchedulesResponse(MedicationResponse):
+    """Medication response including scheduled reminder times."""
+    scheduled_times: list[ScheduledTimeResponse] = []
 
 
 class MedicationListResponse(BaseModel):

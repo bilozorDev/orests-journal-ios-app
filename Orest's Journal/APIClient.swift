@@ -60,8 +60,8 @@ class APIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    // Token provider - returns the auth token synchronously
-    var getToken: (() -> String)?
+    // Auth token for API requests
+    var authToken: String?
 
     // Current organization ID (family)
     var currentOrgId: String?
@@ -144,8 +144,7 @@ class APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // Add auth token if available
-        if let getToken = getToken {
-            let token = getToken()
+        if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
@@ -230,6 +229,14 @@ class APIClient {
 
     func delete(_ path: String) async throws {
         let request = try buildRequest(path: path, method: "DELETE")
+        let (data, response) = try await session.data(for: request)
+        try handleEmptyResponse(data, response)
+    }
+
+    func delete<T: Encodable>(_ path: String, body: T) async throws {
+        var request = try buildRequest(path: path, method: "DELETE")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
         let (data, response) = try await session.data(for: request)
         try handleEmptyResponse(data, response)
     }
@@ -449,6 +456,18 @@ class APIClient {
             URLQueryItem(name: "timezone", value: TimeZone.current.identifier)
         ])
     }
+
+    // MARK: - Notifications
+
+    func registerDeviceToken(token: String, deviceName: String) async throws -> DeviceTokenResponse {
+        let request = DeviceTokenRequest(deviceToken: token, deviceName: deviceName)
+        return try await post("/notifications/device-token", body: request)
+    }
+
+    func unregisterDeviceToken(token: String) async throws {
+        let request = DeviceTokenDeleteRequest(deviceToken: token)
+        try await delete("/notifications/device-token", body: request)
+    }
 }
 
 // MARK: - Request/Response Types
@@ -528,6 +547,9 @@ struct MedicationCreate: Encodable {
     let endDate: Date?
     let timesPerDay: Int
     let notes: String?
+    let remindersEnabled: Bool?
+    let timezone: String?
+    let scheduledTimes: [ScheduledTimeCreate]?
 }
 
 struct MedicationListResponse: Decodable {
@@ -605,4 +627,26 @@ struct FamilyDetailResponse: Decodable {
     let inviteCode: String
     let createdAt: Date
     let members: [FamilyMemberResponse]
+}
+
+// MARK: - Notification Types
+
+struct DeviceTokenRequest: Encodable {
+    let deviceToken: String
+    let deviceName: String
+}
+
+struct DeviceTokenDeleteRequest: Encodable {
+    let deviceToken: String
+}
+
+struct DeviceTokenResponse: Decodable {
+    let id: UUID
+    let userId: UUID
+    let deviceToken: String
+    let deviceName: String?
+    let platform: String
+    let isActive: Bool
+    let createdAt: Date
+    let updatedAt: Date
 }

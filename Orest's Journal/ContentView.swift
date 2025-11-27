@@ -688,6 +688,13 @@ struct DashboardView: View {
                     await loadDashboardData()
                 }
             }
+            .onAppear {
+                // Show cached dashboard data immediately if pet is already selected
+                if let pet = selectedPet,
+                   let cached = DataService.shared.getCachedDashboardData(for: pet.id) {
+                    applyDashboardData(cached)
+                }
+            }
             .task {
                 guard !hasLoaded else { return }
                 await loadPets()
@@ -735,25 +742,7 @@ struct DashboardView: View {
 
         do {
             let data = try await DataService.shared.getDashboardData(for: pet.id, forceRefresh: forceRefresh)
-
-            // Update all state from combined response
-            calorieGoal = data.calorieGoal?.dailyCalories ?? 0
-            todayCalories = data.totalCalories
-            todayFeedings = data.todayFeedings
-            foods = Dictionary(uniqueKeysWithValues: data.foods.map { ($0.id, $0) })
-
-            // Update medications with dose info
-            activeMedications = data.medications.map { $0.medication }
-            var doses: [UUID: PetMedicationDose] = [:]
-            var remaining: [UUID: Int] = [:]
-            for medWithDoses in data.medications {
-                if let lastDose = medWithDoses.lastDose {
-                    doses[medWithDoses.medication.id] = lastDose
-                }
-                remaining[medWithDoses.medication.id] = medWithDoses.dosesRemaining
-            }
-            lastDoses = doses
-            dosesRemaining = remaining
+            applyDashboardData(data)
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
             // Ignore cancellation errors - these happen when tasks are cancelled during view updates
             print("Dashboard load cancelled (this is normal during navigation)")
@@ -768,6 +757,27 @@ struct DashboardView: View {
                 activeMedications = []
             }
         }
+    }
+
+    /// Apply dashboard data to state (used for both cached and fresh data)
+    private func applyDashboardData(_ data: DashboardData) {
+        calorieGoal = data.calorieGoal?.dailyCalories ?? 0
+        todayCalories = data.totalCalories
+        todayFeedings = data.todayFeedings
+        foods = Dictionary(uniqueKeysWithValues: data.foods.map { ($0.id, $0) })
+
+        activeMedications = data.medications.map { $0.medication }
+        var doses: [UUID: PetMedicationDose] = [:]
+        var remaining: [UUID: Int] = [:]
+        for medWithDoses in data.medications {
+            if let lastDose = medWithDoses.lastDose {
+                doses[medWithDoses.medication.id] = lastDose
+            }
+            remaining[medWithDoses.medication.id] = medWithDoses.dosesRemaining
+        }
+        lastDoses = doses
+        dosesRemaining = remaining
+        hasLoaded = true
     }
 
     private func recordDose(for medication: PetMedication) async {
@@ -973,7 +983,7 @@ struct FoodView: View {
             .onChange(of: showAddFood) { _, isShowing in
                 if !isShowing {
                     Task {
-                        await loadFoods()
+                        await loadFoods(forceRefresh: true, showLoading: false)
                     }
                 }
             }
@@ -996,13 +1006,20 @@ struct FoodView: View {
             } message: {
                 Text(deleteResultMessage)
             }
+            .onAppear {
+                // Show cached foods immediately (synchronous)
+                if let cached = DataService.shared.getCachedFoodsData() {
+                    foods = cached
+                    hasLoaded = true
+                }
+            }
             .task {
-                guard !hasLoaded else { return }
-                await loadFoods()
+                // Refresh in background (silently if cache already displayed)
+                await loadFoods(showLoading: !hasLoaded)
                 await loadPets()
             }
             .refreshable {
-                await loadFoods()
+                await loadFoods(forceRefresh: true, showLoading: false)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowAddFood"))) { _ in
                 showAddFood = true
@@ -1010,10 +1027,12 @@ struct FoodView: View {
         }
     }
 
-    private func loadFoods() async {
-        isLoading = true
+    private func loadFoods(forceRefresh: Bool = false, showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
         do {
-            foods = try await DataService.shared.getFoods()
+            foods = try await DataService.shared.getFoods(forceRefresh: forceRefresh)
             hasLoaded = true
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
             print("Food load cancelled (this is normal during navigation)")
@@ -1039,7 +1058,7 @@ struct FoodView: View {
         do {
             let response = try await DataService.shared.deleteFood(id: food.id)
             foodToDelete = nil
-            await loadFoods()
+            await loadFoods(forceRefresh: true, showLoading: false)
 
             if response.archived && !response.deleted {
                 deleteResultMessage = response.message
@@ -1196,31 +1215,40 @@ struct MedicationView: View {
             .onChange(of: showAddMedication) { _, isShowing in
                 if !isShowing {
                     Task {
-                        await loadMedications()
+                        await loadMedications(forceRefresh: true, showLoading: false)
                     }
                 }
             }
             .onChange(of: showRecordDose) { _, isShowing in
                 if !isShowing {
                     Task {
-                        await loadMedications()
+                        await loadMedications(forceRefresh: true, showLoading: false)
                     }
                 }
             }
+            .onAppear {
+                // Show cached data immediately (synchronous)
+                if let cached = DataService.shared.getCachedMedicationsData() {
+                    medications = cached
+                    hasLoaded = true
+                }
+            }
             .task {
-                guard !hasLoaded else { return }
-                await loadMedications()
+                // Refresh in background (silently if cache already displayed)
+                await loadMedications(showLoading: !hasLoaded)
             }
             .refreshable {
-                await loadMedications()
+                await loadMedications(forceRefresh: true, showLoading: false)
             }
         }
     }
 
-    private func loadMedications() async {
-        isLoading = true
+    private func loadMedications(forceRefresh: Bool = false, showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
         do {
-            medications = try await DataService.shared.getMedications()
+            medications = try await DataService.shared.getMedications(forceRefresh: forceRefresh)
 
             let allPets = try await DataService.shared.getPets()
             pets = Dictionary(uniqueKeysWithValues: allPets.map { ($0.id, $0) })

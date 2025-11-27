@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -14,8 +14,17 @@ from app.schemas.food import (
     FeedingCreate, FeedingUpdate, FeedingResponse, FeedingListResponse,
     CalorieGoalCreate, CalorieGoalResponse,
 )
+from app.cache.helpers import cache_get, cache_set, cache_delete_pattern
+from app.cache.keys import key_feeding_history, TTL_FEEDING_HISTORY
 
 router = APIRouter()
+
+
+async def invalidate_feeding_caches(pet_id: UUID) -> None:
+    """Invalidate all feeding-related caches for a pet."""
+    # Invalidate dashboard and feeding history caches
+    await cache_delete_pattern(f"dashboard:{pet_id}:*")
+    await cache_delete_pattern(f"feeding_history:{pet_id}:*")
 
 
 @router.post("", response_model=FeedingResponse, status_code=status.HTTP_201_CREATED)
@@ -31,7 +40,7 @@ async def create_feeding(
     feeding = PetFeeding(
         pet_id=feeding_in.pet_id,
         food_id=feeding_in.food_id,
-        fed_by=user_id,
+        fed_by=UUID(user_id),
         fed_at=feeding_in.fed_at or datetime.utcnow(),
         amount=feeding_in.amount,
         amount_unit=feeding_in.amount_unit.value,
@@ -42,6 +51,9 @@ async def create_feeding(
     await db.commit()
     await db.refresh(feeding)
 
+    # Invalidate dashboard cache
+    await invalidate_feeding_caches(feeding_in.pet_id)
+
     return FeedingResponse.model_validate(feeding)
 
 
@@ -49,17 +61,30 @@ async def create_feeding(
 async def list_pet_feedings(
     pet_id: UUID,
     limit: int = Query(default=50, le=100),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List feedings for a pet."""
+    """List feedings for a pet with pagination support."""
     # Verify user has access to this pet through family membership
     await verify_pet_access(db, user_id, pet_id)
 
+    # Try cache first
+    cache_key = key_feeding_history(str(pet_id), offset, limit)
+    cached = await cache_get(cache_key, FeedingListResponse)
+    if cached:
+        return cached
+
+    # Get total count for pagination
+    count_query = select(func.count(PetFeeding.id)).where(PetFeeding.pet_id == pet_id)
+    total = (await db.execute(count_query)).scalar() or 0
+
+    # Get paginated feedings
     query = (
         select(PetFeeding)
         .where(PetFeeding.pet_id == pet_id)
         .order_by(PetFeeding.fed_at.desc())
+        .offset(offset)
         .limit(limit)
     )
     result = await db.execute(query)
@@ -67,10 +92,16 @@ async def list_pet_feedings(
 
     total_calories = sum(f.calories for f in feedings)
 
-    return FeedingListResponse(
+    response = FeedingListResponse(
         feedings=[FeedingResponse.model_validate(f) for f in feedings],
         total_calories=total_calories,
+        total=total,
     )
+
+    # Cache the response
+    await cache_set(cache_key, response, TTL_FEEDING_HISTORY)
+
+    return response
 
 
 @router.get("/pet/{pet_id}/today", response_model=FeedingListResponse)
@@ -118,9 +149,13 @@ async def delete_feeding(
     """Delete a feeding record."""
     # Verify user has access to this feeding through family membership
     feeding = await verify_feeding_access(db, user_id, feeding_id)
+    pet_id = feeding.pet_id
 
     await db.delete(feeding)
     await db.commit()
+
+    # Invalidate dashboard cache
+    await invalidate_feeding_caches(pet_id)
 
 
 @router.patch("/{feeding_id}", response_model=FeedingResponse)
@@ -143,6 +178,9 @@ async def update_feeding(
 
     await db.commit()
     await db.refresh(feeding)
+
+    # Invalidate dashboard cache
+    await invalidate_feeding_caches(feeding.pet_id)
 
     return FeedingResponse.model_validate(feeding)
 
@@ -218,10 +256,13 @@ async def set_calorie_goal(
         daily_calories=goal_in.daily_calories,
         effective_from=now,
         notes=goal_in.notes,
-        created_by=user_id,
+        created_by=UUID(user_id),
     )
     db.add(goal)
     await db.commit()
     await db.refresh(goal)
+
+    # Invalidate dashboard cache
+    await invalidate_feeding_caches(pet_id)
 
     return CalorieGoalResponse.model_validate(goal)

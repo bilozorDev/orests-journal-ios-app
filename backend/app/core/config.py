@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Database (Neon PostgreSQL)
     database_url: str
 
+    # Redis Cache (optional)
+    redis_url: Optional[str] = None
+
     # JWT Authentication (Sign in with Apple + our own tokens)
     jwt_secret_key: str  # Used to sign/verify our own JWTs
     jwt_expiration_days: int = 7
@@ -25,6 +28,13 @@ class Settings(BaseSettings):
 
     # OpenAI - Optional for now
     openai_api_key: Optional[str] = None
+
+    # APNs (Apple Push Notifications) - Optional
+    apns_key_id: Optional[str] = None
+    apns_team_id: Optional[str] = None
+    apns_bundle_id: str = "com.notip.orests-journal"
+    apns_key_base64: Optional[str] = None  # Base64 encoded .p8 key file
+    apns_use_sandbox: bool = True  # False for production
 
     # CORS
     allowed_origins: str = "http://localhost:3000"

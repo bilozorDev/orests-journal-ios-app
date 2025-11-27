@@ -52,12 +52,12 @@ async def create_pet(
     await verify_family_access(db, user_id, org_id)
 
     pet = Pet(
-        org_id=org_id,
+        org_id=UUID(org_id),
         name=pet_in.name,
         kind=pet_in.kind,
         photo_url=pet_in.photo_url,
         current_weight=pet_in.current_weight,
-        created_by=user_id,
+        created_by=UUID(user_id),
     )
     db.add(pet)
     await db.flush()

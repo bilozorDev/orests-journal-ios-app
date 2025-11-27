@@ -1,0 +1,382 @@
+"""
+Celery tasks for medication reminders and notifications.
+"""
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from uuid import UUID
+
+from sqlalchemy import select, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import selectinload
+
+from app.core.celery_app import celery_app
+from app.core.config import get_settings
+from app.models.medication import PetMedication, PetMedicationDose
+from app.models.notification import MedicationSchedule, NotificationLog, UserDeviceToken
+from app.models.pet import Pet
+from app.models.user import FamilyMember
+from app.services.apns import apns_service
+
+logger = logging.getLogger(__name__)
+
+
+def get_task_session_factory():
+    """
+    Create a fresh async engine and session factory for Celery tasks.
+
+    This is necessary because asyncpg connections are tied to the event loop
+    that created them. Since Celery tasks run in separate processes with
+    different event loops, we need to create fresh connections each time.
+    """
+    settings = get_settings()
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+        pool_pre_ping=True,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "server_settings": {
+                "jit": "off",
+                "plan_cache_mode": "force_custom_plan",
+            },
+            "prepared_statement_cache_size": 0,
+            "statement_cache_size": 0,
+        },
+    )
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+    return engine, session_factory
+
+
+def run_async(coro):
+    """Run async code in a sync context (Celery tasks)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+async def get_family_device_tokens(db, org_id: UUID) -> list[str]:
+    """Get all active device tokens for family members."""
+    # Get all family members
+    members_query = select(FamilyMember.user_id).where(FamilyMember.family_id == org_id)
+    members_result = await db.execute(members_query)
+    user_ids = [m for m in members_result.scalars().all()]
+
+    if not user_ids:
+        return []
+
+    # Get active device tokens for these users
+    tokens_query = select(UserDeviceToken.device_token).where(
+        and_(
+            UserDeviceToken.user_id.in_(user_ids),
+            UserDeviceToken.is_active == True,
+        )
+    )
+    tokens_result = await db.execute(tokens_query)
+    return list(tokens_result.scalars().all())
+
+
+async def notification_already_sent(
+    db, medication_id: UUID, notification_type: str, scheduled_time: datetime
+) -> bool:
+    """Check if a notification was already sent for this medication/time."""
+    query = select(NotificationLog).where(
+        and_(
+            NotificationLog.medication_id == medication_id,
+            NotificationLog.notification_type == notification_type,
+            NotificationLog.scheduled_time == scheduled_time,
+        )
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none() is not None
+
+
+async def log_notification(
+    db, medication_id: UUID, notification_type: str, scheduled_time: datetime, recipient_count: int
+):
+    """Log a sent notification."""
+    log = NotificationLog(
+        medication_id=medication_id,
+        notification_type=notification_type,
+        scheduled_time=scheduled_time,
+        recipient_count=recipient_count,
+    )
+    db.add(log)
+    await db.commit()
+
+
+async def dose_recorded_around_time(
+    db, medication_id: UUID, expected_time: datetime, window_minutes: int = 30
+) -> bool:
+    """Check if a dose was recorded within a time window of the expected time."""
+    window_start = expected_time - timedelta(minutes=window_minutes)
+    window_end = expected_time + timedelta(minutes=window_minutes)
+
+    query = select(PetMedicationDose).where(
+        and_(
+            PetMedicationDose.medication_id == medication_id,
+            PetMedicationDose.given_at >= window_start,
+            PetMedicationDose.given_at <= window_end,
+        )
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none() is not None
+
+
+@celery_app.task(name="app.tasks.notifications.send_scheduled_reminders")
+def send_scheduled_reminders():
+    """
+    Send scheduled medication reminders.
+
+    Runs every minute, checks for medications with scheduled times matching
+    the current time (within a 1-minute window).
+    """
+    logger.info("Running send_scheduled_reminders task")
+    run_async(_send_scheduled_reminders())
+
+
+async def _send_scheduled_reminders():
+    """Async implementation of send_scheduled_reminders."""
+    engine, session_factory = get_task_session_factory()
+    try:
+        async with session_factory() as db:
+            now_utc = datetime.utcnow()
+
+            # Get all active medications with reminders enabled
+            # We filter by timezone in Python since schedules are stored in local time
+            query = (
+                select(PetMedication)
+                .join(Pet)
+                .options(selectinload(PetMedication.schedules))
+                .where(
+                    and_(
+                        PetMedication.reminders_enabled == True,
+                        # Active check: within date range
+                        PetMedication.start_date <= now_utc,
+                        or_(
+                            PetMedication.end_date.is_(None),
+                            PetMedication.end_date >= now_utc,
+                        ),
+                    )
+                )
+            )
+            result = await db.execute(query)
+            all_medications = result.unique().scalars().all()
+            logger.info(f"Found {len(all_medications)} active medications with reminders enabled")
+
+            # Filter medications whose schedule matches the current time in their timezone
+            medications = []
+            for med in all_medications:
+                if not med.schedules:
+                    continue
+
+                # Get medication's timezone
+                try:
+                    tz = ZoneInfo(med.timezone)
+                except Exception:
+                    tz = ZoneInfo("UTC")
+
+                # Get current time in medication's timezone
+                now_local = datetime.now(tz)
+                local_hour = now_local.hour
+                local_minute = now_local.minute
+
+                # Check if any schedule matches
+                for schedule in med.schedules:
+                    if schedule.scheduled_hour == local_hour and schedule.scheduled_minute == local_minute:
+                        logger.info(f"Medication '{med.name}' matches schedule {local_hour}:{local_minute:02d} in {med.timezone}")
+                        medications.append(med)
+                        break
+
+            logger.info(f"Found {len(medications)} medications with matching schedules")
+
+            for med in medications:
+                # Get pet name for notification
+                pet_query = select(Pet).where(Pet.id == med.pet_id)
+                pet_result = await db.execute(pet_query)
+                pet = pet_result.scalar_one_or_none()
+
+                if not pet:
+                    continue
+
+                # Get medication's timezone and current local time
+                try:
+                    tz = ZoneInfo(med.timezone)
+                except Exception:
+                    tz = ZoneInfo("UTC")
+
+                now_local = datetime.now(tz)
+
+                # Create scheduled time for today in medication's timezone
+                scheduled_time = now_local.replace(
+                    hour=now_local.hour,
+                    minute=now_local.minute,
+                    second=0,
+                    microsecond=0,
+                )
+                # Convert back to UTC for storage
+                scheduled_time_utc = scheduled_time.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+                # Check if already sent
+                if await notification_already_sent(db, med.id, "reminder", scheduled_time_utc):
+                    continue
+
+                # Get family device tokens
+                tokens = await get_family_device_tokens(db, pet.org_id)
+
+                if not tokens:
+                    logger.info(f"No device tokens for medication {med.id}")
+                    continue
+
+                # Send notifications
+                title = "Medication Reminder"
+                body = f"Time to give {pet.name} their {med.name}"
+
+                sent_count = await apns_service.send_to_multiple(
+                    device_tokens=tokens,
+                    title=title,
+                    body=body,
+                    data={
+                        "type": "medication_reminder",
+                        "medication_id": str(med.id),
+                        "pet_id": str(pet.id),
+                        "pet_name": pet.name,
+                    },
+                )
+
+                # Log the notification
+                await log_notification(db, med.id, "reminder", scheduled_time_utc, sent_count)
+                logger.info(f"Sent reminder for {med.name} to {sent_count} devices")
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.tasks.notifications.check_missed_doses")
+def check_missed_doses():
+    """
+    Check for missed doses and send reminders.
+
+    Runs every 15 minutes, checks for medications where:
+    - Scheduled time was 1+ hour ago today
+    - No dose was recorded within 30 minutes of scheduled time
+    - No missed dose notification was already sent for this time
+    """
+    logger.info("Running check_missed_doses task")
+    run_async(_check_missed_doses())
+
+
+async def _check_missed_doses():
+    """Async implementation of check_missed_doses."""
+    engine, session_factory = get_task_session_factory()
+    try:
+        async with session_factory() as db:
+            now = datetime.utcnow()
+
+            # Get all active medications with reminders enabled
+            query = (
+                select(PetMedication)
+                .join(Pet)
+                .options(selectinload(PetMedication.schedules))
+                .where(
+                    and_(
+                        PetMedication.reminders_enabled == True,
+                        # Active check
+                        PetMedication.start_date <= now,
+                        or_(
+                            PetMedication.end_date.is_(None),
+                            PetMedication.end_date >= now,
+                        ),
+                    )
+                )
+            )
+            result = await db.execute(query)
+            medications = result.unique().scalars().all()
+
+            for med in medications:
+                if not med.schedules:
+                    continue
+
+                # Get pet info
+                pet_query = select(Pet).where(Pet.id == med.pet_id)
+                pet_result = await db.execute(pet_query)
+                pet = pet_result.scalar_one_or_none()
+
+                if not pet:
+                    continue
+
+                # Get medication's timezone
+                try:
+                    tz = ZoneInfo(med.timezone)
+                except Exception:
+                    tz = ZoneInfo("UTC")
+
+                now_local = datetime.now(tz)
+
+                # Check each scheduled time
+                for schedule in med.schedules:
+                    # Create today's scheduled time in medication's timezone
+                    scheduled_local = now_local.replace(
+                        hour=schedule.scheduled_hour,
+                        minute=schedule.scheduled_minute,
+                        second=0,
+                        microsecond=0,
+                    )
+
+                    # Only check if scheduled time was 1+ hour ago
+                    time_since_scheduled = now_local - scheduled_local
+                    if time_since_scheduled.total_seconds() < 3600:  # Less than 1 hour
+                        continue
+
+                    # Only check today's schedules (not future days)
+                    if time_since_scheduled.total_seconds() > 86400:  # More than 24 hours
+                        continue
+
+                    # Convert to UTC for database queries
+                    scheduled_utc = scheduled_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+                    # Check if already sent missed dose notification
+                    if await notification_already_sent(db, med.id, "missed_dose", scheduled_utc):
+                        continue
+
+                    # Check if dose was recorded around this time
+                    if await dose_recorded_around_time(db, med.id, scheduled_utc):
+                        continue
+
+                    # Get family device tokens
+                    tokens = await get_family_device_tokens(db, pet.org_id)
+
+                    if not tokens:
+                        continue
+
+                    # Send missed dose notification
+                    title = "Medication Reminder"
+                    body = f"Did you remember to give {pet.name} their {med.name}?"
+
+                    sent_count = await apns_service.send_to_multiple(
+                        device_tokens=tokens,
+                        title=title,
+                        body=body,
+                        data={
+                            "type": "missed_dose",
+                            "medication_id": str(med.id),
+                            "pet_id": str(pet.id),
+                            "pet_name": pet.name,
+                        },
+                    )
+
+                    # Log the notification
+                    await log_notification(db, med.id, "missed_dose", scheduled_utc, sent_count)
+                    logger.info(f"Sent missed dose reminder for {med.name} to {sent_count} devices")
+    finally:
+        await engine.dispose()

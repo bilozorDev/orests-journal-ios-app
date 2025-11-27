@@ -10,7 +10,7 @@ setting the app.current_user_id session variable, which enables database-level
 access control as a defense-in-depth measure.
 """
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, and_
@@ -27,7 +27,7 @@ from app.models.health import PetHealthCategory, PetHealthEvent
 async def verify_family_access(
     db: AsyncSession,
     user_id: str,
-    family_id: str,
+    family_id: Union[str, UUID],
 ) -> FamilyMember:
     """
     Verify that the user belongs to the specified family.
@@ -37,7 +37,7 @@ async def verify_family_access(
     Args:
         db: Database session
         user_id: The authenticated user's ID
-        family_id: The family ID to check access for
+        family_id: The family ID to check access for (string or UUID)
 
     Returns:
         The FamilyMember record if access is granted
@@ -48,10 +48,14 @@ async def verify_family_access(
     # Set RLS context for defense-in-depth
     await set_rls_user(db, user_id)
 
+    # Handle both string and UUID inputs
+    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+    family_uuid = UUID(str(family_id)) if not isinstance(family_id, UUID) else family_id
+
     query = select(FamilyMember).where(
         and_(
-            FamilyMember.user_id == UUID(user_id),
-            FamilyMember.family_id == UUID(family_id)
+            FamilyMember.user_id == user_uuid,
+            FamilyMember.family_id == family_uuid
         )
     )
     result = await db.execute(query)
@@ -69,7 +73,7 @@ async def verify_family_access(
 async def verify_admin_access(
     db: AsyncSession,
     user_id: str,
-    family_id: str,
+    family_id: Union[str, UUID],
 ) -> FamilyMember:
     """
     Verify that the user is an admin of the specified family.

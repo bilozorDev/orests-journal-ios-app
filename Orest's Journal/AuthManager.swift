@@ -89,7 +89,7 @@ final class AuthManager {
         // Validate token by calling /auth/me
         do {
             // Set token for API client first
-            APIClient.shared.getToken = { token }
+            APIClient.shared.authToken = token
 
             let response: MeResponse = try await APIClient.shared.request(
                 endpoint: "/auth/me",
@@ -105,6 +105,9 @@ final class AuthManager {
             if let familyId = currentFamily?.id {
                 APIClient.shared.currentOrgId = familyId
             }
+
+            // Register device token for notifications
+            await NotificationManager.shared.registerAfterAuthentication()
 
         } catch {
             // Token invalid, clear it
@@ -145,8 +148,8 @@ final class AuthManager {
             lastName: lastName
         )
 
-        // Temporarily set token getter to nil for unauthenticated request
-        APIClient.shared.getToken = nil
+        // Temporarily clear token for unauthenticated request
+        APIClient.shared.authToken = nil
 
         let response: AuthResponse = try await APIClient.shared.request(
             endpoint: "/auth/apple",
@@ -164,11 +167,13 @@ final class AuthManager {
         self.isAuthenticated = true
 
         // Set up API client
-        let savedToken = response.token
-        APIClient.shared.getToken = { savedToken }
+        APIClient.shared.authToken = response.token
         if let familyId = currentFamily?.id {
             APIClient.shared.currentOrgId = familyId
         }
+
+        // Register device token for notifications
+        await NotificationManager.shared.registerAfterAuthentication()
     }
 
     /// Create a new family
@@ -222,6 +227,10 @@ final class AuthManager {
 
     /// Sign out
     func signOut() {
+        // Unregister device token before clearing session
+        Task {
+            await NotificationManager.shared.unregisterDeviceToken()
+        }
         clearSession()
     }
 
@@ -294,7 +303,7 @@ final class AuthManager {
         families = []
         currentFamily = nil
         isAuthenticated = false
-        APIClient.shared.getToken = nil
+        APIClient.shared.authToken = nil
         APIClient.shared.currentOrgId = nil
     }
 

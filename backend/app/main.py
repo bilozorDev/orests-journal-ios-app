@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.api.router import api_router
+from app.cache.redis_client import init_redis, close_redis
 
 settings = get_settings()
 
@@ -13,8 +14,10 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     print(f"Starting {settings.app_name}...")
+    await init_redis()
     yield
     # Shutdown
+    await close_redis()
     print(f"Shutting down {settings.app_name}...")
 
 

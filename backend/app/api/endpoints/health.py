@@ -70,7 +70,7 @@ async def get_or_create_category(
         pet_id=pet_id,
         name=name.strip(),
         name_normalized=normalized,
-        created_by=user_id,
+        created_by=UUID(user_id),
     )
     db.add(category)
     await db.flush()
@@ -100,7 +100,7 @@ async def create_health_event(
         category_id=category.id,
         occurred_at=event_in.occurred_at or datetime.utcnow(),
         notes=event_in.notes if event_in.notes else None,
-        created_by=user_id,
+        created_by=UUID(user_id),
     )
     db.add(event)
     await db.commit()

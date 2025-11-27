@@ -65,10 +65,16 @@ async def set_rls_user(session: AsyncSession, user_id: str) -> None:
         session: The database session
         user_id: The authenticated user's UUID as a string
     """
-    await session.execute(
-        text("SET LOCAL app.current_user_id = :user_id"),
-        {"user_id": user_id}
-    )
+    # SET commands don't support parameterized queries in PostgreSQL
+    # Validate UUID format to prevent SQL injection
+    from uuid import UUID as UUID_validator
+    try:
+        UUID_validator(user_id)  # Validates format
+    except ValueError:
+        raise ValueError(f"Invalid user_id format: {user_id}")
+
+    # Safe to use string formatting since we validated the UUID format
+    await session.execute(text(f"SET LOCAL app.current_user_id = '{user_id}'"))
 
 
 async def clear_rls_user(session: AsyncSession) -> None:

@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Dict
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +14,16 @@ from app.models.pet import Pet
 from app.models.food import PetFood, PetFeeding, PetCalorieGoal
 from app.models.medication import PetMedication, PetMedicationDose
 from app.models.user import User
-from app.schemas.food import FoodResponse, FeedingResponse, CalorieGoalResponse
-from app.schemas.medication import MedicationResponse, DoseResponse
-from app.schemas.dashboard import DashboardResponse, MedicationWithDoses
+from app.schemas.food import FoodResponse, CalorieGoalResponse
+from app.schemas.medication import MedicationResponse
+from app.schemas.dashboard import (
+    DashboardResponse,
+    DashboardFeedingResponse,
+    DashboardDoseResponse,
+    MedicationWithDoses,
+)
+from app.cache.helpers import cache_get, cache_set
+from app.cache.keys import key_dashboard, TTL_DASHBOARD
 
 router = APIRouter()
 
@@ -24,6 +32,8 @@ router = APIRouter()
 async def get_dashboard_data(
     pet_id: UUID,
     org_id: str,
+    response: Response,
+    timezone: str = "UTC",
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -31,13 +41,45 @@ async def get_dashboard_data(
 
     This endpoint combines multiple queries to reduce the number of API calls
     from the client, eliminating the N+1 problem for medication doses.
+
+    Args:
+        timezone: IANA timezone identifier (e.g., "America/Los_Angeles")
+                  Used to calculate "today" in the user's local timezone.
     """
+    # Set cache control header for client-side caching
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=300"
+
+    # Parse timezone, fallback to UTC if invalid
+    try:
+        tz = ZoneInfo(timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    # Get current time in UTC and convert to user's timezone
+    now_utc = datetime.now(dt_timezone.utc)
+    now_local = now_utc.astimezone(tz)
+
+    # Calculate today's boundaries in user's local timezone
+    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_date_str = today_local.strftime("%Y-%m-%d")
+
+    # Try to get from cache first (before any DB queries)
+    cache_key = key_dashboard(str(pet_id), today_date_str)
+    cached = await cache_get(cache_key, DashboardResponse)
+    if cached:
+        # Still verify access for security, but skip DB queries for data
+        await verify_pet_access(db, user_id, pet_id)
+        return cached
+
     # Verify user has access to this pet (also sets RLS context)
     pet = await verify_pet_access(db, user_id, pet_id)
 
-    now = datetime.utcnow()
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow = today + timedelta(days=1)
+    tomorrow_local = today_local + timedelta(days=1)
+
+    # Convert back to naive UTC datetimes for database queries
+    today = today_local.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    tomorrow = tomorrow_local.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    now = now_utc.replace(tzinfo=None)
 
     # 1. Get active calorie goal
     goal_query = (
@@ -169,14 +211,17 @@ async def get_dashboard_data(
 
     user_name_map: Dict[str, str] = {}
     if user_ids:
-        users_query = select(User).where(User.id.in_([UUID(uid) for uid in user_ids]))
+        # user_ids already contains UUID objects, no conversion needed
+        users_query = select(User).where(User.id.in_(list(user_ids)))
         users_result = await db.execute(users_query)
         for user in users_result.scalars().all():
             # Show "You" for current user, formatted name for others
-            if str(user.id) == user_id:
-                user_name_map[str(user.id)] = "You"
+            # Use str(user.id) as key for consistent lookups
+            user_id_str = str(user.id)
+            if user_id_str == user_id:
+                user_name_map[user_id_str] = "You"
             else:
-                user_name_map[str(user.id)] = format_user_name(user.first_name, user.last_name)
+                user_name_map[user_id_str] = format_user_name(user.first_name, user.last_name)
 
     # Build feeding responses with formatted names
     today_feedings = []
@@ -185,7 +230,7 @@ async def get_dashboard_data(
             "id": f.id,
             "pet_id": f.pet_id,
             "food_id": f.food_id,
-            "fed_by": user_name_map.get(f.fed_by, "Unknown"),
+            "fed_by": user_name_map.get(str(f.fed_by), "Unknown"),
             "fed_at": f.fed_at,
             "amount": f.amount,
             "amount_unit": f.amount_unit,
@@ -193,7 +238,7 @@ async def get_dashboard_data(
             "notes": f.notes,
             "created_at": f.created_at,
         }
-        today_feedings.append(FeedingResponse.model_validate(feeding_dict))
+        today_feedings.append(DashboardFeedingResponse.model_validate(feeding_dict))
 
     # Build medication responses with dose info
     medications_with_doses = []
@@ -209,11 +254,11 @@ async def get_dashboard_data(
                 "id": last_dose.id,
                 "medication_id": last_dose.medication_id,
                 "given_at": last_dose.given_at,
-                "given_by": user_name_map.get(last_dose.given_by, "Unknown"),
+                "given_by": user_name_map.get(str(last_dose.given_by), "Unknown"),
                 "notes": last_dose.notes,
                 "created_at": last_dose.created_at,
             }
-            last_dose_response = DoseResponse.model_validate(dose_dict)
+            last_dose_response = DashboardDoseResponse.model_validate(dose_dict)
 
         medications_with_doses.append(
             MedicationWithDoses(
@@ -224,10 +269,15 @@ async def get_dashboard_data(
             )
         )
 
-    return DashboardResponse(
+    response = DashboardResponse(
         calorie_goal=calorie_goal,
         today_feedings=today_feedings,
         total_calories=total_calories,
         foods=foods_list,
         medications=medications_with_doses,
     )
+
+    # Cache the response
+    await cache_set(cache_key, response, TTL_DASHBOARD)
+
+    return response

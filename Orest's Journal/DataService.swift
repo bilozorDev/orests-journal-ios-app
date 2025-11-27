@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 /// Data service providing high-level methods for pet health management.
 /// Wraps APIClient and provides organization-scoped data access with caching.
@@ -25,10 +26,30 @@ final class DataService {
     private var dashboardCache: [UUID: CacheEntry<DashboardData>] = [:]
     private var feedingHistoryCache: [UUID: CacheEntry<FeedingListResponse>] = [:]
     private var foodsCache: [Bool: CacheEntry<[PetFood]>] = [:]  // Key: includeArchived flag
+    private var medicationsCache: [UUID: CacheEntry<[PetMedication]>] = [:]  // Key: petId (nil stored as UUID())
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let foodsCacheTTL: TimeInterval = 300  // 5 minutes (foods change rarely)
+    private let medicationsCacheTTL: TimeInterval = 60  // 1 minute
 
-    private init() {}
+    private init() {
+        // Listen for memory warnings to clear caches
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.clearAllCaches()
+        }
+    }
+
+    /// Clears all cached data to free memory
+    func clearAllCaches() {
+        dashboardCache.removeAll()
+        feedingHistoryCache.removeAll()
+        foodsCache.removeAll()
+        familyMembersCache.removeAll()
+        medicationsCache.removeAll()
+    }
 
     /// Returns cached data if still valid, nil otherwise
     private func getCachedDashboard(for petId: UUID) -> DashboardData? {
@@ -51,6 +72,11 @@ final class DataService {
         } else {
             dashboardCache.removeAll()
         }
+    }
+
+    /// Returns cached dashboard data if available (synchronous)
+    func getCachedDashboardData(for petId: UUID) -> DashboardData? {
+        return getCachedDashboard(for: petId)
     }
 
     /// Returns cached feeding history if still valid, nil otherwise
@@ -109,6 +135,43 @@ final class DataService {
     /// Returns cached foods data if available (synchronous)
     func getCachedFoodsData(includeArchived: Bool = false) -> [PetFood]? {
         return getCachedFoods(includeArchived: includeArchived)
+    }
+
+    // MARK: - Medications Cache
+
+    /// Returns cached medications if still valid, nil otherwise
+    private func getCachedMedications(for petId: UUID?) -> [PetMedication]? {
+        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        guard let entry = medicationsCache[cacheKey],
+              Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    /// Stores medications in cache with current timestamp
+    private func cacheMedications(_ medications: [PetMedication], for petId: UUID?) {
+        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        medicationsCache[cacheKey] = CacheEntry(data: medications, timestamp: Date())
+    }
+
+    /// Invalidates medications cache for a specific pet or all pets
+    func invalidateMedicationsCache(for petId: UUID? = nil) {
+        if let petId = petId {
+            medicationsCache.removeValue(forKey: petId)
+        } else {
+            medicationsCache.removeAll()
+        }
+    }
+
+    /// Returns true if there's valid cached medications for a pet
+    func hasCachedMedications(for petId: UUID? = nil) -> Bool {
+        return getCachedMedications(for: petId) != nil
+    }
+
+    /// Returns cached medications data if available (synchronous)
+    func getCachedMedicationsData(for petId: UUID? = nil) -> [PetMedication]? {
+        return getCachedMedications(for: petId)
     }
 
     // MARK: - Pet Functions
@@ -311,8 +374,17 @@ final class DataService {
 
     // MARK: - Medication Functions
 
-    func getMedications(petId: UUID? = nil, activeOnly: Bool = false) async throws -> [PetMedication] {
-        return try await api.getMedications(petId: petId, activeOnly: activeOnly)
+    func getMedications(petId: UUID? = nil, activeOnly: Bool = false, forceRefresh: Bool = false) async throws -> [PetMedication] {
+        // Only cache non-activeOnly requests (activeOnly is time-sensitive)
+        if !activeOnly && !forceRefresh, let cached = getCachedMedications(for: petId) {
+            return cached
+        }
+        let medications = try await api.getMedications(petId: petId, activeOnly: activeOnly)
+        // Only cache non-activeOnly results
+        if !activeOnly {
+            cacheMedications(medications, for: petId)
+        }
+        return medications
     }
 
     func getActiveMedications(for petId: UUID) async throws -> [PetMedication] {
@@ -326,7 +398,9 @@ final class DataService {
         startDate: Date,
         endDate: Date?,
         timesPerDay: Int,
-        notes: String?
+        notes: String?,
+        remindersEnabled: Bool = false,
+        scheduledTimes: [ScheduledTimeCreate]? = nil
     ) async throws -> PetMedication {
         let medication = MedicationCreate(
             petId: petId,
@@ -335,10 +409,14 @@ final class DataService {
             startDate: startDate,
             endDate: endDate,
             timesPerDay: timesPerDay,
-            notes: notes
+            notes: notes,
+            remindersEnabled: remindersEnabled ? true : nil,
+            timezone: remindersEnabled ? TimeZone.current.identifier : nil,
+            scheduledTimes: remindersEnabled ? scheduledTimes : nil
         )
         let result = try await api.createMedication(medication)
         invalidateDashboardCache(for: petId)
+        invalidateMedicationsCache(for: petId)
         return result
     }
 
@@ -346,6 +424,9 @@ final class DataService {
         try await api.deleteMedication(id: id)
         if let petId = petId {
             invalidateDashboardCache(for: petId)
+            invalidateMedicationsCache(for: petId)
+        } else {
+            invalidateMedicationsCache()
         }
     }
 

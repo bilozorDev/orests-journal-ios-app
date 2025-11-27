@@ -23,13 +23,13 @@ class PetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    org_id: str
+    org_id: UUID
     name: str
     kind: str
     photo_url: Optional[str] = None
     current_weight: Optional[float] = None
     created_at: datetime
-    created_by: Optional[str] = None
+    created_by: Optional[UUID] = None
 
 
 class PetListResponse(BaseModel):

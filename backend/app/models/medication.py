@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -30,12 +30,16 @@ class PetMedication(Base):
     end_date = Column(DateTime, nullable=True)
     times_per_day = Column(Integer, default=1, nullable=False)
     notes = Column(Text, nullable=True)
+    reminders_enabled = Column(Boolean, default=False, nullable=False)
+    timezone = Column(String(50), default="UTC", nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     pet = relationship("Pet", back_populates="medications")
     doses = relationship("PetMedicationDose", back_populates="medication", cascade="all, delete-orphan")
+    schedules = relationship("MedicationSchedule", back_populates="medication", cascade="all, delete-orphan")
+    notification_logs = relationship("NotificationLog", back_populates="medication", cascade="all, delete-orphan")
 
 
 class PetMedicationDose(Base):

@@ -153,8 +153,16 @@ struct RecordFeedingView: View {
                     .disabled(selectedFood == nil || (feedingMode == .customAmount && amount.isEmpty) || isSaving)
                 }
             }
+            .onAppear {
+                // Show cached foods immediately (synchronous)
+                if let cached = DataService.shared.getCachedFoodsData() {
+                    foods = cached
+                    isLoading = false
+                }
+            }
             .task {
-                await loadFoods()
+                // Refresh in background
+                await loadFoods(showLoading: foods.isEmpty)
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
@@ -164,8 +172,10 @@ struct RecordFeedingView: View {
         }
     }
 
-    private func loadFoods() async {
-        isLoading = true
+    private func loadFoods(showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
         do {
             foods = try await DataService.shared.getFoods()
         } catch {
