@@ -664,7 +664,7 @@ struct DashboardView: View {
                 if let petId = recordFeedingPetId {
                     RecordFeedingView(petId: petId) { feeding in
                         // Optimistic update - add feeding to the pet's data
-                        if var data = allDashboardData[petId] {
+                        if let data = allDashboardData[petId] {
                             var feedings = data.todayFeedings
                             feedings.insert(feeding, at: 0)
                             let newData = DashboardData(
@@ -834,6 +834,7 @@ struct DashboardView: View {
                     return MedicationWithDoses(
                         medication: medWithDoses.medication,
                         lastDose: optimisticDose,
+                        todayDoseCount: medWithDoses.todayDoseCount + 1,
                         dosesRemaining: max(0, medWithDoses.dosesRemaining - 1)
                     )
                 }
