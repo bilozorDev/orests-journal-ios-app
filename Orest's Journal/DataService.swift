@@ -320,7 +320,11 @@ final class DataService {
             photoUrl: photoUrl,
             currentWeight: currentWeight
         )
-        return try await api.createPet(pet)
+        let result = try await api.createPet(pet)
+        // Invalidate pets cache
+        petsCache = nil
+        Task { await persistentCache.delete(forKey: .pets) }
+        return result
     }
 
     func updatePet(id: UUID, name: String?, kind: String?, photoUrl: String?, currentWeight: Double?) async throws -> Pet {
@@ -330,11 +334,22 @@ final class DataService {
             photoUrl: photoUrl,
             currentWeight: currentWeight
         )
-        return try await api.updatePet(id: id, update: update)
+        let result = try await api.updatePet(id: id, update: update)
+        // Invalidate pets cache
+        petsCache = nil
+        Task { await persistentCache.delete(forKey: .pets) }
+        return result
     }
 
-    func deletePet(id: UUID) async throws {
-        try await api.deletePet(id: id)
+    func deletePet(id: UUID) async throws -> PetDeleteResponse {
+        let result = try await api.deletePet(id: id)
+        petsCache = nil
+        Task { await persistentCache.delete(forKey: .pets) }
+        return result
+    }
+
+    func uploadPetPhoto(imageData: Data) async throws -> String {
+        return try await api.uploadPetPhoto(imageData: imageData)
     }
 
     // MARK: - Health Records
@@ -913,6 +928,21 @@ final class DataService {
         let response = try await api.getFamilyMembers(familyId: familyId)
         familyMembersCache[familyId] = CacheEntry(data: response.members, timestamp: Date())
         await persistentCache.save(response.members, forKey: .familyMembers(familyId: familyId))
+    }
+
+    func updateMemberRole(familyId: String, memberUserId: String, role: String) async throws -> FamilyMemberResponse {
+        let result = try await api.updateMemberRole(familyId: familyId, memberUserId: memberUserId, role: role)
+        // Invalidate family members cache
+        familyMembersCache.removeValue(forKey: familyId)
+        Task { await persistentCache.delete(forKey: .familyMembers(familyId: familyId)) }
+        return result
+    }
+
+    func removeFamilyMember(familyId: String, memberUserId: String) async throws {
+        try await api.removeFamilyMember(familyId: familyId, memberUserId: memberUserId)
+        // Invalidate family members cache
+        familyMembersCache.removeValue(forKey: familyId)
+        Task { await persistentCache.delete(forKey: .familyMembers(familyId: familyId)) }
     }
 
     // MARK: - Health Journal Functions

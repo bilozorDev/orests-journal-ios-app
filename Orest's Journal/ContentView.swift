@@ -124,17 +124,23 @@ struct MainTabView: View {
                 }
                 .tag(3)
 
+            FamilyManagementView()
+                .tabItem {
+                    Label("Family", systemImage: "figure.2.and.child.holdinghands")
+                }
+                .tag(4)
+
             HealthSearchView()
                 .tabItem {
                     Label("Search", systemImage: "magnifyingglass")
                 }
-                .tag(4)
+                .tag(5)
 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(5)
+                .tag(6)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToFoodTab"))) { _ in
             selectedTab = 1
@@ -281,27 +287,38 @@ struct MedicationSkeletonView: View {
 
 struct DashboardView: View {
     @State private var pets: [Pet] = []
-    @State private var selectedPet: Pet?
-    @State private var todayCalories: Double = 0
-    @State private var calorieGoal: Double = 0
-    @State private var todayFeedings: [PetFeeding] = []
+    @State private var allDashboardData: [UUID: DashboardData] = [:]
     @State private var foods: [UUID: PetFood] = [:]
-    @State private var activeMedications: [PetMedication] = []
-    @State private var lastDoses: [UUID: PetMedicationDose] = [:]
-    @State private var dosesRemaining: [UUID: Int] = [:]
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var isRefreshing = false
-    @State private var isLoadingDashboard = false  // Prevent concurrent dashboard loads
+    @State private var isLoadingDashboard = false
     @State private var showRecordFeeding = false
+    @State private var recordFeedingPetId: UUID?
     @State private var showSetGoal = false
+    @State private var setGoalPetId: UUID?
     @State private var showToast = false
     @State private var toastMessage = ""
     @State private var feedingHistoryPetId: UUID?
     @State private var medicationHistoryId: UUID?
 
-    private var gaugeColor: Color {
-        todayCalories >= calorieGoal ? .red : .blue
+    // Computed: All active medications from all pets with pet info
+    private var allMedicationsWithPet: [(pet: Pet, medication: PetMedication, lastDose: PetMedicationDose?, dosesRemaining: Int)] {
+        var result: [(pet: Pet, medication: PetMedication, lastDose: PetMedicationDose?, dosesRemaining: Int)] = []
+        for pet in pets {
+            if let data = allDashboardData[pet.id] {
+                for medWithDoses in data.medications {
+                    result.append((pet: pet, medication: medWithDoses.medication, lastDose: medWithDoses.lastDose, dosesRemaining: medWithDoses.dosesRemaining))
+                }
+            }
+        }
+        return result
+    }
+
+    private func gaugeColor(for petId: UUID) -> Color {
+        guard let data = allDashboardData[petId] else { return .blue }
+        let goal = data.calorieGoal?.dailyCalories ?? 0
+        return data.totalCalories >= goal ? .red : .blue
     }
 
     @ViewBuilder
@@ -329,27 +346,20 @@ struct DashboardView: View {
     private var dashboardScrollContent: some View {
         ScrollView {
             VStack(spacing: 24) {
-                if pets.count > 1 {
-                    petPicker
-                }
-
                 if isRefreshing {
                     // Show skeleton loaders while refreshing
-                    CalorieSkeletonView()
-
-                    SkeletonView()
-                        .frame(height: 50)
-                        .padding(.horizontal)
-
-                    SkeletonView()
-                        .frame(height: 50)
-                        .padding(.horizontal)
-
+                    ForEach(pets) { _ in
+                        CalorieSkeletonView()
+                    }
                     MedicationSkeletonView()
-                } else if let pet = selectedPet {
-                    calorieGaugeSection(pet: pet)
-                    recordFeedingButton
-                    medicationSection(pet: pet)
+                } else {
+                    // Feeding section for each pet
+                    ForEach(pets) { pet in
+                        petFeedingSection(pet: pet)
+                    }
+
+                    // Unified medication section for all pets
+                    allMedicationsSection
                 }
 
                 Spacer()
@@ -358,24 +368,20 @@ struct DashboardView: View {
         }
     }
 
-    private var petPicker: some View {
-        Picker("Select Pet", selection: $selectedPet) {
-            ForEach(pets) { pet in
-                Text(pet.name).tag(pet as Pet?)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal)
-    }
+    private func petFeedingSection(pet: Pet) -> some View {
+        let data = allDashboardData[pet.id]
+        let todayCalories = data?.totalCalories ?? 0
+        let calorieGoal = data?.calorieGoal?.dailyCalories ?? 0
+        let todayFeedings = data?.todayFeedings ?? []
 
-    private func calorieGaugeSection(pet: Pet) -> some View {
-        VStack(spacing: 12) {
+        return VStack(spacing: 12) {
             HStack {
                 Label("\(pet.name)'s Daily Calories", systemImage: "fork.knife.circle.fill")
                     .font(.headline)
                 Spacer()
                 if calorieGoal > 0 {
                     Button(action: {
+                        setGoalPetId = pet.id
                         showSetGoal = true
                     }) {
                         Label("Update Goal", systemImage: "target")
@@ -401,7 +407,7 @@ struct DashboardView: View {
                         .padding(.horizontal, 12)
 
                         ProgressView(value: min(todayCalories, calorieGoal), total: calorieGoal)
-                            .tint(gaugeColor)
+                            .tint(gaugeColor(for: pet.id))
                             .scaleEffect(y: 2.0)
                             .padding(.horizontal, 12)
                     }
@@ -474,26 +480,42 @@ struct DashboardView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    // Record Feeding button for this pet
+                    Button(action: {
+                        recordFeedingPetId = pet.id
+                        showRecordFeeding = true
+                    }) {
+                        Label("Record Feeding", systemImage: "fork.knife")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
                 }
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(12)
                 .padding(.horizontal)
             } else {
-                noGoalView
+                noGoalView(for: pet)
             }
         }
         .padding(.top, 8)
     }
 
-    private var noGoalView: some View {
+    private func noGoalView(for pet: Pet) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "target")
                 .font(.system(size: 60))
                 .foregroundColor(.gray)
-            Text("No calorie goal set")
+            Text("No calorie goal set for \(pet.name)")
                 .font(.headline)
                 .foregroundColor(.secondary)
             Button("Set Goal") {
+                setGoalPetId = pet.id
                 showSetGoal = true
             }
             .buttonStyle(.borderedProminent)
@@ -501,21 +523,9 @@ struct DashboardView: View {
         .padding()
     }
 
-    private var recordFeedingButton: some View {
-        Button(action: {
-            showRecordFeeding = true
-        }) {
-            Label("Record Feeding", systemImage: "fork.knife")
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(12)
-        }
-        .padding(.horizontal)
-    }
+    // MARK: - Unified Medications Section (All Pets)
 
-    private func medicationSection(pet: Pet) -> some View {
+    private var allMedicationsSection: some View {
         VStack(spacing: 12) {
             HStack {
                 Label("Today's Medications", systemImage: "pills.fill")
@@ -524,7 +534,7 @@ struct DashboardView: View {
             }
             .padding(.horizontal)
 
-            if activeMedications.isEmpty {
+            if allMedicationsWithPet.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "pills")
                         .font(.system(size: 40))
@@ -540,91 +550,103 @@ struct DashboardView: View {
                 .padding(.horizontal)
             } else {
                 VStack(spacing: 12) {
-                    ForEach(activeMedications.prefix(3)) { medication in
-                        VStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Button(action: {
-                                        medicationHistoryId = medication.id
-                                    }) {
-                                        HStack(spacing: 6) {
-                                            Text(medication.name)
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Text(medication.medicationType.displayName)
-                                        .font(.caption)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.blue.opacity(0.2))
-                                        .foregroundColor(.blue)
-                                        .cornerRadius(4)
-
-                                    Spacer()
-                                }
-
-                                let remaining = dosesRemaining[medication.id] ?? medication.timesPerDay
-                                if remaining > 0 {
-                                    Text("\(remaining) dose\(remaining == 1 ? "" : "s") left today")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Completed for today")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-
-                                if let lastDose = lastDoses[medication.id],
-                                   Calendar.current.isDateInToday(lastDose.givenAt) {
-                                    HStack(spacing: 4) {
-                                        Text(absoluteTimeString(from: lastDose.givenAt))
-                                            .font(.caption)
-                                            .foregroundColor(.green)
-                                        Text("by \(lastDose.givenBy)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                } else if dosesRemaining[medication.id] ?? medication.timesPerDay > 0 {
-                                    Text("No doses recorded today")
-                                        .font(.caption)
-                                        .foregroundColor(.orange)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-
-                            let remaining = dosesRemaining[medication.id] ?? medication.timesPerDay
-                            if remaining > 0 {
-                                Button(action: {
-                                    Task {
-                                        await recordDose(for: medication)
-                                    }
-                                }) {
-                                    Label("Record \(medication.name)", systemImage: "pills.fill")
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(Color.green)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 12)
-                            }
-                        }
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
+                    ForEach(allMedicationsWithPet, id: \.medication.id) { item in
+                        medicationRow(pet: item.pet, medication: item.medication, lastDose: item.lastDose, dosesRemaining: item.dosesRemaining)
                     }
                 }
                 .padding(.horizontal)
             }
         }
         .padding(.top, 8)
+    }
+
+    private func medicationRow(pet: Pet, medication: PetMedication, lastDose: PetMedicationDose?, dosesRemaining: Int) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    // Pet name badge
+                    Text(pet.name)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.2))
+                        .foregroundColor(.purple)
+                        .cornerRadius(4)
+
+                    Button(action: {
+                        medicationHistoryId = medication.id
+                    }) {
+                        HStack(spacing: 6) {
+                            Text(medication.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(medication.medicationType.displayName)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.2))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+
+                    Spacer()
+                }
+
+                if dosesRemaining > 0 {
+                    Text("\(dosesRemaining) dose\(dosesRemaining == 1 ? "" : "s") left today")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Completed for today")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+
+                if let lastDose = lastDose,
+                   Calendar.current.isDateInToday(lastDose.givenAt) {
+                    HStack(spacing: 4) {
+                        Text(absoluteTimeString(from: lastDose.givenAt))
+                            .font(.caption)
+                            .foregroundColor(.green)
+                        Text("by \(lastDose.givenBy)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else if dosesRemaining > 0 {
+                    Text("No doses recorded today")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+
+            if dosesRemaining > 0 {
+                Button(action: {
+                    Task {
+                        await recordDose(for: medication, petId: pet.id)
+                    }
+                }) {
+                    Label("Record \(medication.name)", systemImage: "pills.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
+        }
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(12)
     }
 
     var body: some View {
@@ -639,11 +661,21 @@ struct DashboardView: View {
                 MedicationHistoryView(medicationId: medicationId)
             }
             .sheet(isPresented: $showRecordFeeding) {
-                if let pet = selectedPet {
-                    RecordFeedingView(petId: pet.id) { feeding in
-                        // Optimistic update - add feeding immediately
-                        todayFeedings.insert(feeding, at: 0)
-                        todayCalories += feeding.calories
+                if let petId = recordFeedingPetId {
+                    RecordFeedingView(petId: petId) { feeding in
+                        // Optimistic update - add feeding to the pet's data
+                        if var data = allDashboardData[petId] {
+                            var feedings = data.todayFeedings
+                            feedings.insert(feeding, at: 0)
+                            let newData = DashboardData(
+                                calorieGoal: data.calorieGoal,
+                                todayFeedings: feedings,
+                                totalCalories: data.totalCalories + feeding.calories,
+                                foods: data.foods,
+                                medications: data.medications
+                            )
+                            allDashboardData[petId] = newData
+                        }
 
                         // Show success toast
                         toastMessage = "Feeding recorded"
@@ -654,8 +686,9 @@ struct DashboardView: View {
                 }
             }
             .sheet(isPresented: $showSetGoal) {
-                if let pet = selectedPet {
-                    SetCalorieGoalView(petId: pet.id, currentGoal: calorieGoal)
+                if let petId = setGoalPetId {
+                    let currentGoal = allDashboardData[petId]?.calorieGoal?.dailyCalories ?? 0
+                    SetCalorieGoalView(petId: petId, currentGoal: currentGoal)
                 }
             }
             .overlay(alignment: .top) {
@@ -674,27 +707,23 @@ struct DashboardView: View {
                     }
                 }
             }
-            // Note: No onChange for showRecordFeeding - the optimistic update in the
-            // RecordFeedingView callback already applies changes. Auto-refresh would
-            // race with the API call, potentially overwriting with stale data.
-            // Data syncs on next pull-to-refresh or cache expiration.
             .onChange(of: showSetGoal) { _, isShowing in
                 if !isShowing {
                     Task { @MainActor in
-                        await loadDashboardData(forceRefresh: true)
+                        await loadAllDashboardData(forceRefresh: true)
                     }
                 }
             }
-            .onChange(of: selectedPet) { _, _ in
-                Task { @MainActor in
-                    await loadDashboardData()
-                }
-            }
             .onAppear {
-                // Show memory-cached dashboard data immediately if pet is already selected
-                if let pet = selectedPet,
-                   let cached = DataService.shared.getCachedDashboardData(for: pet.id) {
-                    applyDashboardData(cached)
+                // Show memory-cached dashboard data immediately for all pets
+                for pet in pets {
+                    if let cached = DataService.shared.getCachedDashboardData(for: pet.id) {
+                        allDashboardData[pet.id] = cached
+                        // Merge foods
+                        for food in cached.foods {
+                            foods[food.id] = food
+                        }
+                    }
                 }
             }
             .task {
@@ -703,13 +732,14 @@ struct DashboardView: View {
                 // Try to show disk-cached data instantly while network loads
                 if let cachedPets = await DataService.shared.getCachedPetsFromDisk(), !cachedPets.isEmpty {
                     pets = cachedPets
-                    if selectedPet == nil {
-                        selectedPet = cachedPets.first
-                    }
-                    // Show disk-cached dashboard data for selected pet
-                    if let pet = selectedPet,
-                       let cachedDashboard = await DataService.shared.getCachedDashboardDataFromDisk(for: pet.id) {
-                        applyDashboardData(cachedDashboard)
+                    // Load disk-cached dashboard data for all pets
+                    for pet in cachedPets {
+                        if let cachedDashboard = await DataService.shared.getCachedDashboardDataFromDisk(for: pet.id) {
+                            allDashboardData[pet.id] = cachedDashboard
+                            for food in cachedDashboard.foods {
+                                foods[food.id] = food
+                            }
+                        }
                     }
                 }
 
@@ -717,7 +747,7 @@ struct DashboardView: View {
             }
             .refreshable {
                 isRefreshing = true
-                await loadDashboardData(forceRefresh: true)
+                await loadAllDashboardData(forceRefresh: true)
                 isRefreshing = false
             }
         }
@@ -727,12 +757,9 @@ struct DashboardView: View {
         isLoading = true
         do {
             pets = try await DataService.shared.getPets()
-            if selectedPet == nil {
-                selectedPet = pets.first
-            }
 
-            // Load dashboard data using combined endpoint
-            await loadDashboardData()
+            // Load dashboard data for all pets
+            await loadAllDashboardData()
             hasLoaded = true
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
             // Ignore cancellation - will retry on next appear
@@ -744,9 +771,7 @@ struct DashboardView: View {
     }
 
     @MainActor
-    private func loadDashboardData(forceRefresh: Bool = false) async {
-        guard let pet = selectedPet else { return }
-
+    private func loadAllDashboardData(forceRefresh: Bool = false) async {
         // Prevent concurrent loads
         guard !isLoadingDashboard else {
             print("⚠️ Dashboard load already in progress, skipping")
@@ -756,50 +781,38 @@ struct DashboardView: View {
         isLoadingDashboard = true
         defer { isLoadingDashboard = false }
 
-        do {
-            let data = try await DataService.shared.getDashboardData(for: pet.id, forceRefresh: forceRefresh)
-            applyDashboardData(data)
-        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
-            // Ignore cancellation errors - these happen when tasks are cancelled during view updates
-            print("Dashboard load cancelled (this is normal during navigation)")
-        } catch {
-            print("Error loading dashboard data: \(error)")
-            // Only reset state if we haven't loaded data yet (initial load failure)
-            // This prevents UI flickering when there's a transient error during refresh
-            if !hasLoaded {
-                calorieGoal = 0
-                todayCalories = 0
-                todayFeedings = []
-                activeMedications = []
+        // Load dashboard data for all pets concurrently
+        await withTaskGroup(of: (UUID, DashboardData?).self) { group in
+            for pet in pets {
+                group.addTask {
+                    do {
+                        let data = try await DataService.shared.getDashboardData(for: pet.id, forceRefresh: forceRefresh)
+                        return (pet.id, data)
+                    } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+                        print("Dashboard load cancelled for \(pet.name)")
+                        return (pet.id, nil)
+                    } catch {
+                        print("Error loading dashboard data for \(pet.name): \(error)")
+                        return (pet.id, nil)
+                    }
+                }
+            }
+
+            for await (petId, data) in group {
+                if let data = data {
+                    allDashboardData[petId] = data
+                    // Merge foods into the shared foods dictionary
+                    for food in data.foods {
+                        foods[food.id] = food
+                    }
+                }
             }
         }
     }
 
-    /// Apply dashboard data to state (used for both cached and fresh data)
-    private func applyDashboardData(_ data: DashboardData) {
-        calorieGoal = data.calorieGoal?.dailyCalories ?? 0
-        todayCalories = data.totalCalories
-        todayFeedings = data.todayFeedings
-        foods = Dictionary(uniqueKeysWithValues: data.foods.map { ($0.id, $0) })
-
-        activeMedications = data.medications.map { $0.medication }
-        var doses: [UUID: PetMedicationDose] = [:]
-        var remaining: [UUID: Int] = [:]
-        for medWithDoses in data.medications {
-            if let lastDose = medWithDoses.lastDose {
-                doses[medWithDoses.medication.id] = lastDose
-            }
-            remaining[medWithDoses.medication.id] = medWithDoses.dosesRemaining
-        }
-        lastDoses = doses
-        dosesRemaining = remaining
-        hasLoaded = true
-    }
-
-    private func recordDose(for medication: PetMedication) async {
-        // Optimistic update - update UI immediately
-        let previousDosesRemaining = dosesRemaining[medication.id]
-        let previousLastDose = lastDoses[medication.id]
+    private func recordDose(for medication: PetMedication, petId: UUID) async {
+        // Get previous state for potential rollback
+        let previousData = allDashboardData[petId]
 
         // Get current user name for optimistic display
         let userName = AuthManager.shared.currentUser?.firstName ?? "You"
@@ -814,11 +827,27 @@ struct DashboardView: View {
             createdAt: Date()
         )
 
-        // Update UI immediately
-        if let remaining = dosesRemaining[medication.id], remaining > 0 {
-            dosesRemaining[medication.id] = remaining - 1
+        // Update UI immediately (optimistic update)
+        if var data = allDashboardData[petId] {
+            let updatedMedications = data.medications.map { medWithDoses -> MedicationWithDoses in
+                if medWithDoses.medication.id == medication.id {
+                    return MedicationWithDoses(
+                        medication: medWithDoses.medication,
+                        lastDose: optimisticDose,
+                        dosesRemaining: max(0, medWithDoses.dosesRemaining - 1)
+                    )
+                }
+                return medWithDoses
+            }
+            let newData = DashboardData(
+                calorieGoal: data.calorieGoal,
+                todayFeedings: data.todayFeedings,
+                totalCalories: data.totalCalories,
+                foods: data.foods,
+                medications: updatedMedications
+            )
+            allDashboardData[petId] = newData
         }
-        lastDoses[medication.id] = optimisticDose
 
         // Show success toast immediately
         toastMessage = "\(medication.name) recorded"
@@ -827,15 +856,13 @@ struct DashboardView: View {
         }
 
         // Make API call in background
-        // Note: No auto-refresh after API call - the optimistic update is already applied.
-        // Auto-refresh would race with the API, potentially overwriting with stale data.
-        // Data syncs on next pull-to-refresh or background refresh.
         do {
-            _ = try await DataService.shared.recordDose(medicationId: medication.id, petId: selectedPet?.id)
+            _ = try await DataService.shared.recordDose(medicationId: medication.id, petId: petId)
         } catch {
             // Revert optimistic update on failure
-            dosesRemaining[medication.id] = previousDosesRemaining
-            lastDoses[medication.id] = previousLastDose
+            if let previousData = previousData {
+                allDashboardData[petId] = previousData
+            }
 
             // Show error toast
             toastMessage = "Failed to record dose"

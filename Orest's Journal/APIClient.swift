@@ -272,8 +272,43 @@ class APIClient {
         return try await patch("/pets/\(id.uuidString)", body: update)
     }
 
-    func deletePet(id: UUID) async throws {
-        try await delete("/pets/\(id.uuidString)")
+    func deletePet(id: UUID) async throws -> PetDeleteResponse {
+        return try await deleteWithResponse("/pets/\(id.uuidString)")
+    }
+
+    func uploadPetPhoto(imageData: Data) async throws -> String {
+        guard let url = URL(string: APIConfiguration.baseURL + "/uploads/pet-photo") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        // Add auth token if available
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"pet.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, response) = try await session.data(for: request)
+
+        struct UploadResponse: Decodable {
+            let url: String
+        }
+
+        let result: UploadResponse = try handleResponse(data, response)
+        return result.url
     }
 
     // MARK: - Health Records
@@ -455,6 +490,21 @@ class APIClient {
         return try await get("/families/\(familyId)")
     }
 
+    func updateMemberRole(familyId: String, memberUserId: String, role: String) async throws -> FamilyMemberResponse {
+        struct RoleUpdateRequest: Encodable {
+            let role: String
+        }
+        return try await patch("/families/\(familyId)/members/\(memberUserId)/role", body: RoleUpdateRequest(role: role))
+    }
+
+    func removeFamilyMember(familyId: String, memberUserId: String) async throws {
+        try await delete("/families/\(familyId)/members/\(memberUserId)")
+    }
+
+    func regenerateInviteCode(familyId: String) async throws -> AppFamily {
+        return try await post("/families/\(familyId)/regenerate-invite-code", body: EmptyBody())
+    }
+
     // MARK: - Health Events
 
     func getHealthCategories(petId: UUID) async throws -> [HealthCategory] {
@@ -632,6 +682,8 @@ struct DashboardData: Codable {
 
 // MARK: - Family Types
 
+struct EmptyBody: Encodable {}
+
 struct FamilyMemberResponse: Codable, Identifiable {
     let id: String
     let userId: String
@@ -639,7 +691,7 @@ struct FamilyMemberResponse: Codable, Identifiable {
     let firstName: String?
     let lastName: String?
     let role: String
-    let joinedAt: Date
+    let joinedAt: Date?
 
     var displayName: String {
         if let firstName = firstName, !firstName.isEmpty {
