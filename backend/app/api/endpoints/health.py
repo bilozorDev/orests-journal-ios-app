@@ -13,7 +13,7 @@ from app.models.health import PetHealthCategory, PetHealthEvent
 from app.schemas.health import (
     HealthCategoryResponse,
     HealthEventCreate, HealthEventResponse, HealthEventListResponse,
-    HealthEventWithCategory,
+    HealthEventWithCategory, HealthEventNested,
 )
 
 router = APIRouter()
@@ -96,9 +96,14 @@ async def create_health_event(
     )
 
     # Create event
+    # Strip timezone info to avoid naive/aware datetime mixing
+    occurred_at = event_in.occurred_at
+    if occurred_at is not None and occurred_at.tzinfo is not None:
+        occurred_at = occurred_at.replace(tzinfo=None)
+
     event = PetHealthEvent(
         category_id=category.id,
-        occurred_at=event_in.occurred_at or datetime.utcnow(),
+        occurred_at=occurred_at or datetime.utcnow(),
         notes=event_in.notes if event_in.notes else None,
         created_by=UUID(user_id),
     )
@@ -138,19 +143,15 @@ async def list_health_events(
     event_result = await db.execute(event_query)
     events = event_result.scalars().all()
 
-    # Combine with category info
+    # Combine with category info (nested structure for iOS)
     events_with_category = []
     for event in events:
         category = categories.get(event.category_id)
         if category:
             events_with_category.append(
                 HealthEventWithCategory(
-                    id=event.id,
-                    category_id=event.category_id,
-                    category_name=category.name,
-                    occurred_at=event.occurred_at,
-                    notes=event.notes,
-                    created_at=event.created_at,
+                    event=HealthEventNested.model_validate(event),
+                    category=HealthCategoryResponse.model_validate(category),
                 )
             )
 
@@ -178,12 +179,8 @@ async def get_health_event(
     event, category = row
 
     return HealthEventWithCategory(
-        id=event.id,
-        category_id=event.category_id,
-        category_name=category.name,
-        occurred_at=event.occurred_at,
-        notes=event.notes,
-        created_at=event.created_at,
+        event=HealthEventNested.model_validate(event),
+        category=HealthCategoryResponse.model_validate(category),
     )
 
 

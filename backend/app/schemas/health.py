@@ -17,6 +17,7 @@ class HealthCategoryResponse(BaseModel):
     name: str
     name_normalized: str
     created_at: datetime
+    created_by: Optional[UUID] = None
 
 
 # Health Event Schemas
@@ -36,14 +37,22 @@ class HealthEventResponse(BaseModel):
     created_at: datetime
 
 
-class HealthEventWithCategory(BaseModel):
-    """Health event with its category details."""
+class HealthEventNested(BaseModel):
+    """Health event for nested response."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     category_id: UUID
-    category_name: str
     occurred_at: datetime
     notes: Optional[str] = None
     created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+class HealthEventWithCategory(BaseModel):
+    """Health event with its category details (nested structure for iOS)."""
+    event: HealthEventNested
+    category: HealthCategoryResponse
 
 
 class HealthEventListResponse(BaseModel):
