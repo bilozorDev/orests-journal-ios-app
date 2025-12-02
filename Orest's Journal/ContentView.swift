@@ -698,6 +698,8 @@ struct DashboardView: View {
                         showToast = true
                     }
                 }
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.disabled)
             }
             .sheet(item: $setGoalPetId) { petId in
                 let currentGoal = allDashboardData[petId]?.calorieGoal?.dailyCalories ?? 0
