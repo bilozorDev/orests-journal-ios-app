@@ -53,5 +53,16 @@ uvicorn app.main:app --reload           # Start dev server at localhost:8000
 - Pydantic schemas for request/response validation
 - Async/await throughout
 
+## Cache Management
+
+### Flush Redis Cache (Backend)
+When debugging cache issues or after making cache-related changes, flush Redis to avoid stale/mixed data:
+```bash
+redis-cli FLUSHALL
+```
+
+### Clear iOS Disk Cache
+Delete the app from device and reinstall, or clear Application Support directory programmatically.
+
 ## API Documentation
 When backend is running: `http://localhost:8000/docs` (Swagger) or `/redoc`

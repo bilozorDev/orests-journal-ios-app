@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+// MARK: - Extensions
+
+extension UUID: @retroactive Identifiable {
+    public var id: UUID { self }
+}
+
+// MARK: - Views
+
 struct ContentView: View {
     private var authManager = AuthManager.shared
     @State private var isLoading = true
@@ -306,9 +314,7 @@ struct DashboardView: View {
     @State private var hasLoaded = false
     @State private var isRefreshing = false
     @State private var isLoadingDashboard = false
-    @State private var showRecordFeeding = false
     @State private var recordFeedingPetId: UUID?
-    @State private var showSetGoal = false
     @State private var setGoalPetId: UUID?
     @State private var showToast = false
     @State private var toastMessage = ""
@@ -395,7 +401,6 @@ struct DashboardView: View {
                 if calorieGoal > 0 {
                     Button(action: {
                         setGoalPetId = pet.id
-                        showSetGoal = true
                     }) {
                         Label("Update Goal", systemImage: "target")
                             .font(.subheadline)
@@ -497,7 +502,6 @@ struct DashboardView: View {
                     // Record Feeding button for this pet
                     Button(action: {
                         recordFeedingPetId = pet.id
-                        showRecordFeeding = true
                     }) {
                         Label("Record Feeding", systemImage: "fork.knife")
                             .frame(maxWidth: .infinity)
@@ -529,7 +533,6 @@ struct DashboardView: View {
                 .foregroundColor(.secondary)
             Button("Set Goal") {
                 setGoalPetId = pet.id
-                showSetGoal = true
             }
             .buttonStyle(.borderedProminent)
         }
@@ -673,36 +676,32 @@ struct DashboardView: View {
             .navigationDestination(item: $medicationHistoryId) { medicationId in
                 MedicationHistoryView(medicationId: medicationId)
             }
-            .sheet(isPresented: $showRecordFeeding) {
-                if let petId = recordFeedingPetId {
-                    RecordFeedingView(petId: petId) { feeding in
-                        // Optimistic update - add feeding to the pet's data
-                        if let data = allDashboardData[petId] {
-                            var feedings = data.todayFeedings
-                            feedings.insert(feeding, at: 0)
-                            let newData = DashboardData(
-                                calorieGoal: data.calorieGoal,
-                                todayFeedings: feedings,
-                                totalCalories: data.totalCalories + feeding.calories,
-                                foods: data.foods,
-                                medications: data.medications
-                            )
-                            allDashboardData[petId] = newData
-                        }
+            .sheet(item: $recordFeedingPetId) { petId in
+                RecordFeedingView(petId: petId) { feeding in
+                    // Optimistic update - add feeding to the pet's data
+                    if let data = allDashboardData[petId] {
+                        var feedings = data.todayFeedings
+                        feedings.insert(feeding, at: 0)
+                        let newData = DashboardData(
+                            calorieGoal: data.calorieGoal,
+                            todayFeedings: feedings,
+                            totalCalories: data.totalCalories + feeding.calories,
+                            foods: data.foods,
+                            medications: data.medications
+                        )
+                        allDashboardData[petId] = newData
+                    }
 
-                        // Show success toast
-                        toastMessage = "Feeding recorded"
-                        withAnimation {
-                            showToast = true
-                        }
+                    // Show success toast
+                    toastMessage = "Feeding recorded"
+                    withAnimation {
+                        showToast = true
                     }
                 }
             }
-            .sheet(isPresented: $showSetGoal) {
-                if let petId = setGoalPetId {
-                    let currentGoal = allDashboardData[petId]?.calorieGoal?.dailyCalories ?? 0
-                    SetCalorieGoalView(petId: petId, currentGoal: currentGoal)
-                }
+            .sheet(item: $setGoalPetId) { petId in
+                let currentGoal = allDashboardData[petId]?.calorieGoal?.dailyCalories ?? 0
+                SetCalorieGoalView(petId: petId, currentGoal: currentGoal)
             }
             .overlay(alignment: .top) {
                 if showToast {
@@ -720,8 +719,9 @@ struct DashboardView: View {
                     }
                 }
             }
-            .onChange(of: showSetGoal) { _, isShowing in
-                if !isShowing {
+            .onChange(of: setGoalPetId) { oldValue, newValue in
+                // When sheet closes (petId becomes nil), refresh dashboard
+                if oldValue != nil && newValue == nil {
                     Task { @MainActor in
                         await loadAllDashboardData(forceRefresh: true)
                     }
@@ -952,40 +952,43 @@ struct FoodView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
                 if foods.isEmpty && hasLoaded {
-                    // Empty state - show plus button
-                    VStack(spacing: 16) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.blue)
-                        Button("Add Pet Food") {
+                    // Empty state inside List for pull-to-refresh support
+                    ContentUnavailableView {
+                        Label("No Foods Added", systemImage: "fork.knife.circle")
+                    } description: {
+                        Text("Add pet foods to track feedings")
+                    } actions: {
+                        Button("Add Food") {
                             showAddFood = true
                         }
-                        .font(.headline)
+                        .buttonStyle(.borderedProminent)
                     }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .frame(maxWidth: .infinity)
+                    .listRowInsets(EdgeInsets())
                 } else {
-                    List {
-                        ForEach(FoodCategory.allCases, id: \.self) { category in
-                            if let categoryFoods = foodsByCategory[category] {
-                                Section(header: Text(category.displayName)) {
-                                    ForEach(categoryFoods) { food in
-                                        FoodRowView(food: food)
-                                            .contextMenu {
-                                                Button(action: {
-                                                    foodToEdit = food
-                                                }) {
-                                                    Label("Edit", systemImage: "pencil")
-                                                }
-
-                                                Button(role: .destructive, action: {
-                                                    foodToDelete = food
-                                                    showDeleteConfirmation = true
-                                                }) {
-                                                    Label("Delete", systemImage: "trash")
-                                                }
+                    ForEach(FoodCategory.allCases, id: \.self) { category in
+                        if let categoryFoods = foodsByCategory[category] {
+                            Section(header: Text(category.displayName)) {
+                                ForEach(categoryFoods) { food in
+                                    FoodRowView(food: food)
+                                        .contextMenu {
+                                            Button(action: {
+                                                foodToEdit = food
+                                            }) {
+                                                Label("Edit", systemImage: "pencil")
                                             }
-                                    }
+
+                                            Button(role: .destructive, action: {
+                                                foodToDelete = food
+                                                showDeleteConfirmation = true
+                                            }) {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -1041,7 +1044,7 @@ struct FoodView: View {
             .onChange(of: showAddFood) { _, isShowing in
                 if !isShowing {
                     Task {
-                        await loadFoods(forceRefresh: true, showLoading: false)
+                        await loadFoods(forceRefresh: false, showLoading: false)
                     }
                 }
             }
@@ -1345,7 +1348,7 @@ struct MedicationView: View {
             .onChange(of: showAddMedication) { _, isShowing in
                 if !isShowing {
                     Task {
-                        await loadMedications(forceRefresh: true, showLoading: false)
+                        await loadMedications(forceRefresh: false, showLoading: false)
                     }
                 }
             }

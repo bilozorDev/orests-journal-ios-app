@@ -161,6 +161,47 @@ final class DataService {
         }
     }
 
+    /// Appends a new food to the cache (optimistic update)
+    private func appendFoodToCache(_ food: PetFood) {
+        // Update or create memory cache for non-archived foods
+        if var cached = foodsCache[false]?.data {
+            cached.append(food)
+            foodsCache[false] = CacheEntry(data: cached, timestamp: Date())
+        } else {
+            // Cache doesn't exist, create it with just this food
+            foodsCache[false] = CacheEntry(data: [food], timestamp: Date())
+        }
+
+        // Update or create memory cache for all foods (including archived)
+        if var cachedAll = foodsCache[true]?.data {
+            cachedAll.append(food)
+            foodsCache[true] = CacheEntry(data: cachedAll, timestamp: Date())
+        } else {
+            foodsCache[true] = CacheEntry(data: [food], timestamp: Date())
+        }
+
+        // Update disk cache in background
+        Task {
+            // Update or create non-archived foods cache
+            let diskCached: PersistentCacheManager.CachedData<[PetFood]>? = await persistentCache.load(forKey: .foods(includeArchived: false))
+            if var foods = diskCached?.data {
+                foods.append(food)
+                await persistentCache.save(foods, forKey: .foods(includeArchived: false))
+            } else {
+                await persistentCache.save([food], forKey: .foods(includeArchived: false))
+            }
+
+            // Update or create all foods cache
+            let diskCachedAll: PersistentCacheManager.CachedData<[PetFood]>? = await persistentCache.load(forKey: .foods(includeArchived: true))
+            if var allFoods = diskCachedAll?.data {
+                allFoods.append(food)
+                await persistentCache.save(allFoods, forKey: .foods(includeArchived: true))
+            } else {
+                await persistentCache.save([food], forKey: .foods(includeArchived: true))
+            }
+        }
+    }
+
     /// Returns true if there's valid cached foods
     func hasCachedFoods(includeArchived: Bool = false) -> Bool {
         return getCachedFoods(includeArchived: includeArchived) != nil
@@ -197,6 +238,31 @@ final class DataService {
         } else {
             medicationsCache.removeAll()
             Task { await persistentCache.delete(forKey: .medications(petId: nil)) }
+        }
+    }
+
+    /// Appends a new medication to the cache (optimistic update)
+    private func appendMedicationToCache(_ medication: PetMedication, for petId: UUID?) {
+        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+        // Update or create memory cache
+        if var cached = medicationsCache[cacheKey]?.data {
+            cached.append(medication)
+            medicationsCache[cacheKey] = CacheEntry(data: cached, timestamp: Date())
+        } else {
+            medicationsCache[cacheKey] = CacheEntry(data: [medication], timestamp: Date())
+        }
+
+        // Update disk cache in background
+        Task {
+            let diskCached: PersistentCacheManager.CachedData<[PetMedication]>? =
+                await persistentCache.load(forKey: .medications(petId: petId))
+            if var meds = diskCached?.data {
+                meds.append(medication)
+                await persistentCache.save(meds, forKey: .medications(petId: petId))
+            } else {
+                await persistentCache.save([medication], forKey: .medications(petId: petId))
+            }
         }
     }
 
@@ -424,7 +490,7 @@ final class DataService {
             imageUrl: imageUrl
         )
         let result = try await api.createFood(food)
-        invalidateFoodsCache()
+        appendFoodToCache(result)
         return result
     }
 
@@ -748,7 +814,7 @@ final class DataService {
         )
         let result = try await api.createMedication(medication)
         invalidateDashboardCache(for: petId)
-        invalidateMedicationsCache(for: petId)
+        appendMedicationToCache(result, for: nil)  // Use nil to update "all medications" cache
         return result
     }
 

@@ -58,6 +58,7 @@ struct RecordFeedingView: View {
     @State private var errorMessage = ""
     @State private var quickActions: [QuickFeedingAction] = []
     @State private var recordingQuickActionId: UUID? = nil
+    @State private var showFoodSelector = false
 
     enum FeedingMode: String, CaseIterable {
         case customAmount = "Custom Amount"
@@ -106,21 +107,37 @@ struct RecordFeedingView: View {
                     if isLoading {
                         ProgressView()
                     } else if foods.isEmpty {
-                        Text("No foods available")
-                            .foregroundColor(.secondary)
-                        Button("Add Food First") {
-                            dismiss()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                NotificationCenter.default.post(name: NSNotification.Name("SwitchToFoodTab"), object: nil)
-                                NotificationCenter.default.post(name: NSNotification.Name("ShowAddFood"), object: nil)
+                        ContentUnavailableView {
+                            Label("No Foods Added", systemImage: "fork.knife")
+                        } description: {
+                            Text("Add a food to start tracking feedings")
+                        } actions: {
+                            Button("Add Food") {
+                                dismiss()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    NotificationCenter.default.post(name: NSNotification.Name("SwitchToFoodTab"), object: nil)
+                                    NotificationCenter.default.post(name: NSNotification.Name("ShowAddFood"), object: nil)
+                                }
                             }
+                            .buttonStyle(.borderedProminent)
                         }
                     } else {
-                        Picker("Food", selection: $selectedFood) {
-                            Text("Select...").tag(nil as PetFood?)
-                            ForEach(foods) { food in
-                                Text(food.name).tag(food as PetFood?)
+                        Button {
+                            showFoodSelector = true
+                        } label: {
+                            HStack {
+                                Text("Food")
+                                Spacer()
+                                Text(selectedFood?.name ?? "Select...")
+                                    .foregroundColor(selectedFood == nil ? .secondary : .primary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
+                        }
+                        .foregroundColor(.primary)
+                        .sheet(isPresented: $showFoodSelector) {
+                            FoodSelectorView(foods: foods, selectedFood: $selectedFood)
                         }
                     }
                 }
