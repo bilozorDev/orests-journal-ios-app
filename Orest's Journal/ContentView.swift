@@ -843,7 +843,7 @@ struct DashboardView: View {
         )
 
         // Update UI immediately (optimistic update)
-        if var data = allDashboardData[petId] {
+        if let data = allDashboardData[petId] {
             let updatedMedications = data.medications.map { medWithDoses -> MedicationWithDoses in
                 if medWithDoses.medication.id == medication.id {
                     return MedicationWithDoses(
@@ -1194,8 +1194,8 @@ struct MedicationView: View {
     @State private var pets: [UUID: Pet] = [:]
     @State private var isLoading = false
     @State private var hasLoaded = false
-    @State private var showAddMedication = false
-    @State private var showRecordDose = false
+    @State private var addMedicationSheetId: UUID? = nil
+    @State private var recordDoseSheetId: UUID? = nil
     @State private var errorMessage: String?
 
     // Edit/Delete/History state
@@ -1225,7 +1225,7 @@ struct MedicationView: View {
                         Text("No medications yet")
                             .font(.headline)
                         Button("Add Medication") {
-                            showAddMedication = true
+                            addMedicationSheetId = UUID()
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -1298,12 +1298,12 @@ struct MedicationView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button(action: {
-                            showAddMedication = true
+                            addMedicationSheetId = UUID()
                         }) {
                             Label("Add Medication", systemImage: "plus.circle")
                         }
                         Button(action: {
-                            showRecordDose = true
+                            recordDoseSheetId = UUID()
                         }) {
                             Label("Record Dose", systemImage: "checkmark.circle")
                         }
@@ -1312,11 +1312,15 @@ struct MedicationView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showAddMedication) {
+            .sheet(item: $addMedicationSheetId) { _ in
                 AddMedicationView()
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.disabled)
             }
-            .sheet(isPresented: $showRecordDose) {
+            .sheet(item: $recordDoseSheetId) { _ in
                 RecordDoseView()
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.disabled)
             }
             .sheet(item: $medicationToEdit) { medication in
                 EditMedicationView(medication: medication) { updatedMedication in
@@ -1324,6 +1328,8 @@ struct MedicationView: View {
                         medications[index] = updatedMedication
                     }
                 }
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.disabled)
             }
             .navigationDestination(isPresented: $showAllHistory) {
                 AllMedicationHistoryView()
@@ -1347,17 +1353,17 @@ struct MedicationView: View {
             } message: {
                 Text(deleteResultMessage)
             }
-            .onChange(of: showAddMedication) { _, isShowing in
-                if !isShowing {
+            .onChange(of: addMedicationSheetId) { _, newValue in
+                if newValue == nil {
                     Task {
                         await loadMedications(forceRefresh: false, showLoading: false)
                     }
                 }
             }
-            .onChange(of: showRecordDose) { _, isShowing in
-                if !isShowing {
+            .onChange(of: recordDoseSheetId) { _, newValue in
+                if newValue == nil {
                     Task {
-                        await loadMedications(forceRefresh: true, showLoading: false)
+                        await loadMedications(forceRefresh: false, showLoading: false)
                     }
                 }
             }
