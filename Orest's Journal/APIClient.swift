@@ -53,7 +53,7 @@ enum APIError: Error, LocalizedError {
 
 // MARK: - API Client
 
-class APIClient {
+class APIClient: APIClientProtocol {
     static let shared = APIClient()
 
     private let session: URLSession
