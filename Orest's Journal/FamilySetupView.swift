@@ -224,12 +224,15 @@ struct FamilySetupView: View {
                 // Create family via backend API
                 _ = try await authManager.createFamily(name: familyName)
 
+                // Small delay to let SwiftUI propagate state changes
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+
                 // Notify ContentView to refresh
                 NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
             } catch {
                 errorMessage = error.localizedDescription
-                isLoading = false
             }
+            isLoading = false  // Always reset loading state
         }
     }
 
@@ -242,12 +245,15 @@ struct FamilySetupView: View {
                 // Join family via backend API
                 _ = try await authManager.joinFamily(inviteCode: inviteCode)
 
+                // Small delay to let SwiftUI propagate state changes
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+
                 // Notify ContentView to refresh
                 NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
             } catch {
                 errorMessage = error.localizedDescription
-                isLoading = false
             }
+            isLoading = false  // Always reset loading state
         }
     }
 

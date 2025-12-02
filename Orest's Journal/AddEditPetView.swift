@@ -13,6 +13,11 @@ enum PetEditMode {
     case edit(Pet)
 }
 
+enum SaveAction {
+    case saveAndDismiss
+    case saveAndAddAnother
+}
+
 struct AddEditPetView: View {
     @Environment(\.dismiss) var dismiss
     let mode: PetEditMode
@@ -27,6 +32,13 @@ struct AddEditPetView: View {
     @State private var isSaving = false
     @State private var isUploadingPhoto = false
     @State private var errorMessage: String?
+    @State private var hasSaved = false  // Prevent double-tap duplicate creation
+
+    // Calorie goal state (only for add mode)
+    @State private var calorieGoal: String = ""
+    @State private var usesSuggestedGoal: Bool = false
+    @State private var showSuccessToast = false
+    @State private var successMessage = ""
 
     let petKinds = ["Dog", "Cat", "Bird", "Rabbit", "Hamster", "Guinea Pig", "Other"]
 
@@ -58,6 +70,26 @@ struct AddEditPetView: View {
         return nil
     }
 
+    /// Returns suggested daily calorie goal based on pet type
+    var suggestedCalorieGoal: Int? {
+        switch petKind {
+        case "Dog":
+            return 1000  // ~800-1200 cal/day for medium dog
+        case "Cat":
+            return 250   // ~200-300 cal/day
+        case "Bird":
+            return 35    // ~20-50 cal/day (varies by species)
+        case "Rabbit":
+            return 215   // ~180-250 cal/day
+        case "Hamster":
+            return 15    // ~10-20 cal/day
+        case "Guinea Pig":
+            return 125   // ~100-150 cal/day
+        default:
+            return nil   // "Other" - no suggestion
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -67,6 +99,16 @@ struct AddEditPetView: View {
                     Picker("Kind", selection: $petKind) {
                         ForEach(petKinds, id: \.self) { kind in
                             Text(kind).tag(kind)
+                        }
+                    }
+                    .onChange(of: petKind) { _, _ in
+                        // Update calorie goal if user was using the suggestion
+                        if usesSuggestedGoal, let suggested = suggestedCalorieGoal {
+                            calorieGoal = "\(suggested)"
+                        } else if usesSuggestedGoal && suggestedCalorieGoal == nil {
+                            // No suggestion for "Other" type
+                            calorieGoal = ""
+                            usesSuggestedGoal = false
                         }
                     }
                 }
@@ -80,11 +122,81 @@ struct AddEditPetView: View {
                         .keyboardType(.decimalPad)
                 }
 
+                // Nutrition section - only shown in add mode
+                if !isEditing {
+                    Section(header: Text("Nutrition (Optional)")) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                TextField("Daily Calorie Goal", text: $calorieGoal)
+                                    .keyboardType(.numberPad)
+                                Text("cal/day")
+                                    .foregroundColor(.secondary)
+                            }
+
+                            if let suggested = suggestedCalorieGoal {
+                                Button(action: {
+                                    calorieGoal = "\(suggested)"
+                                    usesSuggestedGoal = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "lightbulb.fill")
+                                            .foregroundColor(.yellow)
+                                        Text("Use suggested: \(suggested) cal/day")
+                                            .font(.subheadline)
+                                    }
+                                }
+                                .buttonStyle(.borderless)
+
+                                Text("Based on typical \(petKind.lowercased()) calorie needs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
                 if let error = errorMessage {
                     Section {
                         Text(error)
                             .foregroundColor(.red)
                             .font(.caption)
+                    }
+                }
+
+                // Button footer for add mode
+                if !isEditing {
+                    Section {
+                        VStack(spacing: 12) {
+                            Button(action: {
+                                Task {
+                                    await savePet(action: .saveAndDismiss)
+                                }
+                            }) {
+                                Text("Save")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(isFormValid && !isSaving ? Color.blue : Color.gray.opacity(0.3))
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
+                            }
+                            .disabled(!isFormValid || isSaving)
+
+                            Button(action: {
+                                Task {
+                                    await savePet(action: .saveAndAddAnother)
+                                }
+                            }) {
+                                Text("Save & Add Another")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(isFormValid && !isSaving ? Color.green : Color.gray.opacity(0.3))
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
+                            }
+                            .disabled(!isFormValid || isSaving)
+                        }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
@@ -97,13 +209,16 @@ struct AddEditPetView: View {
                     }
                 }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isEditing ? "Save" : "Add") {
-                        Task {
-                            await savePet()
+                // Only show toolbar save button in edit mode
+                if isEditing {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            Task {
+                                await savePet(action: .saveAndDismiss)
+                            }
                         }
+                        .disabled(!isFormValid || isSaving)
                     }
-                    .disabled(!isFormValid || isSaving)
                 }
             }
             .overlay {
@@ -111,6 +226,30 @@ struct AddEditPetView: View {
                     ProgressView(isUploadingPhoto ? "Uploading photo..." : "Saving...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black.opacity(0.3))
+                }
+            }
+            .overlay(alignment: .top) {
+                if showSuccessToast {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text(successMessage)
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(10)
+                    .shadow(radius: 5)
+                    .padding(.top, 60)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .onChange(of: showSuccessToast) { _, isShowing in
+                if isShowing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation {
+                            showSuccessToast = false
+                        }
+                    }
                 }
             }
         }
@@ -178,7 +317,11 @@ struct AddEditPetView: View {
         (currentWeight.isEmpty || Double(currentWeight) != nil)
     }
 
-    private func savePet() async {
+    private func savePet(action: SaveAction) async {
+        // Prevent double-tap duplicate creation
+        guard !hasSaved else { return }
+        hasSaved = true
+
         isSaving = true
         errorMessage = nil
 
@@ -201,7 +344,7 @@ struct AddEditPetView: View {
 
             let savedPet: Pet
             if let existingPet = editingPet {
-                // Update existing pet
+                // Update existing pet (no calorie goal handling in edit mode)
                 savedPet = try await DataService.shared.updatePet(
                     id: existingPet.id,
                     name: petName,
@@ -217,14 +360,49 @@ struct AddEditPetView: View {
                     photoUrl: photoUrl,
                     currentWeight: weight
                 )
+
+                // Set calorie goal if provided (sequential call after pet creation)
+                if let calorieValue = Double(calorieGoal), calorieValue > 0 {
+                    _ = try await DataService.shared.setCalorieGoal(
+                        for: savedPet.id,
+                        dailyCalories: calorieValue,
+                        notes: nil
+                    )
+                }
             }
 
             onSave?(savedPet)
-            dismiss()
+
+            // Handle based on save action
+            switch action {
+            case .saveAndDismiss:
+                dismiss()
+            case .saveAndAddAnother:
+                // Clear form for next pet
+                clearForm()
+                successMessage = "\(savedPet.name) added successfully!"
+                withAnimation {
+                    showSuccessToast = true
+                }
+                isSaving = false
+            }
         } catch {
             errorMessage = error.localizedDescription
+            hasSaved = false  // Allow retry on error
             isSaving = false
         }
+    }
+
+    private func clearForm() {
+        petName = ""
+        petKind = "Dog"
+        currentWeight = ""
+        selectedPhoto = nil
+        selectedImage = nil
+        existingPhotoUrl = nil
+        calorieGoal = ""
+        usesSuggestedGoal = false
+        hasSaved = false  // Allow saving again for "Add Another"
     }
 }
 
