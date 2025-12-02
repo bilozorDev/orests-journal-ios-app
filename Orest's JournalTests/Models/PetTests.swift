@@ -122,6 +122,7 @@ final class PetTests: XCTestCase {
 
     func testHashableConformance() {
         let uuid = UUID()
+        let date = Date()  // Same date for both to ensure same hash
         let pet1 = Pet(
             id: uuid,
             orgId: "family-123",
@@ -130,7 +131,7 @@ final class PetTests: XCTestCase {
             photoUrl: nil,
             currentWeight: nil,
             isArchived: nil,
-            createdAt: Date(),
+            createdAt: date,
             createdBy: nil
         )
 
@@ -142,7 +143,7 @@ final class PetTests: XCTestCase {
             photoUrl: nil,
             currentWeight: nil,
             isArchived: nil,
-            createdAt: Date(),
+            createdAt: date,
             createdBy: nil
         )
 
