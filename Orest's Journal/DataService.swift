@@ -323,7 +323,7 @@ final class DataService {
         let result = try await api.createPet(pet)
         // Invalidate pets cache
         petsCache = nil
-        Task { await persistentCache.delete(forKey: .pets) }
+        await persistentCache.delete(forKey: .pets)
         return result
     }
 
@@ -337,14 +337,14 @@ final class DataService {
         let result = try await api.updatePet(id: id, update: update)
         // Invalidate pets cache
         petsCache = nil
-        Task { await persistentCache.delete(forKey: .pets) }
+        await persistentCache.delete(forKey: .pets)
         return result
     }
 
     func deletePet(id: UUID) async throws -> PetDeleteResponse {
         let result = try await api.deletePet(id: id)
         petsCache = nil
-        Task { await persistentCache.delete(forKey: .pets) }
+        await persistentCache.delete(forKey: .pets)
         return result
     }
 

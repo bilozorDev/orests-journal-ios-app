@@ -249,13 +249,41 @@ final class AuthManager {
         currentUser?.id
     }
 
-    /// Get current user's display name
+    /// Get current user's display name (format: "FirstName L." or just "FirstName" if no last name)
     var displayName: String? {
-        guard let user = currentUser else { return nil }
-        let first = user.firstName ?? ""
-        let last = user.lastName ?? ""
-        let fullName = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
-        return fullName.isEmpty ? nil : fullName
+        guard let user = currentUser,
+              let firstName = user.firstName,
+              !firstName.isEmpty else {
+            return nil
+        }
+        if let lastName = user.lastName, !lastName.isEmpty {
+            let initial = String(lastName.prefix(1)).uppercased()
+            return "\(firstName) \(initial)."
+        }
+        return firstName
+    }
+
+    /// Check if user needs to complete profile setup (missing first name)
+    var needsProfileSetup: Bool {
+        guard let user = currentUser else { return false }
+        return user.firstName == nil || user.firstName?.isEmpty == true
+    }
+
+    /// Update user profile (first name, last name)
+    func updateProfile(firstName: String, lastName: String?) async throws {
+        struct ProfileUpdateRequest: Codable {
+            let firstName: String
+            let lastName: String?
+        }
+
+        let updatedUser: AppUser = try await APIClient.shared.request(
+            endpoint: "/auth/profile",
+            method: "PATCH",
+            body: ProfileUpdateRequest(firstName: firstName, lastName: lastName)
+        )
+
+        // Update local state
+        self.currentUser = updatedUser
     }
 
     /// Get current family ID

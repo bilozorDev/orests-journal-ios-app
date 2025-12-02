@@ -23,10 +23,15 @@ struct ContentView: View {
             } else if authManager.isAuthenticated {
                 if isCheckingStatus {
                     ProgressView("Setting up...")
+                } else if authManager.needsProfileSetup {
+                    ProfileSetupView()
                 } else if !authManager.hasOrganization {
                     FamilySetupView()
                 } else if !hasPet {
-                    AddPetView()
+                    AddEditPetView(mode: .add) { _ in
+                        // Pet was created, refresh status
+                        NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
+                    }
                 } else {
                     MainTabView()
                 }
@@ -53,6 +58,14 @@ struct ContentView: View {
             // Only handle sign-out here; sign-in is handled by .task
             if !isAuthenticated {
                 hasPet = false
+            }
+        }
+        .onChange(of: authManager.hasOrganization) { _, hasOrg in
+            // Backup trigger: check pet status when organization state changes
+            if hasOrg {
+                Task {
+                    await checkPetStatus()
+                }
             }
         }
         .alert("Error Loading Data", isPresented: $showError) {
@@ -814,8 +827,8 @@ struct DashboardView: View {
         // Get previous state for potential rollback
         let previousData = allDashboardData[petId]
 
-        // Get current user name for optimistic display
-        let userName = AuthManager.shared.currentUser?.firstName ?? "You"
+        // Get current user name for optimistic display (format: "FirstName L." or just first name)
+        let userName = AuthManager.shared.displayName ?? "You"
 
         // Create optimistic dose entry
         let optimisticDose = PetMedicationDose(

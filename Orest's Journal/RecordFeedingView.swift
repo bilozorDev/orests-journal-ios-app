@@ -266,8 +266,8 @@ struct RecordFeedingView: View {
 
         isSaving = true
 
-        // Get current user name for optimistic display
-        let userName = AuthManager.shared.currentUser?.firstName ?? "You"
+        // Get current user name for optimistic display (format: "FirstName L." or just first name)
+        let userName = AuthManager.shared.displayName ?? "You"
 
         // Create optimistic feeding entry
         let optimisticFeeding = PetFeeding(
@@ -307,8 +307,8 @@ struct RecordFeedingView: View {
     private func recordQuickFeeding(_ action: QuickFeedingAction) async {
         recordingQuickActionId = action.id
 
-        // Get current user name for optimistic display
-        let userName = AuthManager.shared.currentUser?.firstName ?? "You"
+        // Get current user name for optimistic display (format: "FirstName L." or just first name)
+        let userName = AuthManager.shared.displayName ?? "You"
 
         // Create optimistic feeding entry
         let optimisticFeeding = PetFeeding(

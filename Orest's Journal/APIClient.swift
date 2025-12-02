@@ -693,10 +693,12 @@ struct FamilyMemberResponse: Codable, Identifiable {
     let role: String
     let joinedAt: Date?
 
+    /// Display name format: "FirstName L." or just "FirstName" if no last name
     var displayName: String {
         if let firstName = firstName, !firstName.isEmpty {
             if let lastName = lastName, !lastName.isEmpty {
-                return "\(firstName) \(lastName)"
+                let initial = String(lastName.prefix(1)).uppercased()
+                return "\(firstName) \(initial)."
             }
             return firstName
         }

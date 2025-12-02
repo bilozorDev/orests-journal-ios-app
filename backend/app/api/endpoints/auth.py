@@ -59,6 +59,12 @@ class MeResponse(BaseModel):
     families: List[FamilyResponse]
 
 
+class ProfileUpdateRequest(BaseModel):
+    """Request body for updating user profile."""
+    first_name: str
+    last_name: Optional[str] = None
+
+
 # --- Helper Functions ---
 
 async def verify_apple_identity_token(identity_token: str) -> dict:
@@ -242,4 +248,41 @@ async def get_current_user_info(
             last_name=user.last_name,
         ),
         families=families,
+    )
+
+
+@router.patch("/profile", response_model=UserResponse)
+async def update_profile(
+    request: ProfileUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Update current user's profile (first name, last name).
+    Used when Apple doesn't provide name during sign-in.
+    """
+    # Get user from database
+    query = select(User).where(User.id == UUID(user_id))
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Update profile fields
+    user.first_name = request.first_name
+    if request.last_name is not None:
+        user.last_name = request.last_name
+
+    await db.commit()
+    await db.refresh(user)
+
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
     )
