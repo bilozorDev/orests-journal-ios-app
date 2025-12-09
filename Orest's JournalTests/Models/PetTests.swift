@@ -21,6 +21,7 @@ final class PetTests: XCTestCase {
             "kind": "dog",
             "photo_url": "https://example.com/photo.jpg",
             "current_weight": 25.5,
+            "date_of_birth": "2022-03-15",
             "is_archived": false,
             "created_at": "2024-01-15T10:30:00Z",
             "created_by": "user-123"
@@ -39,6 +40,7 @@ final class PetTests: XCTestCase {
         XCTAssertEqual(pet.kind, "dog")
         XCTAssertEqual(pet.photoUrl, "https://example.com/photo.jpg")
         XCTAssertEqual(pet.currentWeight, 25.5)
+        XCTAssertNotNil(pet.dateOfBirth)
         XCTAssertEqual(pet.isArchived, false)
         XCTAssertEqual(pet.createdBy, "user-123")
     }
@@ -52,6 +54,7 @@ final class PetTests: XCTestCase {
             "kind": "cat",
             "photo_url": null,
             "current_weight": null,
+            "date_of_birth": null,
             "is_archived": null,
             "created_at": "2024-01-15T10:30:00Z",
             "created_by": null
@@ -68,6 +71,7 @@ final class PetTests: XCTestCase {
         XCTAssertEqual(pet.kind, "cat")
         XCTAssertNil(pet.photoUrl)
         XCTAssertNil(pet.currentWeight)
+        XCTAssertNil(pet.dateOfBirth)
         XCTAssertNil(pet.isArchived)
         XCTAssertNil(pet.createdBy)
     }
@@ -82,6 +86,7 @@ final class PetTests: XCTestCase {
             kind: "dog",
             photoUrl: nil,
             currentWeight: 30.0,
+            dateOfBirth: Date(timeIntervalSince1970: 1647302400), // 2022-03-15
             isArchived: false,
             createdAt: Date(timeIntervalSince1970: 1705315800),
             createdBy: nil
@@ -97,6 +102,7 @@ final class PetTests: XCTestCase {
         XCTAssertEqual(jsonObject["name"] as? String, "Buddy")
         XCTAssertEqual(jsonObject["kind"] as? String, "dog")
         XCTAssertEqual(jsonObject["current_weight"] as? Double, 30.0)
+        XCTAssertNotNil(jsonObject["date_of_birth"])
     }
 
     // MARK: - Identifiable Tests
@@ -110,6 +116,7 @@ final class PetTests: XCTestCase {
             kind: "dog",
             photoUrl: nil,
             currentWeight: nil,
+            dateOfBirth: nil,
             isArchived: nil,
             createdAt: Date(),
             createdBy: nil
@@ -130,6 +137,7 @@ final class PetTests: XCTestCase {
             kind: "dog",
             photoUrl: nil,
             currentWeight: nil,
+            dateOfBirth: nil,
             isArchived: nil,
             createdAt: date,
             createdBy: nil
@@ -142,6 +150,7 @@ final class PetTests: XCTestCase {
             kind: "dog",
             photoUrl: nil,
             currentWeight: nil,
+            dateOfBirth: nil,
             isArchived: nil,
             createdAt: date,
             createdBy: nil

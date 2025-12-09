@@ -416,6 +416,12 @@ struct FamilyManagementView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                if let dob = pet.dateOfBirth {
+                    Text(formatAge(from: dob))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Spacer()
@@ -547,6 +553,7 @@ struct FamilyManagementView: View {
                         kind: existingPet.kind,
                         photoUrl: existingPet.photoUrl,
                         currentWeight: existingPet.currentWeight,
+                        dateOfBirth: existingPet.dateOfBirth,
                         isArchived: true,
                         createdAt: existingPet.createdAt,
                         createdBy: existingPet.createdBy
@@ -590,6 +597,22 @@ struct FamilyManagementView: View {
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 1
         return formatter.string(from: NSNumber(value: weight)) ?? "\(weight)"
+    }
+
+    private func formatAge(from dateOfBirth: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month], from: dateOfBirth, to: now)
+
+        if let years = components.year, years > 0 {
+            if let months = components.month, months > 0 {
+                return "\(years) yr\(years == 1 ? "" : "s"), \(months) mo"
+            }
+            return "\(years) year\(years == 1 ? "" : "s") old"
+        } else if let months = components.month, months > 0 {
+            return "\(months) month\(months == 1 ? "" : "s") old"
+        }
+        return "Less than 1 month old"
     }
 }
 

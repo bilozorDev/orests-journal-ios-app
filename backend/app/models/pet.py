@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Text
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Float, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -17,6 +17,7 @@ class Pet(Base):
     kind = Column(String(100), nullable=False)  # e.g., "cat", "dog"
     photo_url = Column(String(500), nullable=True)
     current_weight = Column(Float, nullable=True)
+    date_of_birth = Column(Date, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

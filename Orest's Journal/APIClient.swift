@@ -91,6 +91,12 @@ class APIClient: APIClientProtocol {
                 return date
             }
 
+            // Handle date-only strings (e.g., "2021-05-23" from backend date fields)
+            formatter.dateFormat = "yyyy-MM-dd"
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
         }
         self.decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -362,12 +368,14 @@ struct PetCreate: Encodable {
     let kind: String
     let photoUrl: String?
     let currentWeight: Double?
+    let dateOfBirth: Date?
 
-    init(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil) {
+    init(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil, dateOfBirth: Date? = nil) {
         self.name = name
         self.kind = kind
         self.photoUrl = photoUrl
         self.currentWeight = currentWeight
+        self.dateOfBirth = dateOfBirth
     }
 }
 
@@ -376,6 +384,7 @@ struct PetUpdate: Encodable {
     let kind: String?
     let photoUrl: String?
     let currentWeight: Double?
+    let dateOfBirth: Date?
 }
 
 struct PetListResponse: Decodable {

@@ -14,6 +14,7 @@ struct Pet: Codable, Identifiable, Hashable {
     let kind: String
     let photoUrl: String?
     let currentWeight: Double?
+    let dateOfBirth: Date?
     let isArchived: Bool?
     let createdAt: Date
     let createdBy: String?

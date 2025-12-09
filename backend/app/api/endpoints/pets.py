@@ -57,6 +57,7 @@ async def create_pet(
         kind=pet_in.kind,
         photo_url=pet_in.photo_url,
         current_weight=pet_in.current_weight,
+        date_of_birth=pet_in.date_of_birth,
         created_by=UUID(user_id),
     )
     db.add(pet)

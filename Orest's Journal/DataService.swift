@@ -26,6 +26,7 @@ final class DataService {
 
     private var petsCache: CacheEntry<[Pet]>?
     private var familyMembersCache: [String: CacheEntry<FamilyDetailResponse>] = [:]
+    private var calorieGoalCache: [UUID: CacheEntry<CalorieGoal>] = [:]
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
 
@@ -46,6 +47,7 @@ final class DataService {
     func clearAllCaches() {
         petsCache = nil
         familyMembersCache.removeAll()
+        calorieGoalCache.removeAll()
 
         Task {
             await persistentCache.clearAll()
@@ -136,15 +138,15 @@ final class DataService {
         await persistentCache.save(pets, forKey: .pets)
     }
 
-    func createPet(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil) async throws -> Pet {
-        let pet = PetCreate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight)
+    func createPet(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil, dateOfBirth: Date? = nil) async throws -> Pet {
+        let pet = PetCreate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight, dateOfBirth: dateOfBirth)
         let result = try await api.createPet(pet)
         invalidatePetsCache()
         return result
     }
 
-    func updatePet(id: UUID, name: String? = nil, kind: String? = nil, photoUrl: String? = nil, currentWeight: Double? = nil) async throws -> Pet {
-        let update = PetUpdate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight)
+    func updatePet(id: UUID, name: String? = nil, kind: String? = nil, photoUrl: String? = nil, currentWeight: Double? = nil, dateOfBirth: Date? = nil) async throws -> Pet {
+        let update = PetUpdate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight, dateOfBirth: dateOfBirth)
         let result = try await api.updatePet(id: id, update: update)
         invalidatePetsCache()
         return result
@@ -165,11 +167,27 @@ final class DataService {
     // MARK: - Calorie Goals
 
     func getCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
-        return try await api.getCalorieGoal(petId: petId)
+        // Check cache first
+        if let entry = calorieGoalCache[petId],
+           Date().timeIntervalSince(entry.timestamp) < cacheTTL {
+            return entry.data
+        }
+
+        let goal = try await api.getCalorieGoal(petId: petId)
+        if let goal = goal {
+            calorieGoalCache[petId] = CacheEntry(data: goal, timestamp: Date())
+        }
+        return goal
     }
 
     func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
-        return try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
+        let result = try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
+        calorieGoalCache[petId] = CacheEntry(data: result, timestamp: Date())
+        return result
+    }
+
+    func invalidateCalorieGoalCache(for petId: UUID) {
+        calorieGoalCache.removeValue(forKey: petId)
     }
 
     // MARK: - Family Members

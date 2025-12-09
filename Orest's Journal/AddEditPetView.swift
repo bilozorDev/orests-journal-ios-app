@@ -26,6 +26,7 @@ struct AddEditPetView: View {
     @State private var petName: String
     @State private var petKind: String
     @State private var currentWeight: String
+    @State private var dateOfBirth: Date?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var selectedImage: UIImage?
     @State private var existingPhotoUrl: String?
@@ -53,11 +54,13 @@ struct AddEditPetView: View {
             _petName = State(initialValue: "")
             _petKind = State(initialValue: "Dog")
             _currentWeight = State(initialValue: "")
+            _dateOfBirth = State(initialValue: nil)
             _existingPhotoUrl = State(initialValue: nil)
         case .edit(let pet):
             _petName = State(initialValue: pet.name)
             _petKind = State(initialValue: pet.kind)
             _currentWeight = State(initialValue: pet.currentWeight.map { String($0) } ?? "")
+            _dateOfBirth = State(initialValue: pet.dateOfBirth)
             _existingPhotoUrl = State(initialValue: pet.photoUrl)
         }
     }
@@ -129,14 +132,22 @@ struct AddEditPetView: View {
                 Section(header: Text("Nutrition (Optional)")) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            TextField("Daily Calorie Goal", text: $calorieGoal)
-                                .keyboardType(.numberPad)
+                            ZStack(alignment: .leading) {
+                                TextField("Daily Calorie Goal", text: $calorieGoal)
+                                    .keyboardType(.numberPad)
+                                    .opacity(isLoadingCalorieGoal ? 0 : 1)
+                                if isLoadingCalorieGoal {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                        Text("Loading...")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
                             Text("cal/day")
                                 .foregroundColor(.secondary)
-                            if isLoadingCalorieGoal {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                            }
                         }
 
                         if let suggested = suggestedCalorieGoal {
@@ -156,6 +167,25 @@ struct AddEditPetView: View {
                             Text("Based on typical \(petKind.lowercased()) calorie needs")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("Date of Birth (Optional)")) {
+                    DatePicker(
+                        "Birthday",
+                        selection: Binding(
+                            get: { dateOfBirth ?? Date() },
+                            set: { dateOfBirth = $0 }
+                        ),
+                        in: ...Date(),
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.compact)
+
+                    if dateOfBirth != nil {
+                        Button("Clear Date", role: .destructive) {
+                            dateOfBirth = nil
                         }
                     }
                 }
@@ -375,7 +405,8 @@ struct AddEditPetView: View {
                     name: petName,
                     kind: petKind,
                     photoUrl: photoUrl,
-                    currentWeight: weight
+                    currentWeight: weight,
+                    dateOfBirth: dateOfBirth
                 )
 
                 // Update calorie goal if changed
@@ -394,7 +425,8 @@ struct AddEditPetView: View {
                     name: petName,
                     kind: petKind,
                     photoUrl: photoUrl,
-                    currentWeight: weight
+                    currentWeight: weight,
+                    dateOfBirth: dateOfBirth
                 )
 
                 // Set calorie goal if provided (sequential call after pet creation)
@@ -433,6 +465,7 @@ struct AddEditPetView: View {
         petName = ""
         petKind = "Dog"
         currentWeight = ""
+        dateOfBirth = nil
         selectedPhoto = nil
         selectedImage = nil
         existingPhotoUrl = nil
