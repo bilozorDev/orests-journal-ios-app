@@ -12,6 +12,7 @@ import PhotosUI
 
 struct FamilyManagementView: View {
     private var authManager = AuthManager.shared
+    private var navigationManager = NavigationManager.shared
     @State private var familyMembers: [FamilyMemberResponse] = []
     @State private var pets: [Pet] = []
     @State private var isLoading = false
@@ -30,8 +31,6 @@ struct FamilyManagementView: View {
     // Alert states
     @State private var showDeletePetConfirmation = false
     @State private var showRemoveMemberConfirmation = false
-    @State private var showDeleteResultAlert = false
-    @State private var deleteResultMessage = ""
 
     // Archived pets
     @State private var showArchivedPets = false
@@ -139,14 +138,36 @@ struct FamilyManagementView: View {
             let memberName = memberToRemove?.displayName ?? "this member"
             Text("Are you sure you want to remove \(memberName) from the family?")
         }
-        .alert("Pet Archived", isPresented: $showDeleteResultAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deleteResultMessage)
-        }
         .task {
-            guard !hasLoaded else { return }
-            await loadData()
+            // Initial load only
+            if !hasLoaded {
+                let needsRefresh = navigationManager.tabsNeedingRefresh.contains(.family)
+                await loadData(forceRefresh: needsRefresh)
+                if needsRefresh {
+                    navigationManager.markTabRefreshed(.family)
+                }
+            }
+        }
+        .onAppear {
+            // Runs every time tab becomes visible (unlike .task which runs once)
+            print("👨‍👩‍👧 [Family] onAppear - tabsNeedingRefresh: \(navigationManager.tabsNeedingRefresh)")
+            if navigationManager.tabsNeedingRefresh.contains(.family) {
+                print("👨‍👩‍👧 [Family] Needs refresh, loading data...")
+                Task {
+                    await loadData(forceRefresh: true)
+                    navigationManager.markTabRefreshed(.family)
+                    print("👨‍👩‍👧 [Family] Refresh complete")
+                }
+            }
+        }
+        .onChange(of: navigationManager.pendingDestination) { _, newValue in
+            // Handle notification arriving while already on Family tab
+            if newValue == .familyManagement {
+                Task {
+                    await loadData(forceRefresh: true)
+                    navigationManager.clearPendingDestination()
+                }
+            }
         }
         .refreshable {
             await loadData(forceRefresh: true)
@@ -254,6 +275,7 @@ struct FamilyManagementView: View {
             Image(systemName: "person.circle.fill")
                 .font(.title3)
                 .foregroundColor(member.role == "admin" ? .orange : .blue)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -276,6 +298,7 @@ struct FamilyManagementView: View {
                         .background(member.role == "admin" ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
                         .foregroundColor(member.role == "admin" ? .orange : .blue)
                         .cornerRadius(4)
+                        .accessibilityLabel("Role: \(member.role.capitalized)")
 
                     if let joinedAt = member.joinedAt {
                         Text("Joined \(formatDate(joinedAt))")
@@ -304,6 +327,7 @@ struct FamilyManagementView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundColor(.gray)
+                        .accessibilityLabel("Member options for \(member.displayName)")
                 }
             }
         }
@@ -381,6 +405,7 @@ struct FamilyManagementView: View {
                         Image(systemName: "pawprint.fill")
                             .foregroundColor(.gray)
                     )
+                    .accessibilityLabel("Pet photo placeholder for \(pet.name)")
             }
 
             // Pet Info
@@ -394,7 +419,7 @@ struct FamilyManagementView: View {
                     .foregroundColor(.secondary)
 
                 if let weight = pet.currentWeight {
-                    Text("\(formatWeight(weight)) lbs")
+                    Text("\(Formatters.formatWeight(weight)) lbs")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -424,6 +449,7 @@ struct FamilyManagementView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundColor(.gray)
+                    .accessibilityLabel("Pet options for \(pet.name)")
             }
         }
         .padding()
@@ -520,36 +546,12 @@ struct FamilyManagementView: View {
 
     private func deletePet(_ pet: Pet) async {
         do {
-            let response = try await DataService.shared.deletePet(id: pet.id)
+            try await DataService.shared.deletePet(id: pet.id)
             petToDelete = nil
-
-            if response.archived && !response.deleted {
-                // Pet was archived, update local state
-                if let index = pets.firstIndex(where: { $0.id == pet.id }) {
-                    let existingPet = pets[index]
-                    // Create a new pet with isArchived = true
-                    pets[index] = Pet(
-                        id: existingPet.id,
-                        orgId: existingPet.orgId,
-                        name: existingPet.name,
-                        kind: existingPet.kind,
-                        photoUrl: existingPet.photoUrl,
-                        currentWeight: existingPet.currentWeight,
-                        dateOfBirth: existingPet.dateOfBirth,
-                        isArchived: true,
-                        createdAt: existingPet.createdAt,
-                        createdBy: existingPet.createdBy
-                    )
-                }
-                deleteResultMessage = response.message
-                showDeleteResultAlert = true
-            } else {
-                // Pet was actually deleted
-                pets.removeAll { $0.id == pet.id }
-            }
+            // Refresh pets to get updated state (pet may be archived or deleted)
+            pets = try await DataService.shared.getPets(forceRefresh: true)
         } catch {
             errorMessage = error.localizedDescription
-            print("Error deleting pet: \(error)")
         }
     }
 
@@ -570,10 +572,6 @@ struct FamilyManagementView: View {
 
     private func formatDate(_ date: Date) -> String {
         Formatters.shortDate.string(from: date)
-    }
-
-    private func formatWeight(_ weight: Double) -> String {
-        Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 
     private func formatAge(from dateOfBirth: Date) -> String {

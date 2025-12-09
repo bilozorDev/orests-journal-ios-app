@@ -82,11 +82,21 @@ final class NotificationManager {
     /// Re-register device token after authentication
     func registerAfterAuthentication() async {
         print("🔐 registerAfterAuthentication called - deviceToken: \(deviceToken != nil ? "exists" : "nil"), isAuthorized: \(isAuthorized)")
+
+        // Check current authorization status first (doesn't prompt user)
+        await checkAuthorizationStatus()
+
         if let token = deviceToken {
+            // Already have a token, just register with backend
             await registerDeviceTokenWithBackend(token)
         } else if isAuthorized {
+            // Already authorized, request new token from APNs
             print("📲 Requesting new device token from APNs...")
             registerForRemoteNotifications()
+        } else {
+            // Not authorized yet - request permission (prompts user only if status is .notDetermined)
+            print("🔔 Requesting notification authorization...")
+            await requestAuthorization()
         }
     }
 
@@ -105,11 +115,19 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        print("🚀 [AppDelegate] didFinishLaunchingWithOptions")
+
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
+        print("🚀 [AppDelegate] Set UNUserNotificationCenter delegate")
 
         // Register background refresh task
         BackgroundTaskManager.shared.registerBackgroundTasks()
+
+        // Check if launched from notification
+        if let notificationResponse = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
+            print("🚀 [AppDelegate] Launched from notification: \(notificationResponse)")
+        }
 
         return true
     }
@@ -154,11 +172,30 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        print("🔔 [AppDelegate] didReceive notification response")
         let userInfo = response.notification.request.content.userInfo
+        print("🔔 [AppDelegate] userInfo: \(userInfo)")
 
-        // Handle notification based on type
+        // Handle notification based on type - check both top-level and nested in "data"
+        var notificationType: String?
+        var notificationData: [AnyHashable: Any] = userInfo
+
         if let type = userInfo["type"] as? String {
-            handleNotificationTap(type: type, userInfo: userInfo)
+            notificationType = type
+        } else if let data = userInfo["data"] as? [String: Any],
+                  let type = data["type"] as? String {
+            notificationType = type
+            // Merge data into notificationData for easier access
+            for (key, value) in data {
+                notificationData[key] = value
+            }
+        }
+
+        if let type = notificationType {
+            print("🔔 [AppDelegate] Found type: \(type), calling handleNotificationTap")
+            handleNotificationTap(type: type, userInfo: notificationData)
+        } else {
+            print("🔔 [AppDelegate] No 'type' found in userInfo")
         }
 
         completionHandler()
@@ -172,6 +209,17 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                let petId = userInfo["pet_id"] as? String {
                 print("Notification tapped - medication: \(medicationId), pet: \(petId)")
                 // TODO: Post notification to navigate to medication or record dose
+            }
+        case "member_joined":
+            // Use deep link URL - onOpenURL fires after app is fully ready
+            print("🔔 [Notification] member_joined tapped, opening deep link...")
+            if let url = URL(string: "orestsjournal://family?refresh=true") {
+                print("🔔 [Notification] Opening URL: \(url)")
+                UIApplication.shared.open(url) { success in
+                    print("🔔 [Notification] URL open result: \(success)")
+                }
+            } else {
+                print("🔔 [Notification] Failed to create URL")
             }
         default:
             break

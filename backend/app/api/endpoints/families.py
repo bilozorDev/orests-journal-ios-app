@@ -6,13 +6,15 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.core.security import get_current_user_id
 from app.models.user import User, Family, FamilyMember, InviteAttemptLog, generate_invite_code
+from app.models.notification import UserDeviceToken
+from app.services.apns import apns_service
 
 router = APIRouter()
 
@@ -140,6 +142,36 @@ def get_client_ip(request: Request) -> Optional[str]:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+async def get_other_family_member_tokens(
+    db: AsyncSession,
+    family_id: UUID,
+    exclude_user_id: UUID,
+) -> list[str]:
+    """Get active device tokens for family members except the specified user."""
+    # Get user IDs of other family members
+    members_query = select(FamilyMember.user_id).where(
+        and_(
+            FamilyMember.family_id == family_id,
+            FamilyMember.user_id != exclude_user_id,
+        )
+    )
+    members_result = await db.execute(members_query)
+    user_ids = list(members_result.scalars().all())
+
+    if not user_ids:
+        return []
+
+    # Get their active device tokens
+    tokens_query = select(UserDeviceToken.device_token).where(
+        and_(
+            UserDeviceToken.user_id.in_(user_ids),
+            UserDeviceToken.is_active == True,
+        )
+    )
+    tokens_result = await db.execute(tokens_query)
+    return list(tokens_result.scalars().all())
 
 
 # --- Endpoints ---
@@ -298,6 +330,32 @@ async def join_family(
     )
     db.add(membership)
     await db.commit()
+
+    # Send notification to other family members
+    user_query = select(User).where(User.id == user_uuid)
+    user_result = await db.execute(user_query)
+    new_user = user_result.scalar_one_or_none()
+
+    # Build member name for notification
+    member_name = "Someone"
+    if new_user:
+        if new_user.first_name:
+            member_name = new_user.first_name
+        elif new_user.email:
+            member_name = new_user.email.split("@")[0]
+
+    tokens = await get_other_family_member_tokens(db, family.id, user_uuid)
+    if tokens:
+        await apns_service.send_to_multiple(
+            device_tokens=tokens,
+            title=f"{member_name} joined {family.name}",
+            body="A new member has joined your family",
+            data={
+                "type": "member_joined",
+                "family_id": str(family.id),
+                "user_id": str(user_uuid),
+            },
+        )
 
     return JoinFamilyResponse(
         family=FamilyResponse(

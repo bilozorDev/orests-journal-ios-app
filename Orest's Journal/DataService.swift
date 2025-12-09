@@ -152,10 +152,9 @@ final class DataService {
         return result
     }
 
-    func deletePet(id: UUID) async throws -> PetDeleteResponse {
-        let result = try await api.deletePet(id: id)
+    func deletePet(id: UUID) async throws {
+        try await api.deletePet(id: id)
         invalidatePetsCache()
-        return result
     }
 
     // MARK: - Photo Upload

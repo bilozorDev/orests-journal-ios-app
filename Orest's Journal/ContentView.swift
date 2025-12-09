@@ -75,10 +75,7 @@ struct ContentView: View {
     }
 
     private func checkPetStatus() async {
-        guard !isCheckingStatus else {
-            print("⚠️ checkPetStatus already in progress, skipping")
-            return
-        }
+        guard !isCheckingStatus else { return }
 
         guard authManager.hasOrganization else {
             hasPet = false
@@ -90,10 +87,7 @@ struct ContentView: View {
             let pets = try await DataService.shared.getPets()
             hasPet = !pets.isEmpty
             hasCheckedPetStatus = true
-            print("✅ Pet status loaded: hasPet=\(hasPet)")
         } catch {
-            print("❌ Error checking pet status: \(error)")
-            print("❌ Error details: \(error.localizedDescription)")
             errorMessage = "Failed to load pet data: \(error.localizedDescription)"
             showError = true
             hasPet = false
@@ -111,27 +105,27 @@ struct MainTabView: View {
         TabView(selection: Bindable(navigationManager).selectedTab) {
             PlaceholderView(title: "Dashboard", icon: "house")
                 .tabItem { Label("Home", systemImage: "house") }
-                .tag(0)
+                .tag(Tab.home)
 
             PlaceholderView(title: "Food", icon: "pawprint")
                 .tabItem { Label("Food", systemImage: "pawprint") }
-                .tag(1)
+                .tag(Tab.food)
 
             PlaceholderView(title: "Medication", icon: "syringe")
                 .tabItem { Label("Medication", systemImage: "syringe") }
-                .tag(2)
+                .tag(Tab.medication)
 
             PlaceholderView(title: "Health", icon: "heart")
                 .tabItem { Label("Health", systemImage: "heart") }
-                .tag(3)
+                .tag(Tab.health)
 
             FamilyManagementView()
                 .tabItem { Label("Family", systemImage: "figure.2.and.child.holdinghands") }
-                .tag(4)
+                .tag(Tab.family)
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gear") }
-                .tag(5)
+                .tag(Tab.settings)
         }
     }
 }
@@ -361,7 +355,7 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
 
                                 if let weight = pet.currentWeight {
-                                    Text("\(formatWeight(weight)) lbs")
+                                    Text("\(Formatters.formatWeight(weight)) lbs")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -401,10 +395,9 @@ struct SettingsView: View {
             pets = try await DataService.shared.getPets()
             hasLoaded = true
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
-            print("Settings load cancelled (this is normal during navigation)")
+            // Load cancelled during navigation - this is expected behavior
         } catch {
             errorMessage = error.localizedDescription
-            print("Error loading settings data: \(error)")
         }
 
         isLoading = false
@@ -412,10 +405,6 @@ struct SettingsView: View {
 
     private func signOut() {
         authManager.signOut()
-    }
-
-    private func formatWeight(_ weight: Double) -> String {
-        Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 }
 

@@ -266,11 +266,7 @@ final class AuthManager {
               !firstName.isEmpty else {
             return nil
         }
-        if let lastName = user.lastName, !lastName.isEmpty {
-            let initial = String(lastName.prefix(1)).uppercased()
-            return "\(firstName) \(initial)."
-        }
-        return firstName
+        return Formatters.formatDisplayName(firstName: firstName, lastName: user.lastName)
     }
 
     /// Check if user needs to complete profile setup (missing first name)
@@ -343,6 +339,7 @@ final class AuthManager {
         isAuthenticated = false
         APIClient.shared.authToken = nil
         APIClient.shared.currentOrgId = nil
+        NavigationManager.shared.reset()
     }
 
     // MARK: - Keychain Operations

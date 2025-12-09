@@ -265,8 +265,8 @@ class APIClient: APIClientProtocol {
         return try await patch("/pets/\(id.uuidString)", body: update)
     }
 
-    func deletePet(id: UUID) async throws -> PetDeleteResponse {
-        return try await deleteWithResponse("/pets/\(id.uuidString)")
+    func deletePet(id: UUID) async throws {
+        try await delete("/pets/\(id.uuidString)")
     }
 
     func uploadPetPhoto(imageData: Data) async throws -> String {
@@ -306,7 +306,11 @@ class APIClient: APIClientProtocol {
     // MARK: - Calorie Goals
 
     func getCalorieGoal(petId: UUID) async throws -> CalorieGoal? {
-        return try await get("/feedings/pet/\(petId.uuidString)/calorie-goal")
+        do {
+            return try await get("/feedings/pet/\(petId.uuidString)/calorie-goal")
+        } catch APIError.notFound {
+            return nil
+        }
     }
 
     func setCalorieGoal(petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
@@ -405,14 +409,7 @@ struct FamilyMemberResponse: Codable, Identifiable {
     let joinedAt: Date?
 
     var displayName: String {
-        if let firstName = firstName, !firstName.isEmpty {
-            if let lastName = lastName, !lastName.isEmpty {
-                let initial = String(lastName.prefix(1)).uppercased()
-                return "\(firstName) \(initial)."
-            }
-            return firstName
-        }
-        return email ?? "Unknown"
+        Formatters.formatDisplayName(firstName: firstName, lastName: lastName, fallback: email ?? "Unknown")
     }
 }
 
