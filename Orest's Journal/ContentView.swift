@@ -105,10 +105,10 @@ struct ContentView: View {
 // MARK: - Main Tab View
 
 struct MainTabView: View {
-    @State private var selectedTab = 0
+    private var navigationManager = NavigationManager.shared
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: Bindable(navigationManager).selectedTab) {
             PlaceholderView(title: "Dashboard", icon: "house")
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(0)

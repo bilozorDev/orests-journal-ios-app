@@ -73,8 +73,13 @@ struct FamilyManagementView: View {
                     .background(Color(uiColor: .systemBackground))
             }
         }
-        .navigationTitle("Family")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Family")
+                    .font(.headline)
+            }
+        }
         .sheet(isPresented: $showInviteSheet) {
             InviteShareSheet(inviteCode: authManager.currentFamily?.inviteCode ?? "")
         }
