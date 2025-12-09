@@ -31,7 +31,7 @@ struct EditMemberRoleSheet: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     HStack(spacing: 12) {

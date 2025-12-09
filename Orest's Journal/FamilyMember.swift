@@ -19,13 +19,6 @@ struct FamilyMember: Codable, Identifiable {
     let lastName: String?
 
     var displayName: String {
-        if let firstName = firstName, !firstName.isEmpty {
-            if let lastName = lastName, !lastName.isEmpty {
-                let initial = String(lastName.prefix(1)).uppercased()
-                return "\(firstName) \(initial)."
-            }
-            return firstName
-        }
-        return email ?? "Unknown"
+        Formatters.formatDisplayName(firstName: firstName, lastName: lastName, fallback: email ?? "Unknown")
     }
 }

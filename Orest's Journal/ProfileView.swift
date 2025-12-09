@@ -66,7 +66,9 @@ struct ProfileView: View {
     }
 
     private func signOut() {
-        authManager.signOut()
+        Task {
+            await authManager.signOut()
+        }
     }
 }
 

@@ -18,7 +18,7 @@ final class PersistentCacheManager {
     private let decoder: JSONDecoder
 
     /// Current cache version - increment when data models change
-    private let currentCacheVersion = 1
+    private let currentCacheVersion = 2
 
     /// Maximum age for cached data (24 hours)
     private let maxCacheAge: TimeInterval = 24 * 60 * 60
@@ -34,6 +34,7 @@ final class PersistentCacheManager {
     enum CacheKey {
         case familyMembers(familyId: String)
         case pets
+        case calorieGoal(petId: String)
 
         var fileName: String {
             switch self {
@@ -41,6 +42,8 @@ final class PersistentCacheManager {
                 return "family_members_\(familyId).json"
             case .pets:
                 return "pets.json"
+            case .calorieGoal(let petId):
+                return "calorie_goal_\(petId).json"
             }
         }
     }
@@ -51,11 +54,47 @@ final class PersistentCacheManager {
         cacheDirectory = appSupport.appendingPathComponent("DataCache", isDirectory: true)
 
         // Configure encoder/decoder for dates
+        // Use same date encoding as APIClient for consistency
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
 
+        // Use custom date decoder matching APIClient to handle multiple formats
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = isoFormatter.date(from: dateString) {
+                return date
+            }
+
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            if let date = isoFormatter.date(from: dateString) {
+                return date
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            formatter.timeZone = TimeZone(identifier: "UTC")
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            // Handle date-only strings (e.g., "2021-05-23" from backend date fields)
+            formatter.dateFormat = "yyyy-MM-dd"
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
+        }
 
         // Ensure cache directory exists
         createCacheDirectoryIfNeeded()

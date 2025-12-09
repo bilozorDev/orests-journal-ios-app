@@ -65,14 +65,62 @@ uvicorn app.main:app --reload           # Start dev server at localhost:8000
 
 ## Cache Management
 
+### Cache Architecture Overview
+
+The app uses a **three-tier caching strategy**:
+
+1. **iOS Memory Cache** (`DataService`) - Fastest, cleared on app termination or memory pressure
+2. **iOS Disk Cache** (`PersistentCacheManager`) - Persists across app launches, stored in Application Support
+3. **Backend Redis Cache** - Server-side caching for expensive database queries
+
+**Pattern**: Stale-while-revalidate - Return cached data immediately, refresh in background if stale.
+
+### iOS Cache TTLs
+| Data Type | Memory TTL | Disk Max Age | Notes |
+|-----------|------------|--------------|-------|
+| Pets | 5 min | 24 hr | Background refresh when stale |
+| Family Members | 1 min | 24 hr | Invalidated on membership changes |
+| Calorie Goals | 1 min | 24 hr | Per-pet caching |
+
+### Backend Redis TTLs
+| Data Type | TTL | Key Pattern |
+|-----------|-----|-------------|
+| Family Details | 5 min | `family:{family_id}` |
+| Calorie Goal | 5 min | `calorie_goal:{pet_id}` |
+| Foods | 1 hr | `foods:{org_id}` |
+
+### Cache Invalidation - IMPORTANT
+
+**When invalidating cache, you must do TWO things:**
+1. **Clear the cached data** - Call `DataService.shared.invalidateFamilyCache(for:)` or similar
+2. **Tell the view to refresh** - Call `NavigationManager.shared.requestTabRefresh(.family)`
+
+Just clearing the cache is NOT enough - the view won't know to reload unless you also mark the tab as needing refresh.
+
+Example (from NotificationManager when member joins):
+```swift
+DataService.shared.invalidateFamilyCache(for: familyId)
+NavigationManager.shared.requestTabRefresh(.family)
+```
+
+### Cache Stampede Prevention
+`DataService` uses `refreshInProgress` flags to prevent multiple concurrent background refreshes of the same data.
+
 ### Flush Redis Cache (Backend)
-When debugging cache issues or after making cache-related changes, flush Redis to avoid stale/mixed data:
+When debugging cache issues or after making cache-related changes:
 ```bash
 redis-cli FLUSHALL
 ```
 
 ### Clear iOS Disk Cache
 Delete the app from device and reinstall, or clear Application Support directory programmatically.
+
+### Adding New Cached Data
+1. Add cache key to `PersistentCacheManager.CacheKey` enum (iOS)
+2. Add TTL constant and key function to `backend/app/cache/keys.py` (Backend)
+3. Implement cache get/set in the data fetching method
+4. Add cache invalidation in all mutation methods
+5. Add `requestTabRefresh()` call where appropriate for UI updates
 
 ## API Documentation
 When backend is running: `http://localhost:8000/docs` (Swagger) or `/redoc`

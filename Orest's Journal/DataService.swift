@@ -30,6 +30,10 @@ final class DataService {
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
 
+    // Cache stampede prevention flags
+    private var petsRefreshInProgress = false
+    private var familyRefreshInProgress: Set<String> = []
+
     private init() {
         // Listen for memory warnings to clear caches
         NotificationCenter.default.addObserver(
@@ -118,8 +122,17 @@ final class DataService {
             if let diskCached = diskCached {
                 cachePets(diskCached.data)
                 if Date().timeIntervalSince(diskCached.timestamp) > petsCacheTTL {
-                    Task {
-                        try? await refreshPetsInBackground()
+                    // Prevent cache stampede - only one background refresh at a time
+                    if !petsRefreshInProgress {
+                        petsRefreshInProgress = true
+                        Task {
+                            defer { Task { @MainActor in self.petsRefreshInProgress = false } }
+                            do {
+                                try await refreshPetsInBackground()
+                            } catch {
+                                print("Background pets refresh failed: \(error)")
+                            }
+                        }
                     }
                 }
                 return diskCached.data
@@ -166,15 +179,33 @@ final class DataService {
     // MARK: - Calorie Goals
 
     func getCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
-        // Check cache first
+        // Check memory cache first
         if let entry = calorieGoalCache[petId],
            Date().timeIntervalSince(entry.timestamp) < cacheTTL {
             return entry.data
         }
 
+        // Check disk cache
+        let diskCached: PersistentCacheManager.CachedData<CalorieGoal>? = await persistentCache.load(forKey: .calorieGoal(petId: petId.uuidString))
+        if let diskCached = diskCached {
+            calorieGoalCache[petId] = CacheEntry(data: diskCached.data, timestamp: diskCached.timestamp)
+            // If stale, refresh from network but return cached data
+            if Date().timeIntervalSince(diskCached.timestamp) > cacheTTL {
+                Task {
+                    if let goal = try? await api.getCalorieGoal(petId: petId) {
+                        self.calorieGoalCache[petId] = CacheEntry(data: goal, timestamp: Date())
+                        await self.persistentCache.save(goal, forKey: .calorieGoal(petId: petId.uuidString))
+                    }
+                }
+            }
+            return diskCached.data
+        }
+
+        // Fetch from network
         let goal = try await api.getCalorieGoal(petId: petId)
         if let goal = goal {
             calorieGoalCache[petId] = CacheEntry(data: goal, timestamp: Date())
+            await persistentCache.save(goal, forKey: .calorieGoal(petId: petId.uuidString))
         }
         return goal
     }
@@ -182,11 +213,15 @@ final class DataService {
     func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
         let result = try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
         calorieGoalCache[petId] = CacheEntry(data: result, timestamp: Date())
+        await persistentCache.save(result, forKey: .calorieGoal(petId: petId.uuidString))
         return result
     }
 
     func invalidateCalorieGoalCache(for petId: UUID) {
         calorieGoalCache.removeValue(forKey: petId)
+        Task {
+            await persistentCache.delete(forKey: .calorieGoal(petId: petId.uuidString))
+        }
     }
 
     // MARK: - Family Members
@@ -202,10 +237,18 @@ final class DataService {
             let diskCached: PersistentCacheManager.CachedData<FamilyDetailResponse>? = await persistentCache.load(forKey: .familyMembers(familyId: familyId))
             if let diskCached = diskCached {
                 cacheFamilyMembers(diskCached.data, for: familyId)
-                // If stale, refresh in background
+                // If stale, refresh in background (with stampede prevention)
                 if Date().timeIntervalSince(diskCached.timestamp) > cacheTTL {
-                    Task {
-                        try? await refreshFamilyMembersInBackground(familyId: familyId)
+                    if !familyRefreshInProgress.contains(familyId) {
+                        familyRefreshInProgress.insert(familyId)
+                        Task {
+                            defer { Task { @MainActor in self.familyRefreshInProgress.remove(familyId) } }
+                            do {
+                                try await refreshFamilyMembersInBackground(familyId: familyId)
+                            } catch {
+                                print("Background family refresh failed: \(error)")
+                            }
+                        }
                     }
                 }
                 return diskCached.data

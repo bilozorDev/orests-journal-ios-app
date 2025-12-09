@@ -15,6 +15,8 @@ from app.core.security import get_current_user_id
 from app.models.user import User, Family, FamilyMember, InviteAttemptLog, generate_invite_code
 from app.models.notification import UserDeviceToken
 from app.services.apns import apns_service
+from app.cache.helpers import cache_get, cache_set, cache_delete
+from app.cache.keys import key_family_detail, TTL_FAMILY
 
 router = APIRouter()
 
@@ -239,7 +241,13 @@ async def get_family(
             detail="You are not a member of this family",
         )
 
-    # Get family with members
+    # Try cache first
+    cache_key = key_family_detail(family_id)
+    cached = await cache_get(cache_key, FamilyDetailResponse)
+    if cached:
+        return cached
+
+    # Get family with members from database
     family_query = (
         select(Family)
         .options(selectinload(Family.members).selectinload(FamilyMember.user))
@@ -267,13 +275,18 @@ async def get_family(
         for member in family.members
     ]
 
-    return FamilyDetailResponse(
+    response = FamilyDetailResponse(
         id=str(family.id),
         name=family.name,
         invite_code=family.invite_code,
         created_at=family.created_at,
         members=members,
     )
+
+    # Cache the response
+    await cache_set(cache_key, response, TTL_FAMILY)
+
+    return response
 
 
 @router.post("/join", response_model=JoinFamilyResponse)
@@ -330,6 +343,9 @@ async def join_family(
     )
     db.add(membership)
     await db.commit()
+
+    # Invalidate family cache since member list changed
+    await cache_delete(key_family_detail(str(family.id)))
 
     # Send notification to other family members
     user_query = select(User).where(User.id == user_uuid)
@@ -416,6 +432,9 @@ async def regenerate_invite_code(
     await db.commit()
     await db.refresh(family)
 
+    # Invalidate family cache
+    await cache_delete(key_family_detail(family_id))
+
     return FamilyResponse(
         id=str(family.id),
         name=family.name,
@@ -472,6 +491,9 @@ async def update_family(
     family.name = request.name
     await db.commit()
     await db.refresh(family)
+
+    # Invalidate family cache
+    await cache_delete(key_family_detail(family_id))
 
     return FamilyResponse(
         id=str(family.id),
@@ -550,5 +572,8 @@ async def remove_family_member(
 
     await db.delete(target_membership)
     await db.commit()
+
+    # Invalidate family cache since member list changed
+    await cache_delete(key_family_detail(family_id))
 
     return {"message": "Member removed successfully"}

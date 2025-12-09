@@ -99,10 +99,10 @@ struct ContentView: View {
 // MARK: - Main Tab View
 
 struct MainTabView: View {
-    private var navigationManager = NavigationManager.shared
+    @Bindable private var navigationManager = NavigationManager.shared
 
     var body: some View {
-        TabView(selection: Bindable(navigationManager).selectedTab) {
+        TabView(selection: $navigationManager.selectedTab) {
             PlaceholderView(title: "Dashboard", icon: "house")
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(Tab.home)
@@ -286,6 +286,7 @@ struct SettingsView: View {
                             Image(systemName: "doc.on.doc")
                                 .foregroundColor(.blue)
                         }
+                        .accessibilityLabel("Copy invite code to clipboard")
                     }
                     .padding()
                     .background(Color.blue.opacity(0.1))
@@ -404,7 +405,9 @@ struct SettingsView: View {
     }
 
     private func signOut() {
-        authManager.signOut()
+        Task {
+            await authManager.signOut()
+        }
     }
 }
 

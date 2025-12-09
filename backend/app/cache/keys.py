@@ -9,6 +9,7 @@ TTL_ACTIVE_MEDS = 600       # 10 minutes
 TTL_FOODS = 3600            # 1 hour (organization-wide)
 TTL_DOSE_COUNTS = 60        # 1 minute (changes frequently)
 TTL_LAST_DOSE = 60          # 1 minute
+TTL_FAMILY = 300            # 5 minutes (family details with members)
 
 
 def key_dashboard(pet_id: str, date: str) -> str:
@@ -63,3 +64,8 @@ def key_all_doses(org_id: str, pet_id: str = None, offset: int = 0, limit: int =
     if pet_id:
         return f"all_doses:{org_id}:{pet_id}:{offset}:{limit}"
     return f"all_doses:{org_id}:all:{offset}:{limit}"
+
+
+def key_family_detail(family_id: str) -> str:
+    """Cache key for family details including members."""
+    return f"family:{family_id}"

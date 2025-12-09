@@ -32,6 +32,9 @@ struct FamilyManagementView: View {
     @State private var showDeletePetConfirmation = false
     @State private var showRemoveMemberConfirmation = false
 
+    // Loading states for individual items
+    @State private var memberBeingRemoved: String?  // userId of member being removed
+
     // Archived pets
     @State private var showArchivedPets = false
 
@@ -138,35 +141,21 @@ struct FamilyManagementView: View {
             let memberName = memberToRemove?.displayName ?? "this member"
             Text("Are you sure you want to remove \(memberName) from the family?")
         }
-        .task {
-            // Initial load only
-            if !hasLoaded {
-                let needsRefresh = navigationManager.tabsNeedingRefresh.contains(.family)
+        .task(id: navigationManager.tabsNeedingRefresh.contains(.family)) {
+            // Consolidated refresh logic: handles initial load and subsequent refresh requests
+            let needsRefresh = navigationManager.tabsNeedingRefresh.contains(.family)
+            if !hasLoaded || needsRefresh {
                 await loadData(forceRefresh: needsRefresh)
                 if needsRefresh {
                     navigationManager.markTabRefreshed(.family)
                 }
             }
         }
-        .onAppear {
-            // Runs every time tab becomes visible (unlike .task which runs once)
-            print("👨‍👩‍👧 [Family] onAppear - tabsNeedingRefresh: \(navigationManager.tabsNeedingRefresh)")
-            if navigationManager.tabsNeedingRefresh.contains(.family) {
-                print("👨‍👩‍👧 [Family] Needs refresh, loading data...")
-                Task {
-                    await loadData(forceRefresh: true)
-                    navigationManager.markTabRefreshed(.family)
-                    print("👨‍👩‍👧 [Family] Refresh complete")
-                }
-            }
-        }
         .onChange(of: navigationManager.pendingDestination) { _, newValue in
-            // Handle notification arriving while already on Family tab
+            // Handle notification navigation while already on Family tab
             if newValue == .familyManagement {
-                Task {
-                    await loadData(forceRefresh: true)
-                    navigationManager.clearPendingDestination()
-                }
+                navigationManager.requestTabRefresh(.family)
+                navigationManager.clearPendingDestination()
             }
         }
         .refreshable {
@@ -212,9 +201,9 @@ struct FamilyManagementView: View {
                     // Members list inline (indented to show hierarchy)
                     if !familyMembers.isEmpty {
                         VStack(spacing: 0) {
-                            ForEach(Array(familyMembers.enumerated()), id: \.element.id) { index, member in
+                            ForEach(familyMembers) { member in
                                 VStack(spacing: 0) {
-                                    if index > 0 {
+                                    if member.id != familyMembers.first?.id {
                                         Divider()
                                             .padding(.leading, 68)
                                     }
@@ -246,6 +235,7 @@ struct FamilyManagementView: View {
                                 Image(systemName: "doc.on.doc")
                                     .foregroundColor(.blue)
                             }
+                            .accessibilityLabel("Copy invite code to clipboard")
 
                             Button(action: {
                                 showInviteSheet = true
@@ -253,6 +243,7 @@ struct FamilyManagementView: View {
                                 Image(systemName: "square.and.arrow.up")
                                     .foregroundColor(.blue)
                             }
+                            .accessibilityLabel("Share invite code")
                         }
                         .padding()
                         .background(Color.blue.opacity(0.1))
@@ -310,7 +301,10 @@ struct FamilyManagementView: View {
 
             Spacer()
 
-            if isAdmin && !isCurrentUser {
+            if memberBeingRemoved == member.userId {
+                ProgressView()
+                    .scaleEffect(0.8)
+            } else if isAdmin && !isCurrentUser {
                 Menu {
                     Button(action: {
                         memberToEdit = member
@@ -333,6 +327,7 @@ struct FamilyManagementView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .opacity(memberBeingRemoved == member.userId ? 0.5 : 1.0)
     }
 
     // MARK: - Pets Section
@@ -353,6 +348,7 @@ struct FamilyManagementView: View {
                         .font(.title3)
                         .foregroundColor(.blue)
                 }
+                .accessibilityLabel("Add new pet")
             }
 
             if activePets.isEmpty {
@@ -507,7 +503,7 @@ struct FamilyManagementView: View {
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
             // Network request cancelled - ignore
         } catch {
-            print("Error loading pets: \(error)")
+            // Error loading pets - silently fail to allow family data to still load
         }
 
         // Load family members (separate try block so one failure doesn't stop the other)
@@ -519,7 +515,6 @@ struct FamilyManagementView: View {
             // Network request cancelled - ignore
         } catch {
             errorMessage = error.localizedDescription
-            print("Error loading family members: \(error)")
         }
 
         hasLoaded = true
@@ -558,14 +553,19 @@ struct FamilyManagementView: View {
     private func removeMember(_ member: FamilyMemberResponse) async {
         guard let familyId = authManager.currentFamily?.id else { return }
 
+        memberBeingRemoved = member.userId
+
         do {
             try await DataService.shared.removeFamilyMember(familyId: familyId, userId: member.userId)
             memberToRemove = nil
-            familyMembers.removeAll { $0.userId == member.userId }
+            withAnimation {
+                familyMembers.removeAll { $0.userId == member.userId }
+            }
         } catch {
             errorMessage = error.localizedDescription
-            print("Error removing member: \(error)")
         }
+
+        memberBeingRemoved = nil
     }
 
     // MARK: - Helpers

@@ -34,27 +34,24 @@ struct Orest_s_JournalApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
+        #if DEBUG
         print("🔗 [DeepLink] Received URL: \(url)")
         print("🔗 [DeepLink] Scheme: \(url.scheme ?? "nil"), Host: \(url.host ?? "nil")")
         print("🔗 [DeepLink] Auth status: \(AuthManager.shared.isAuthenticated), Family: \(AuthManager.shared.currentFamily?.id ?? "nil")")
+        #endif
 
         guard url.scheme == "orestsjournal" else {
-            print("🔗 [DeepLink] Wrong scheme, ignoring")
             return
         }
 
         switch url.host {
         case "family":
-            print("🔗 [DeepLink] Handling family deep link...")
             // Invalidate cache and navigate to family
             if let familyId = AuthManager.shared.currentFamily?.id {
-                print("🔗 [DeepLink] Invalidating cache for family: \(familyId)")
                 DataService.shared.invalidateFamilyCache(for: familyId)
             }
-            print("🔗 [DeepLink] Navigating to family management...")
             NavigationManager.shared.navigate(to: .familyManagement)
         default:
-            print("🔗 [DeepLink] Unknown host: \(url.host ?? "nil")")
             break
         }
     }

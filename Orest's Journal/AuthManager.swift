@@ -236,11 +236,9 @@ final class AuthManager {
     }
 
     /// Sign out
-    func signOut() {
+    func signOut() async {
         // Unregister device token before clearing session
-        Task {
-            await NotificationManager.shared.unregisterDeviceToken()
-        }
+        await NotificationManager.shared.unregisterDeviceToken()
         clearSession()
     }
 

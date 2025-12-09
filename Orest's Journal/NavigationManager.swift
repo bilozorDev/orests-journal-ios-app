@@ -33,18 +33,20 @@ final class NavigationManager {
     private init() {}
 
     func navigate(to destination: AppDestination) {
-        print("🧭 [Navigation] navigate(to: \(destination))")
         switch destination {
         case .familyManagement:
             selectedTab = .family
             tabsNeedingRefresh.insert(.family)
-            print("🧭 [Navigation] Set selectedTab=.family, tabsNeedingRefresh=\(tabsNeedingRefresh)")
         }
         pendingDestination = destination
     }
 
     func markTabRefreshed(_ tab: Tab) {
         tabsNeedingRefresh.remove(tab)
+    }
+
+    func requestTabRefresh(_ tab: Tab) {
+        tabsNeedingRefresh.insert(tab)
     }
 
     func clearPendingDestination() {

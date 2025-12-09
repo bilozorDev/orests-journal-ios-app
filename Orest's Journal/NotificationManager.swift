@@ -47,21 +47,19 @@ final class NotificationManager {
     /// Register device token with backend
     func registerDeviceTokenWithBackend(_ tokenString: String) async {
         self.deviceToken = tokenString
-        print("📱 Device token received: \(tokenString.prefix(20))...")
 
         // Only register if user is authenticated
         guard AuthManager.shared.isAuthenticated else {
-            print("⏳ User not authenticated, will register token after login")
             return
         }
 
         do {
             let deviceName = UIDevice.current.name
-            print("📤 Registering device token with backend...")
-            let _ = try await APIClient.shared.registerDeviceToken(token: tokenString, deviceName: deviceName)
-            print("✅ Device token registered with backend successfully")
+            _ = try await APIClient.shared.registerDeviceToken(token: tokenString, deviceName: deviceName)
         } catch {
-            print("❌ Failed to register device token: \(error)")
+            #if DEBUG
+            print("Failed to register device token: \(error)")
+            #endif
         }
     }
 
@@ -71,9 +69,10 @@ final class NotificationManager {
 
         do {
             try await APIClient.shared.unregisterDeviceToken(token: token)
-            print("Device token unregistered from backend")
         } catch {
+            #if DEBUG
             print("Failed to unregister device token: \(error)")
+            #endif
         }
 
         deviceToken = nil
@@ -81,8 +80,6 @@ final class NotificationManager {
 
     /// Re-register device token after authentication
     func registerAfterAuthentication() async {
-        print("🔐 registerAfterAuthentication called - deviceToken: \(deviceToken != nil ? "exists" : "nil"), isAuthorized: \(isAuthorized)")
-
         // Check current authorization status first (doesn't prompt user)
         await checkAuthorizationStatus()
 
@@ -91,11 +88,9 @@ final class NotificationManager {
             await registerDeviceTokenWithBackend(token)
         } else if isAuthorized {
             // Already authorized, request new token from APNs
-            print("📲 Requesting new device token from APNs...")
             registerForRemoteNotifications()
         } else {
             // Not authorized yet - request permission (prompts user only if status is .notDetermined)
-            print("🔔 Requesting notification authorization...")
             await requestAuthorization()
         }
     }
@@ -115,19 +110,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        print("🚀 [AppDelegate] didFinishLaunchingWithOptions")
-
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
-        print("🚀 [AppDelegate] Set UNUserNotificationCenter delegate")
 
         // Register background refresh task
         BackgroundTaskManager.shared.registerBackgroundTasks()
-
-        // Check if launched from notification
-        if let notificationResponse = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
-            print("🚀 [AppDelegate] Launched from notification: \(notificationResponse)")
-        }
 
         return true
     }
@@ -138,7 +125,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-        print("Device token: \(tokenString)")
 
         Task { @MainActor in
             await NotificationManager.shared.registerDeviceTokenWithBackend(tokenString)
@@ -150,8 +136,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
-        print("❌ Error details: \(error)")
+        #if DEBUG
+        print("Failed to register for remote notifications: \(error)")
+        #endif
     }
 
     // MARK: - UNUserNotificationCenterDelegate
@@ -162,8 +149,44 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+
+        // Invalidate caches based on notification type
+        Task { @MainActor in
+            handleCacheInvalidation(userInfo: userInfo)
+        }
+
         // Show notification even when app is in foreground
         completionHandler([.banner, .sound, .badge])
+    }
+
+    private func handleCacheInvalidation(userInfo: [AnyHashable: Any]) {
+        // Extract notification type from userInfo or nested data
+        var notificationType: String?
+        var familyId: String?
+
+        if let type = userInfo["type"] as? String {
+            notificationType = type
+            familyId = userInfo["family_id"] as? String
+        } else if let data = userInfo["data"] as? [String: Any],
+                  let type = data["type"] as? String {
+            notificationType = type
+            familyId = data["family_id"] as? String
+        }
+
+        // Invalidate family cache when family membership changes
+        guard let type = notificationType else { return }
+
+        switch type {
+        case "member_joined", "member_removed", "role_changed":
+            if let familyId = familyId {
+                DataService.shared.invalidateFamilyCache(for: familyId)
+                // Also tell the view to refresh when it becomes visible
+                NavigationManager.shared.requestTabRefresh(.family)
+            }
+        default:
+            break
+        }
     }
 
     // Handle notification tap
@@ -172,9 +195,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        print("🔔 [AppDelegate] didReceive notification response")
         let userInfo = response.notification.request.content.userInfo
-        print("🔔 [AppDelegate] userInfo: \(userInfo)")
+
+        // Invalidate caches based on notification type (in case app was in background)
+        Task { @MainActor in
+            handleCacheInvalidation(userInfo: userInfo)
+        }
 
         // Handle notification based on type - check both top-level and nested in "data"
         var notificationType: String?
@@ -192,10 +218,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if let type = notificationType {
-            print("🔔 [AppDelegate] Found type: \(type), calling handleNotificationTap")
             handleNotificationTap(type: type, userInfo: notificationData)
-        } else {
-            print("🔔 [AppDelegate] No 'type' found in userInfo")
         }
 
         completionHandler()
@@ -205,21 +228,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         switch type {
         case "medication_reminder", "missed_dose":
             // Could navigate to medication detail or record dose screen
-            if let medicationId = userInfo["medication_id"] as? String,
-               let petId = userInfo["pet_id"] as? String {
-                print("Notification tapped - medication: \(medicationId), pet: \(petId)")
-                // TODO: Post notification to navigate to medication or record dose
-            }
+            // TODO: Implement medication navigation
+            break
         case "member_joined":
             // Use deep link URL - onOpenURL fires after app is fully ready
-            print("🔔 [Notification] member_joined tapped, opening deep link...")
             if let url = URL(string: "orestsjournal://family?refresh=true") {
-                print("🔔 [Notification] Opening URL: \(url)")
-                UIApplication.shared.open(url) { success in
-                    print("🔔 [Notification] URL open result: \(success)")
-                }
-            } else {
-                print("🔔 [Notification] Failed to create URL")
+                UIApplication.shared.open(url)
             }
         default:
             break

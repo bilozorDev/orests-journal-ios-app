@@ -12,9 +12,10 @@ struct InviteShareSheet: View {
     let inviteCode: String
 
     @State private var showCopied = false
+    @State private var resetTask: Task<Void, Never>?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 Spacer()
 
@@ -64,6 +65,7 @@ struct InviteShareSheet: View {
                         .foregroundColor(showCopied ? .green : .primary)
                         .cornerRadius(12)
                     }
+                    .accessibilityLabel(showCopied ? "Invite code copied" : "Copy invite code \(inviteCode)")
 
                     // Share Button
                     Button(action: shareCode) {
@@ -77,6 +79,7 @@ struct InviteShareSheet: View {
                         .foregroundColor(.white)
                         .cornerRadius(12)
                     }
+                    .accessibilityLabel("Share invite code \(inviteCode)")
                 }
                 .padding(.horizontal)
 
@@ -91,6 +94,9 @@ struct InviteShareSheet: View {
                     }
                 }
             }
+            .onDisappear {
+                resetTask?.cancel()
+            }
         }
     }
 
@@ -99,7 +105,12 @@ struct InviteShareSheet: View {
         withAnimation {
             showCopied = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+
+        // Cancel any existing reset task
+        resetTask?.cancel()
+        resetTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
             withAnimation {
                 showCopied = false
             }
