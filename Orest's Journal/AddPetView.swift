@@ -26,6 +26,8 @@ struct AddPetView: View {
                 Form {
                     Section(header: Text("Pet Information")) {
                         TextField("Pet Name", text: $petName)
+                            .textContentType(.name)
+                            .autocorrectionDisabled(true)
 
                         Picker("Kind", selection: $petKind) {
                             ForEach(petKinds, id: \.self) { kind in

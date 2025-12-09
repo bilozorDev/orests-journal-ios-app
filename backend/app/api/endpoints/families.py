@@ -34,6 +34,11 @@ class JoinFamilyRequest(BaseModel):
     invite_code: str
 
 
+class UpdateFamilyRequest(BaseModel):
+    """Request to update family details."""
+    name: str
+
+
 class FamilyMemberResponse(BaseModel):
     """Family member data for responses."""
     id: str
@@ -350,6 +355,63 @@ async def regenerate_invite_code(
 
     # Generate new invite code
     family.invite_code = generate_invite_code()
+    await db.commit()
+    await db.refresh(family)
+
+    return FamilyResponse(
+        id=str(family.id),
+        name=family.name,
+        invite_code=family.invite_code,
+        role="admin",
+    )
+
+
+@router.patch("/{family_id}", response_model=FamilyResponse)
+async def update_family(
+    family_id: str,
+    request: UpdateFamilyRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Update family details. Only admins can update the family.
+    """
+    family_uuid = UUID(family_id)
+    user_uuid = UUID(user_id)
+
+    # Check if user is an admin of this family
+    membership_query = select(FamilyMember).where(
+        FamilyMember.family_id == family_uuid,
+        FamilyMember.user_id == user_uuid,
+    )
+    result = await db.execute(membership_query)
+    membership = result.scalar_one_or_none()
+
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this family",
+        )
+
+    if membership.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only family admins can update family details",
+        )
+
+    # Get and update the family
+    family_query = select(Family).where(Family.id == family_uuid)
+    result = await db.execute(family_query)
+    family = result.scalar_one_or_none()
+
+    if not family:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Family not found",
+        )
+
+    # Update the family name
+    family.name = request.name
     await db.commit()
     await db.refresh(family)
 

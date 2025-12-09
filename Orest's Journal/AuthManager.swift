@@ -225,6 +225,16 @@ final class AuthManager {
         APIClient.shared.currentOrgId = family.id
     }
 
+    /// Update current family info (e.g., after name change)
+    func updateCurrentFamily(_ family: AppFamily) {
+        // Update in families list
+        if let index = families.firstIndex(where: { $0.id == family.id }) {
+            families[index] = family
+        }
+        // Update current selection
+        currentFamily = family
+    }
+
     /// Sign out
     func signOut() {
         // Unregister device token before clearing session

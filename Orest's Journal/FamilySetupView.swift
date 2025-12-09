@@ -23,32 +23,13 @@ struct FamilySetupView: View {
 
     var body: some View {
         NavigationView {
-            ZStack {
-                switch mode {
-                case .choose:
-                    chooseModeView
-                case .create:
-                    createFamilyView
-                case .join:
-                    joinFamilyView
-                }
-
-                // Dev: Floating Sign Out Button
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button(action: signOut) {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.red)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                        .padding()
-                    }
-                }
+            switch mode {
+            case .choose:
+                chooseModeView
+            case .create:
+                createFamilyView
+            case .join:
+                joinFamilyView
             }
         }
     }
@@ -118,7 +99,9 @@ struct FamilySetupView: View {
         Form {
             Section(header: Text("Family Name")) {
                 TextField("Enter family name", text: $familyName)
+                    .textContentType(.organizationName)
                     .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled(false)
             }
 
             Section(footer: Text("You can invite family members later by sharing your invite code.")) {
@@ -255,10 +238,6 @@ struct FamilySetupView: View {
             }
             isLoading = false  // Always reset loading state
         }
-    }
-
-    private func signOut() {
-        authManager.signOut()
     }
 }
 

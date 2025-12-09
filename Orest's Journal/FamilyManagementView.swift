@@ -8,7 +8,32 @@
 import SwiftUI
 import PhotosUI
 
+// MARK: - Corner Radius Extension
+
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
+}
+
+// MARK: - Family Management View
+
 struct FamilyManagementView: View {
+    @Environment(\.dismiss) private var dismiss
     private var authManager = AuthManager.shared
     @State private var familyMembers: [FamilyMemberResponse] = []
     @State private var pets: [Pet] = []
@@ -19,6 +44,7 @@ struct FamilyManagementView: View {
     // Sheet states
     @State private var showInviteSheet = false
     @State private var showAddPet = false
+    @State private var showEditFamilyName = false
     @State private var petToEdit: Pet?
     @State private var petToDelete: Pet?
     @State private var memberToEdit: FamilyMemberResponse?
@@ -46,133 +72,157 @@ struct FamilyManagementView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Family Info Section
-                    familyInfoSection
+        ScrollView {
+            VStack(spacing: 20) {
+                // Household Section (combined family info + members)
+                householdSection
 
-                    // Family Members Section
-                    familyMembersSection
+                // Pets Section
+                petsSection
 
-                    // Pets Section
-                    petsSection
+                // Archived Pets Section
+                if !archivedPets.isEmpty {
+                    archivedPetsSection
+                }
 
-                    // Archived Pets Section
-                    if !archivedPets.isEmpty {
-                        archivedPetsSection
-                    }
-
-                    Spacer()
-                }
-                .padding()
+                Spacer()
             }
-            .overlay {
-                if isLoading && !hasLoaded {
-                    ProgressView("Loading...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(uiColor: .systemBackground))
-                }
+            .padding()
+        }
+        .overlay {
+            if isLoading && !hasLoaded {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
             }
-            .navigationTitle("Family")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showInviteSheet) {
-                InviteShareSheet(inviteCode: authManager.currentFamily?.inviteCode ?? "")
+        }
+        .navigationTitle("Family")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showInviteSheet) {
+            InviteShareSheet(inviteCode: authManager.currentFamily?.inviteCode ?? "")
+        }
+        .sheet(isPresented: $showAddPet) {
+            AddEditPetView(mode: .add) { newPet in
+                pets.append(newPet)
             }
-            .sheet(isPresented: $showAddPet) {
-                AddEditPetView(mode: .add) { newPet in
-                    pets.append(newPet)
-                }
-            }
-            .sheet(item: $petToEdit) { pet in
-                AddEditPetView(mode: .edit(pet)) { updatedPet in
-                    if let index = pets.firstIndex(where: { $0.id == updatedPet.id }) {
-                        pets[index] = updatedPet
-                    }
+        }
+        .sheet(item: $petToEdit) { pet in
+            AddEditPetView(mode: .edit(pet)) { updatedPet in
+                if let index = pets.firstIndex(where: { $0.id == updatedPet.id }) {
+                    pets[index] = updatedPet
                 }
             }
-            .sheet(item: $memberToEdit) { member in
-                EditMemberRoleSheet(member: member) { updatedMember in
-                    if let index = familyMembers.firstIndex(where: { $0.userId == updatedMember.userId }) {
-                        familyMembers[index] = updatedMember
-                    }
+        }
+        .sheet(item: $memberToEdit) { member in
+            EditMemberRoleSheet(member: member) { updatedMember in
+                if let index = familyMembers.firstIndex(where: { $0.userId == updatedMember.userId }) {
+                    familyMembers[index] = updatedMember
                 }
             }
-            .alert("Delete Pet", isPresented: $showDeletePetConfirmation) {
-                Button("Cancel", role: .cancel) {
-                    petToDelete = nil
-                }
-                Button("Delete", role: .destructive) {
-                    if let pet = petToDelete {
-                        Task {
-                            await deletePet(pet)
-                        }
-                    }
-                }
-            } message: {
-                Text("Are you sure you want to delete \"\(petToDelete?.name ?? "")\"? This action cannot be undone.")
+        }
+        .sheet(isPresented: $showEditFamilyName) {
+            if let family = authManager.currentFamily {
+                EditFamilyNameSheet(
+                    familyId: family.id,
+                    currentName: family.name
+                )
             }
-            .alert("Remove Member", isPresented: $showRemoveMemberConfirmation) {
-                Button("Cancel", role: .cancel) {
-                    memberToRemove = nil
-                }
-                Button("Remove", role: .destructive) {
-                    if let member = memberToRemove {
-                        Task {
-                            await removeMember(member)
-                        }
+        }
+        .alert("Delete Pet", isPresented: $showDeletePetConfirmation) {
+            Button("Cancel", role: .cancel) {
+                petToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let pet = petToDelete {
+                    Task {
+                        await deletePet(pet)
                     }
                 }
-            } message: {
-                let memberName = memberToRemove?.displayName ?? "this member"
-                Text("Are you sure you want to remove \(memberName) from the family?")
             }
-            .alert("Pet Archived", isPresented: $showDeleteResultAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(deleteResultMessage)
+        } message: {
+            Text("Are you sure you want to delete \"\(petToDelete?.name ?? "")\"? This action cannot be undone.")
+        }
+        .alert("Remove Member", isPresented: $showRemoveMemberConfirmation) {
+            Button("Cancel", role: .cancel) {
+                memberToRemove = nil
             }
-            .task {
-                guard !hasLoaded else { return }
-                await loadData()
+            Button("Remove", role: .destructive) {
+                if let member = memberToRemove {
+                    Task {
+                        await removeMember(member)
+                    }
+                }
             }
-            .refreshable {
-                await loadData(forceRefresh: true)
-            }
+        } message: {
+            let memberName = memberToRemove?.displayName ?? "this member"
+            Text("Are you sure you want to remove \(memberName) from the family?")
+        }
+        .alert("Pet Archived", isPresented: $showDeleteResultAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteResultMessage)
+        }
+        .task {
+            guard !hasLoaded else { return }
+            await loadData()
+        }
+        .refreshable {
+            await loadData(forceRefresh: true)
         }
     }
 
-    // MARK: - Family Info Section
+    // MARK: - Household Section (combined family info + members)
 
-    private var familyInfoSection: some View {
+    private var householdSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Family")
+            Text("Household")
                 .font(.headline)
                 .foregroundColor(.secondary)
 
             if let family = authManager.currentFamily {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(spacing: 0) {
+                    // Family name row with edit button (admin only)
                     HStack {
                         Image(systemName: "house.circle.fill")
                             .font(.title2)
                             .foregroundColor(.green)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(family.name)
-                                .font(.body)
-                                .fontWeight(.medium)
-
-                            Text("Role: \(family.role.capitalized)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text(family.name)
+                            .font(.body)
+                            .fontWeight(.medium)
 
                         Spacer()
+
+                        if isAdmin {
+                            Button(action: {
+                                showEditFamilyName = true
+                            }) {
+                                Image(systemName: "pencil")
+                                    .foregroundColor(.blue)
+                            }
+                        }
                     }
                     .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(12, corners: familyMembers.isEmpty ? .allCorners : [.topLeft, .topRight])
+
+                    // Members list inline (indented to show hierarchy)
+                    if !familyMembers.isEmpty {
+                        VStack(spacing: 0) {
+                            ForEach(Array(familyMembers.enumerated()), id: \.element.id) { index, member in
+                                VStack(spacing: 0) {
+                                    if index > 0 {
+                                        Divider()
+                                            .padding(.leading, 68)
+                                    }
+                                    memberRowCompact(member)
+                                }
+                            }
+                        }
+                        .padding(.leading, 16)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12, corners: [.bottomLeft, .bottomRight])
+                    }
 
                     // Invite code section
                     VStack(alignment: .leading, spacing: 4) {
@@ -205,7 +255,7 @@ struct FamilyManagementView: View {
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(8)
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 12)
 
                     Text("Share this code to invite family members")
                         .font(.caption2)
@@ -215,49 +265,18 @@ struct FamilyManagementView: View {
         }
     }
 
-    // MARK: - Family Members Section
-
-    private var familyMembersSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Members")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            if familyMembers.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "person.2.circle")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray)
-                    Text("No family members")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(familyMembers) { member in
-                        memberRow(member)
-                    }
-                }
-            }
-        }
-    }
-
-    private func memberRow(_ member: FamilyMemberResponse) -> some View {
+    private func memberRowCompact(_ member: FamilyMemberResponse) -> some View {
         let isCurrentUser = member.userId == authManager.userId
 
         return HStack(spacing: 12) {
             Image(systemName: "person.circle.fill")
-                .font(.title2)
+                .font(.title3)
                 .foregroundColor(member.role == "admin" ? .orange : .blue)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
                     Text(member.displayName)
-                        .font(.body)
+                        .font(.subheadline)
                         .fontWeight(.medium)
 
                     if isCurrentUser {
@@ -267,10 +286,10 @@ struct FamilyManagementView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(member.role.capitalized)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(member.role == "admin" ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
                         .foregroundColor(member.role == "admin" ? .orange : .blue)
@@ -278,7 +297,7 @@ struct FamilyManagementView: View {
 
                     if let joinedAt = member.joinedAt {
                         Text("Joined \(formatDate(joinedAt))")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -306,9 +325,8 @@ struct FamilyManagementView: View {
                 }
             }
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(12)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Pets Section
@@ -461,31 +479,54 @@ struct FamilyManagementView: View {
     // MARK: - Actions
 
     private func loadData(forceRefresh: Bool = false) async {
-        isLoading = true
+        // Only show loading indicator on initial load, not on pull-to-refresh
+        if !hasLoaded {
+            isLoading = true
+        }
         errorMessage = nil
 
+        // Load pets
         do {
-            async let petsTask = DataService.shared.getPets(forceRefresh: forceRefresh)
-            async let membersTask = loadFamilyMembers()
-
-            pets = try await petsTask
-            familyMembers = try await membersTask
-            hasLoaded = true
+            pets = try await DataService.shared.getPets(forceRefresh: forceRefresh)
+        } catch is CancellationError {
+            // Cancelled during navigation - ignore
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
-            print("Family data load cancelled (this is normal during navigation)")
+            // Network request cancelled - ignore
         } catch {
-            errorMessage = error.localizedDescription
-            print("Error loading family data: \(error)")
+            print("Error loading pets: \(error)")
         }
 
+        // Load family members (separate try block so one failure doesn't stop the other)
+        do {
+            familyMembers = try await loadFamilyMembers(forceRefresh: forceRefresh)
+        } catch is CancellationError {
+            // Cancelled during navigation - ignore
+        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+            // Network request cancelled - ignore
+        } catch {
+            errorMessage = error.localizedDescription
+            print("Error loading family members: \(error)")
+        }
+
+        hasLoaded = true
         isLoading = false
     }
 
-    private func loadFamilyMembers() async throws -> [FamilyMemberResponse] {
-        guard let familyId = authManager.currentFamily?.id else {
+    private func loadFamilyMembers(forceRefresh: Bool = false) async throws -> [FamilyMemberResponse] {
+        guard let currentFamily = authManager.currentFamily else {
             return []
         }
-        let response = try await DataService.shared.getFamilyMembers(for: familyId)
+        let response = try await DataService.shared.getFamilyMembers(for: currentFamily.id, forceRefresh: forceRefresh)
+
+        // Update authManager with fresh family data (preserve role from current family)
+        let updatedFamily = AppFamily(
+            id: response.id,
+            name: response.name,
+            inviteCode: response.inviteCode,
+            role: currentFamily.role
+        )
+        authManager.updateCurrentFamily(updatedFamily)
+
         return response.members
     }
 

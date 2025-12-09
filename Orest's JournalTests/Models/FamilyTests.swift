@@ -234,4 +234,56 @@ final class FamilyTests: XCTestCase {
         XCTAssertEqual(detail.members[0].role, "admin")
         XCTAssertEqual(detail.members[1].role, "member")
     }
+
+    // MARK: - AppFamily Tests (API response model)
+
+    func testAppFamilyDecoding() throws {
+        let json = """
+        {
+            "id": "app-family-123",
+            "name": "Updated Family Name",
+            "invite_code": "XYZ789",
+            "role": "admin"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let appFamily = try decoder.decode(AppFamily.self, from: json)
+
+        XCTAssertEqual(appFamily.id, "app-family-123")
+        XCTAssertEqual(appFamily.name, "Updated Family Name")
+        XCTAssertEqual(appFamily.inviteCode, "XYZ789")
+        XCTAssertEqual(appFamily.role, "admin")
+    }
+
+    func testAppFamilyIdentifiable() {
+        let family = AppFamily(
+            id: "test-family-id",
+            name: "Test Family",
+            inviteCode: "ABC123",
+            role: "admin"
+        )
+
+        XCTAssertEqual(family.id, "test-family-id")
+    }
+
+    // MARK: - Family Update Request Encoding Tests
+
+    func testFamilyUpdateRequestEncoding() throws {
+        struct UpdateFamilyRequest: Encodable {
+            let name: String
+        }
+
+        let request = UpdateFamilyRequest(name: "New Family Name")
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        let data = try encoder.encode(request)
+        let jsonObject = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        XCTAssertEqual(jsonObject["name"] as? String, "New Family Name")
+    }
 }

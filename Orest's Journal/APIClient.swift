@@ -299,9 +299,13 @@ class APIClient: APIClientProtocol {
 
     // MARK: - Calorie Goals
 
+    func getCalorieGoal(petId: UUID) async throws -> CalorieGoal? {
+        return try await get("/feedings/pet/\(petId.uuidString)/calorie-goal")
+    }
+
     func setCalorieGoal(petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
         let create = CalorieGoalCreate(petId: petId, dailyCalories: dailyCalories, notes: notes)
-        return try await post("/pets/\(petId.uuidString)/calorie-goal", body: create)
+        return try await post("/feedings/pet/\(petId.uuidString)/calorie-goal", body: create)
     }
 
     // MARK: - Family
@@ -331,8 +335,11 @@ class APIClient: APIClientProtocol {
         try await delete("/families/\(familyId)/members/\(userId)")
     }
 
-    func regenerateInviteCode(familyId: String) async throws -> AppFamily {
-        return try await post("/families/\(familyId)/regenerate-invite-code", body: EmptyBody())
+    func updateFamilyName(familyId: String, name: String) async throws -> AppFamily {
+        struct UpdateFamilyRequest: Encodable {
+            let name: String
+        }
+        return try await patch("/families/\(familyId)", body: UpdateFamilyRequest(name: name))
     }
 
     // MARK: - Notifications
@@ -400,7 +407,7 @@ struct FamilyMemberResponse: Codable, Identifiable {
     }
 }
 
-struct FamilyDetailResponse: Decodable {
+struct FamilyDetailResponse: Codable {
     let id: String
     let name: String
     let inviteCode: String

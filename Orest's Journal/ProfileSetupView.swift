@@ -16,78 +16,65 @@ struct ProfileSetupView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
-                Spacer()
+            ZStack {
+                Form {
+                    Section {
+                        VStack(spacing: 16) {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 80))
+                                .foregroundColor(.blue)
 
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
+                            Text("Complete Your Profile")
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
 
-                Text("Complete Your Profile")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-
-                Text("Let us know what to call you")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                Spacer()
-
-                VStack(spacing: 16) {
-                    TextField("First Name", text: $firstName)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.givenName)
-                        .autocorrectionDisabled()
-                        .padding(.horizontal, 32)
-
-                    TextField("Last Name (optional)", text: $lastName)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.familyName)
-                        .autocorrectionDisabled()
-                        .padding(.horizontal, 32)
-
-                    if let error = errorMessage {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding(.horizontal, 32)
-                    }
-
-                    Button(action: saveProfile) {
-                        HStack {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text("Continue")
-                            }
+                            Text("Let us know what to call you")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(firstName.isEmpty || isLoading ? Color.gray.opacity(0.3) : Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .listRowBackground(Color.clear)
                     }
-                    .disabled(firstName.isEmpty || isLoading)
-                    .padding(.horizontal, 32)
-                }
 
-                Spacer()
+                    Section(header: Text("Your Name")) {
+                        TextField("First Name", text: $firstName)
+                            .textContentType(.givenName)
+                            .autocorrectionDisabled(true)
 
-                // Dev: Floating Sign Out Button
-                HStack {
-                    Spacer()
-                    Button(action: signOut) {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .foregroundColor(.white)
+                        TextField("Last Name (optional)", text: $lastName)
+                            .textContentType(.familyName)
+                            .autocorrectionDisabled(true)
+                    }
+
+                    if let error = errorMessage {
+                        Section {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                    }
+
+                    Section {
+                        Button(action: saveProfile) {
+                            HStack {
+                                if isLoading {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
+                                    Text("Continue")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.red)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
+                            .background(firstName.isEmpty || isLoading ? Color.gray.opacity(0.3) : Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                        }
+                        .disabled(firstName.isEmpty || isLoading)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
-                    .padding()
                 }
             }
         }
@@ -110,10 +97,6 @@ struct ProfileSetupView: View {
 
             isLoading = false
         }
-    }
-
-    private func signOut() {
-        authManager.signOut()
     }
 }
 

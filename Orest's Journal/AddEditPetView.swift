@@ -34,9 +34,11 @@ struct AddEditPetView: View {
     @State private var errorMessage: String?
     @State private var hasSaved = false  // Prevent double-tap duplicate creation
 
-    // Calorie goal state (only for add mode)
+    // Calorie goal state
     @State private var calorieGoal: String = ""
+    @State private var originalCalorieGoal: String = ""
     @State private var usesSuggestedGoal: Bool = false
+    @State private var isLoadingCalorieGoal = false
     @State private var showSuccessToast = false
     @State private var successMessage = ""
 
@@ -95,6 +97,8 @@ struct AddEditPetView: View {
             Form {
                 Section(header: Text("Pet Information")) {
                     TextField("Pet Name", text: $petName)
+                        .textContentType(.name)
+                        .autocorrectionDisabled(true)
 
                     Picker("Kind", selection: $petKind) {
                         ForEach(petKinds, id: \.self) { kind in
@@ -122,35 +126,36 @@ struct AddEditPetView: View {
                         .keyboardType(.decimalPad)
                 }
 
-                // Nutrition section - only shown in add mode
-                if !isEditing {
-                    Section(header: Text("Nutrition (Optional)")) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                TextField("Daily Calorie Goal", text: $calorieGoal)
-                                    .keyboardType(.numberPad)
-                                Text("cal/day")
-                                    .foregroundColor(.secondary)
+                Section(header: Text("Nutrition (Optional)")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            TextField("Daily Calorie Goal", text: $calorieGoal)
+                                .keyboardType(.numberPad)
+                            Text("cal/day")
+                                .foregroundColor(.secondary)
+                            if isLoadingCalorieGoal {
+                                ProgressView()
+                                    .scaleEffect(0.8)
                             }
+                        }
 
-                            if let suggested = suggestedCalorieGoal {
-                                Button(action: {
-                                    calorieGoal = "\(suggested)"
-                                    usesSuggestedGoal = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "lightbulb.fill")
-                                            .foregroundColor(.yellow)
-                                        Text("Use suggested: \(suggested) cal/day")
-                                            .font(.subheadline)
-                                    }
+                        if let suggested = suggestedCalorieGoal {
+                            Button(action: {
+                                calorieGoal = "\(suggested)"
+                                usesSuggestedGoal = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "lightbulb.fill")
+                                        .foregroundColor(.yellow)
+                                    Text("Use suggested: \(suggested) cal/day")
+                                        .font(.subheadline)
                                 }
-                                .buttonStyle(.borderless)
-
-                                Text("Based on typical \(petKind.lowercased()) calorie needs")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
                             }
+                            .buttonStyle(.borderless)
+
+                            Text("Based on typical \(petKind.lowercased()) calorie needs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -252,7 +257,27 @@ struct AddEditPetView: View {
                     }
                 }
             }
+            .task {
+                await loadExistingCalorieGoal()
+            }
         }
+    }
+
+    private func loadExistingCalorieGoal() async {
+        guard let pet = editingPet else { return }
+
+        isLoadingCalorieGoal = true
+        do {
+            if let goal = try await DataService.shared.getCalorieGoal(for: pet.id) {
+                let goalString = String(Int(goal.dailyCalories))
+                calorieGoal = goalString
+                originalCalorieGoal = goalString
+            }
+        } catch {
+            // Silently fail - calorie goal is optional
+            print("Failed to load calorie goal: \(error)")
+        }
+        isLoadingCalorieGoal = false
     }
 
     @ViewBuilder
@@ -344,7 +369,7 @@ struct AddEditPetView: View {
 
             let savedPet: Pet
             if let existingPet = editingPet {
-                // Update existing pet (no calorie goal handling in edit mode)
+                // Update existing pet
                 savedPet = try await DataService.shared.updatePet(
                     id: existingPet.id,
                     name: petName,
@@ -352,6 +377,17 @@ struct AddEditPetView: View {
                     photoUrl: photoUrl,
                     currentWeight: weight
                 )
+
+                // Update calorie goal if changed
+                if calorieGoal != originalCalorieGoal {
+                    if let calorieValue = Double(calorieGoal), calorieValue > 0 {
+                        _ = try await DataService.shared.setCalorieGoal(
+                            for: savedPet.id,
+                            dailyCalories: calorieValue,
+                            notes: nil
+                        )
+                    }
+                }
             } else {
                 // Create new pet
                 savedPet = try await DataService.shared.createPet(

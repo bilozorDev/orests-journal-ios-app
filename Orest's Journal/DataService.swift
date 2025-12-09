@@ -99,6 +99,9 @@ final class DataService {
 
     func invalidateFamilyCache(for familyId: String) {
         familyMembersCache.removeValue(forKey: familyId)
+        Task {
+            await persistentCache.delete(forKey: .familyMembers(familyId: familyId))
+        }
     }
 
     // MARK: - Pets
@@ -161,6 +164,10 @@ final class DataService {
 
     // MARK: - Calorie Goals
 
+    func getCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
+        return try await api.getCalorieGoal(petId: petId)
+    }
+
     func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
         return try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
     }
@@ -168,13 +175,37 @@ final class DataService {
     // MARK: - Family Members
 
     func getFamilyMembers(for familyId: String, forceRefresh: Bool = false) async throws -> FamilyDetailResponse {
+        // Check memory cache first
         if !forceRefresh, let cached = getCachedFamilyMembers(for: familyId) {
             return cached
         }
 
+        // Check disk cache if not forcing refresh
+        if !forceRefresh {
+            let diskCached: PersistentCacheManager.CachedData<FamilyDetailResponse>? = await persistentCache.load(forKey: .familyMembers(familyId: familyId))
+            if let diskCached = diskCached {
+                cacheFamilyMembers(diskCached.data, for: familyId)
+                // If stale, refresh in background
+                if Date().timeIntervalSince(diskCached.timestamp) > cacheTTL {
+                    Task {
+                        try? await refreshFamilyMembersInBackground(familyId: familyId)
+                    }
+                }
+                return diskCached.data
+            }
+        }
+
+        // Fetch from network
         let response = try await api.getFamilyDetails(familyId: familyId)
         cacheFamilyMembers(response, for: familyId)
+        await persistentCache.save(response, forKey: .familyMembers(familyId: familyId))
         return response
+    }
+
+    private func refreshFamilyMembersInBackground(familyId: String) async throws {
+        let response = try await api.getFamilyDetails(familyId: familyId)
+        cacheFamilyMembers(response, for: familyId)
+        await persistentCache.save(response, forKey: .familyMembers(familyId: familyId))
     }
 
     func updateMemberRole(familyId: String, userId: String, role: String) async throws -> FamilyMember {
@@ -186,6 +217,12 @@ final class DataService {
     func removeFamilyMember(familyId: String, userId: String) async throws {
         try await api.removeFamilyMember(familyId: familyId, userId: userId)
         invalidateFamilyCache(for: familyId)
+    }
+
+    func updateFamilyName(familyId: String, name: String) async throws -> AppFamily {
+        let result = try await api.updateFamilyName(familyId: familyId, name: name)
+        invalidateFamilyCache(for: familyId)
+        return result
     }
 
     // MARK: - Background Refresh
