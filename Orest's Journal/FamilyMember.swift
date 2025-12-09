@@ -7,16 +7,25 @@
 
 import Foundation
 
-/// APIClient uses automatic snake_case conversion
+/// Family member model matching API response structure
 struct FamilyMember: Codable, Identifiable {
-    let id: UUID
-    let familyId: UUID
-    let userId: UUID
-    let role: Role
-    let joinedAt: Date
+    let id: String
+    let orgId: String
+    let userId: String
+    let role: String
+    let joinedAt: Date?
+    let email: String?
+    let firstName: String?
+    let lastName: String?
 
-    enum Role: String, Codable {
-        case owner
-        case member
+    var displayName: String {
+        if let firstName = firstName, !firstName.isEmpty {
+            if let lastName = lastName, !lastName.isEmpty {
+                let initial = String(lastName.prefix(1)).uppercased()
+                return "\(firstName) \(initial)."
+            }
+            return firstName
+        }
+        return email ?? "Unknown"
     }
 }

@@ -32,29 +32,11 @@ final class PersistentCacheManager {
 
     /// Cache keys for different data types
     enum CacheKey {
-        case dashboard(petId: UUID)
-        case foods(includeArchived: Bool)
-        case medications(petId: UUID?)
-        case feedingHistory(petId: UUID)
-        case medicationHistory(petId: UUID)
         case familyMembers(familyId: String)
         case pets
 
         var fileName: String {
             switch self {
-            case .dashboard(let petId):
-                return "dashboard_\(petId.uuidString).json"
-            case .foods(let includeArchived):
-                return "foods_\(includeArchived ? "all" : "active").json"
-            case .medications(let petId):
-                if let petId = petId {
-                    return "medications_\(petId.uuidString).json"
-                }
-                return "medications_all.json"
-            case .feedingHistory(let petId):
-                return "feeding_history_\(petId.uuidString).json"
-            case .medicationHistory(let petId):
-                return "medication_history_\(petId.uuidString).json"
             case .familyMembers(let familyId):
                 return "family_members_\(familyId).json"
             case .pets:

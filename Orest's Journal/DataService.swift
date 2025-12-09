@@ -2,15 +2,14 @@
 //  DataService.swift
 //  Orest's Journal
 //
-//  Data service wrapping APIClient for pet health management.
+//  Data service wrapping APIClient for pet management.
 //
 
 import Foundation
 import UIKit
 
-/// Data service providing high-level methods for pet health management.
+/// Data service providing high-level methods for pet management.
 /// Wraps APIClient and provides organization-scoped data access with caching.
-/// Uses a two-tier cache (memory + disk) with stale-while-revalidate pattern.
 @MainActor
 final class DataService {
     static let shared = DataService()
@@ -25,14 +24,10 @@ final class DataService {
         let timestamp: Date
     }
 
-    private var dashboardCache: [UUID: CacheEntry<DashboardData>] = [:]
-    private var feedingHistoryCache: [UUID: CacheEntry<FeedingListResponse>] = [:]
-    private var foodsCache: [Bool: CacheEntry<[PetFood]>] = [:]  // Key: includeArchived flag
-    private var medicationsCache: [UUID: CacheEntry<[PetMedication]>] = [:]  // Key: petId (nil stored as UUID())
-    private var medicationHistoryCache: [UUID: CacheEntry<AllDosesListResponse>] = [:]
+    private var petsCache: CacheEntry<[Pet]>?
+    private var familyMembersCache: [String: CacheEntry<FamilyDetailResponse>] = [:]
     private let cacheTTL: TimeInterval = 60  // 1 minute
-    private let foodsCacheTTL: TimeInterval = 300  // 5 minutes (foods change rarely)
-    private let medicationsCacheTTL: TimeInterval = 60  // 1 minute
+    private let petsCacheTTL: TimeInterval = 300  // 5 minutes
 
     private init() {
         // Listen for memory warnings to clear caches
@@ -49,15 +44,9 @@ final class DataService {
 
     /// Clears all cached data (both memory and disk)
     func clearAllCaches() {
-        dashboardCache.removeAll()
-        feedingHistoryCache.removeAll()
-        foodsCache.removeAll()
-        familyMembersCache.removeAll()
-        medicationsCache.removeAll()
-        medicationHistoryCache.removeAll()
         petsCache = nil
+        familyMembersCache.removeAll()
 
-        // Clear disk cache
         Task {
             await persistentCache.clearAll()
         }
@@ -65,280 +54,64 @@ final class DataService {
 
     // MARK: - Pets Cache
 
-    private var petsCache: CacheEntry<[Pet]>?
-    private let petsCacheTTL: TimeInterval = 300  // 5 minutes
+    private func getCachedPets() -> [Pet]? {
+        guard let entry = petsCache,
+              Date().timeIntervalSince(entry.timestamp) < petsCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
 
-    /// Returns cached data if still valid, nil otherwise
-    private func getCachedDashboard(for petId: UUID) -> DashboardData? {
-        guard let entry = dashboardCache[petId],
+    private func cachePets(_ data: [Pet]) {
+        petsCache = CacheEntry(data: data, timestamp: Date())
+    }
+
+    func invalidatePetsCache() {
+        petsCache = nil
+        Task { await persistentCache.delete(forKey: .pets) }
+    }
+
+    func getCachedPetsData() -> [Pet]? {
+        return getCachedPets()
+    }
+
+    func getCachedPetsFromDisk() async -> [Pet]? {
+        let cached: PersistentCacheManager.CachedData<[Pet]>? = await persistentCache.load(forKey: .pets)
+        if let cached = cached {
+            cachePets(cached.data)
+        }
+        return cached?.data
+    }
+
+    // MARK: - Family Cache
+
+    private func getCachedFamilyMembers(for familyId: String) -> FamilyDetailResponse? {
+        guard let entry = familyMembersCache[familyId],
               Date().timeIntervalSince(entry.timestamp) < cacheTTL else {
             return nil
         }
         return entry.data
     }
 
-    /// Stores data in cache with current timestamp
-    private func cacheDashboard(_ data: DashboardData, for petId: UUID) {
-        dashboardCache[petId] = CacheEntry(data: data, timestamp: Date())
+    private func cacheFamilyMembers(_ data: FamilyDetailResponse, for familyId: String) {
+        familyMembersCache[familyId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    /// Invalidates dashboard cache for a specific pet or all pets (memory + disk)
-    func invalidateDashboardCache(for petId: UUID? = nil) {
-        if let petId = petId {
-            dashboardCache.removeValue(forKey: petId)
-            Task { await persistentCache.delete(forKey: .dashboard(petId: petId)) }
-        } else {
-            dashboardCache.removeAll()
-            // Note: Don't clear all disk dashboard caches here, just memory
-        }
+    func invalidateFamilyCache(for familyId: String) {
+        familyMembersCache.removeValue(forKey: familyId)
     }
 
-    /// Returns cached dashboard data if available from memory (synchronous)
-    func getCachedDashboardData(for petId: UUID) -> DashboardData? {
-        return getCachedDashboard(for: petId)
-    }
-
-    /// Returns cached dashboard data from disk if available (async)
-    func getCachedDashboardDataFromDisk(for petId: UUID) async -> DashboardData? {
-        let cached: PersistentCacheManager.CachedData<DashboardData>? = await persistentCache.load(forKey: .dashboard(petId: petId))
-        if let cached = cached {
-            // Also populate memory cache
-            cacheDashboard(cached.data, for: petId)
-        }
-        return cached?.data
-    }
-
-    /// Returns cached feeding history if still valid, nil otherwise
-    private func getCachedFeedingHistory(for petId: UUID) -> FeedingListResponse? {
-        guard let entry = feedingHistoryCache[petId],
-              Date().timeIntervalSince(entry.timestamp) < cacheTTL else {
-            return nil
-        }
-        return entry.data
-    }
-
-    /// Stores feeding history in cache with current timestamp
-    private func cacheFeedingHistory(_ data: FeedingListResponse, for petId: UUID) {
-        feedingHistoryCache[petId] = CacheEntry(data: data, timestamp: Date())
-    }
-
-    /// Invalidates feeding history cache for a specific pet (memory + disk)
-    func invalidateFeedingHistoryCache(for petId: UUID) {
-        feedingHistoryCache.removeValue(forKey: petId)
-        Task { await persistentCache.delete(forKey: .feedingHistory(petId: petId)) }
-    }
-
-    /// Returns true if there's valid cached feeding history for a pet
-    func hasCachedFeedingHistory(for petId: UUID) -> Bool {
-        return getCachedFeedingHistory(for: petId) != nil
-    }
-
-    /// Returns cached feeding history data if available (synchronous)
-    func getCachedFeedingHistoryData(for petId: UUID) -> FeedingListResponse? {
-        return getCachedFeedingHistory(for: petId)
-    }
-
-    /// Returns cached foods if still valid, nil otherwise
-    private func getCachedFoods(includeArchived: Bool) -> [PetFood]? {
-        guard let entry = foodsCache[includeArchived],
-              Date().timeIntervalSince(entry.timestamp) < foodsCacheTTL else {
-            return nil
-        }
-        return entry.data
-    }
-
-    /// Stores foods in cache with current timestamp
-    private func cacheFoods(_ foods: [PetFood], includeArchived: Bool) {
-        foodsCache[includeArchived] = CacheEntry(data: foods, timestamp: Date())
-    }
-
-    /// Invalidates foods cache (memory + disk)
-    func invalidateFoodsCache() {
-        foodsCache.removeAll()
-        Task {
-            await persistentCache.delete(forKey: .foods(includeArchived: true))
-            await persistentCache.delete(forKey: .foods(includeArchived: false))
-        }
-    }
-
-    /// Appends a new food to the cache (optimistic update)
-    private func appendFoodToCache(_ food: PetFood) {
-        // Update or create memory cache for non-archived foods
-        if var cached = foodsCache[false]?.data {
-            cached.append(food)
-            foodsCache[false] = CacheEntry(data: cached, timestamp: Date())
-        } else {
-            // Cache doesn't exist, create it with just this food
-            foodsCache[false] = CacheEntry(data: [food], timestamp: Date())
-        }
-
-        // Update or create memory cache for all foods (including archived)
-        if var cachedAll = foodsCache[true]?.data {
-            cachedAll.append(food)
-            foodsCache[true] = CacheEntry(data: cachedAll, timestamp: Date())
-        } else {
-            foodsCache[true] = CacheEntry(data: [food], timestamp: Date())
-        }
-
-        // Update disk cache in background
-        Task {
-            // Update or create non-archived foods cache
-            let diskCached: PersistentCacheManager.CachedData<[PetFood]>? = await persistentCache.load(forKey: .foods(includeArchived: false))
-            if var foods = diskCached?.data {
-                foods.append(food)
-                await persistentCache.save(foods, forKey: .foods(includeArchived: false))
-            } else {
-                await persistentCache.save([food], forKey: .foods(includeArchived: false))
-            }
-
-            // Update or create all foods cache
-            let diskCachedAll: PersistentCacheManager.CachedData<[PetFood]>? = await persistentCache.load(forKey: .foods(includeArchived: true))
-            if var allFoods = diskCachedAll?.data {
-                allFoods.append(food)
-                await persistentCache.save(allFoods, forKey: .foods(includeArchived: true))
-            } else {
-                await persistentCache.save([food], forKey: .foods(includeArchived: true))
-            }
-        }
-    }
-
-    /// Returns true if there's valid cached foods
-    func hasCachedFoods(includeArchived: Bool = false) -> Bool {
-        return getCachedFoods(includeArchived: includeArchived) != nil
-    }
-
-    /// Returns cached foods data if available (synchronous)
-    func getCachedFoodsData(includeArchived: Bool = false) -> [PetFood]? {
-        return getCachedFoods(includeArchived: includeArchived)
-    }
-
-    // MARK: - Medications Cache
-
-    /// Returns cached medications if still valid, nil otherwise
-    private func getCachedMedications(for petId: UUID?) -> [PetMedication]? {
-        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-        guard let entry = medicationsCache[cacheKey],
-              Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
-            return nil
-        }
-        return entry.data
-    }
-
-    /// Stores medications in cache with current timestamp
-    private func cacheMedications(_ medications: [PetMedication], for petId: UUID?) {
-        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-        medicationsCache[cacheKey] = CacheEntry(data: medications, timestamp: Date())
-    }
-
-    /// Invalidates medications cache for a specific pet or all pets (memory + disk)
-    func invalidateMedicationsCache(for petId: UUID? = nil) {
-        if let petId = petId {
-            medicationsCache.removeValue(forKey: petId)
-            Task { await persistentCache.delete(forKey: .medications(petId: petId)) }
-        } else {
-            medicationsCache.removeAll()
-            Task { await persistentCache.delete(forKey: .medications(petId: nil)) }
-        }
-    }
-
-    /// Appends a new medication to the cache (optimistic update)
-    private func appendMedicationToCache(_ medication: PetMedication, for petId: UUID?) {
-        let cacheKey = petId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-
-        // Update or create memory cache
-        if var cached = medicationsCache[cacheKey]?.data {
-            cached.append(medication)
-            medicationsCache[cacheKey] = CacheEntry(data: cached, timestamp: Date())
-        } else {
-            medicationsCache[cacheKey] = CacheEntry(data: [medication], timestamp: Date())
-        }
-
-        // Update disk cache in background
-        Task {
-            let diskCached: PersistentCacheManager.CachedData<[PetMedication]>? =
-                await persistentCache.load(forKey: .medications(petId: petId))
-            if var meds = diskCached?.data {
-                meds.append(medication)
-                await persistentCache.save(meds, forKey: .medications(petId: petId))
-            } else {
-                await persistentCache.save([medication], forKey: .medications(petId: petId))
-            }
-        }
-    }
-
-    /// Returns true if there's valid cached medications for a pet
-    func hasCachedMedications(for petId: UUID? = nil) -> Bool {
-        return getCachedMedications(for: petId) != nil
-    }
-
-    /// Returns cached medications data if available (synchronous)
-    func getCachedMedicationsData(for petId: UUID? = nil) -> [PetMedication]? {
-        return getCachedMedications(for: petId)
-    }
-
-    // MARK: - Medication History Cache
-
-    /// Returns cached medication history if still valid, nil otherwise
-    private func getCachedMedicationHistory(for petId: UUID) -> AllDosesListResponse? {
-        guard let entry = medicationHistoryCache[petId],
-              Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
-            return nil
-        }
-        return entry.data
-    }
-
-    /// Stores medication history in cache with current timestamp
-    private func cacheMedicationHistory(_ data: AllDosesListResponse, for petId: UUID) {
-        medicationHistoryCache[petId] = CacheEntry(data: data, timestamp: Date())
-    }
-
-    /// Invalidates medication history cache for a specific pet (memory + disk)
-    func invalidateMedicationHistoryCache(for petId: UUID) {
-        medicationHistoryCache.removeValue(forKey: petId)
-        Task { await persistentCache.delete(forKey: .medicationHistory(petId: petId)) }
-    }
-
-    /// Returns true if there's valid cached medication history for a pet
-    func hasCachedMedicationHistory(for petId: UUID) -> Bool {
-        return getCachedMedicationHistory(for: petId) != nil
-    }
-
-    /// Returns cached medication history data if available from memory or disk (synchronous check, but may hit disk)
-    func getCachedMedicationHistoryData(for petId: UUID) -> AllDosesListResponse? {
-        // First check memory cache
-        if let memoryCache = medicationHistoryCache[petId] {
-            return memoryCache.data
-        }
-        return nil
-    }
-
-    /// Returns cached medication history from disk if available (async)
-    func getCachedMedicationHistoryFromDisk(for petId: UUID) async -> AllDosesListResponse? {
-        let cached: PersistentCacheManager.CachedData<AllDosesListResponse>? = await persistentCache.load(forKey: .medicationHistory(petId: petId))
-        if let cached = cached {
-            // Also populate memory cache
-            cacheMedicationHistory(cached.data, for: petId)
-        }
-        return cached?.data
-    }
-
-    // MARK: - Pet Functions
+    // MARK: - Pets
 
     func getPets(forceRefresh: Bool = false) async throws -> [Pet] {
-        // Check memory cache first
-        if !forceRefresh, let cached = petsCache,
-           Date().timeIntervalSince(cached.timestamp) < petsCacheTTL {
-            return cached.data
+        if !forceRefresh, let cached = getCachedPets() {
+            return cached
         }
 
-        // Check disk cache for instant display
         if !forceRefresh {
             let diskCached: PersistentCacheManager.CachedData<[Pet]>? = await persistentCache.load(forKey: .pets)
             if let diskCached = diskCached {
-                // Update memory cache
-                petsCache = CacheEntry(data: diskCached.data, timestamp: diskCached.timestamp)
-
-                // If disk cache is stale (past memory TTL), refresh in background
+                cachePets(diskCached.data)
                 if Date().timeIntervalSince(diskCached.timestamp) > petsCacheTTL {
                     Task {
                         try? await refreshPetsInBackground()
@@ -348,799 +121,86 @@ final class DataService {
             }
         }
 
-        // Fetch from network
         let pets = try await api.getPets()
-
-        // Update both caches
-        petsCache = CacheEntry(data: pets, timestamp: Date())
+        cachePets(pets)
         await persistentCache.save(pets, forKey: .pets)
-
         return pets
     }
 
-    /// Refresh pets in background without throwing
     private func refreshPetsInBackground() async throws {
         let pets = try await api.getPets()
-        petsCache = CacheEntry(data: pets, timestamp: Date())
+        cachePets(pets)
         await persistentCache.save(pets, forKey: .pets)
     }
 
-    /// Returns cached pets from disk if available
-    func getCachedPetsFromDisk() async -> [Pet]? {
-        let cached: PersistentCacheManager.CachedData<[Pet]>? = await persistentCache.load(forKey: .pets)
-        if let cached = cached {
-            petsCache = CacheEntry(data: cached.data, timestamp: cached.timestamp)
-        }
-        return cached?.data
-    }
-
-    func createPet(
-        name: String,
-        kind: String,
-        photoUrl: String?,
-        currentWeight: Double?
-    ) async throws -> Pet {
-        let pet = PetCreate(
-            name: name,
-            kind: kind,
-            photoUrl: photoUrl,
-            currentWeight: currentWeight
-        )
+    func createPet(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil) async throws -> Pet {
+        let pet = PetCreate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight)
         let result = try await api.createPet(pet)
-        // Invalidate pets cache
-        petsCache = nil
-        await persistentCache.delete(forKey: .pets)
+        invalidatePetsCache()
         return result
     }
 
-    func updatePet(id: UUID, name: String?, kind: String?, photoUrl: String?, currentWeight: Double?) async throws -> Pet {
-        let update = PetUpdate(
-            name: name,
-            kind: kind,
-            photoUrl: photoUrl,
-            currentWeight: currentWeight
-        )
+    func updatePet(id: UUID, name: String? = nil, kind: String? = nil, photoUrl: String? = nil, currentWeight: Double? = nil) async throws -> Pet {
+        let update = PetUpdate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight)
         let result = try await api.updatePet(id: id, update: update)
-        // Invalidate pets cache
-        petsCache = nil
-        await persistentCache.delete(forKey: .pets)
+        invalidatePetsCache()
         return result
     }
 
     func deletePet(id: UUID) async throws -> PetDeleteResponse {
         let result = try await api.deletePet(id: id)
-        petsCache = nil
-        await persistentCache.delete(forKey: .pets)
+        invalidatePetsCache()
         return result
     }
+
+    // MARK: - Photo Upload
 
     func uploadPetPhoto(imageData: Data) async throws -> String {
         return try await api.uploadPetPhoto(imageData: imageData)
     }
 
-    // MARK: - Health Records
+    // MARK: - Calorie Goals
 
-    func recordWeight(petId: UUID, weight: Double, notes: String? = nil) async throws -> HealthRecord {
-        let record = try await api.createHealthRecord(petId: petId, weightPounds: weight, ageYears: nil, notes: notes)
-        // Invalidate pet cache since current_weight was updated
-        petsCache = nil
-        return record
+    func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String?) async throws -> CalorieGoal {
+        return try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
     }
 
-    func getHealthRecords(petId: UUID) async throws -> [HealthRecord] {
-        return try await api.getHealthRecords(petId: petId)
-    }
+    // MARK: - Family Members
 
-    // MARK: - Food Functions
-
-    func getFoods(includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [PetFood] {
-        // Check memory cache first
-        if !forceRefresh, let cached = getCachedFoods(includeArchived: includeArchived) {
+    func getFamilyMembers(for familyId: String, forceRefresh: Bool = false) async throws -> FamilyDetailResponse {
+        if !forceRefresh, let cached = getCachedFamilyMembers(for: familyId) {
             return cached
         }
 
-        // Check disk cache for instant display
-        if !forceRefresh {
-            let diskCached: PersistentCacheManager.CachedData<[PetFood]>? = await persistentCache.load(forKey: .foods(includeArchived: includeArchived))
-            if let diskCached = diskCached {
-                // Update memory cache
-                cacheFoods(diskCached.data, includeArchived: includeArchived)
-
-                // If disk cache is stale (past memory TTL), refresh in background
-                if Date().timeIntervalSince(diskCached.timestamp) > foodsCacheTTL {
-                    Task {
-                        try? await refreshFoodsInBackground(includeArchived: includeArchived)
-                    }
-                }
-                return diskCached.data
-            }
-        }
-
-        // Fetch from network
-        let foods = try await api.getFoods(includeArchived: includeArchived)
-
-        // Update both caches
-        cacheFoods(foods, includeArchived: includeArchived)
-        await persistentCache.save(foods, forKey: .foods(includeArchived: includeArchived))
-
-        return foods
-    }
-
-    /// Refresh foods in background without throwing
-    private func refreshFoodsInBackground(includeArchived: Bool) async throws {
-        let foods = try await api.getFoods(includeArchived: includeArchived)
-        cacheFoods(foods, includeArchived: includeArchived)
-        await persistentCache.save(foods, forKey: .foods(includeArchived: includeArchived))
-    }
-
-    func createFood(
-        name: String,
-        category: FoodCategory,
-        caloriesPerKg: Double,
-        containerSize: Double,
-        containerSizeUnit: ContainerUnit,
-        imageUrl: String?
-    ) async throws -> PetFood {
-        let food = FoodCreate(
-            name: name,
-            category: category.rawValue,
-            caloriesPerKg: caloriesPerKg,
-            containerSize: containerSize,
-            containerSizeUnit: containerSizeUnit.rawValue,
-            imageUrl: imageUrl
-        )
-        let result = try await api.createFood(food)
-        appendFoodToCache(result)
-        return result
-    }
-
-    func updateFood(
-        id: UUID,
-        name: String? = nil,
-        category: FoodCategory? = nil,
-        caloriesPerKg: Double? = nil,
-        containerSize: Double? = nil,
-        containerSizeUnit: ContainerUnit? = nil,
-        imageUrl: String? = nil
-    ) async throws -> PetFood {
-        let update = FoodUpdate(
-            name: name,
-            category: category?.rawValue,
-            caloriesPerKg: caloriesPerKg,
-            containerSize: containerSize,
-            containerSizeUnit: containerSizeUnit?.rawValue,
-            imageUrl: imageUrl
-        )
-        let result = try await api.updateFood(id: id, update: update)
-        invalidateFoodsCache()
-        return result
-    }
-
-    func deleteFood(id: UUID) async throws -> FoodDeleteResponse {
-        let result = try await api.deleteFood(id: id)
-        invalidateFoodsCache()
-        return result
-    }
-
-    // MARK: - Feeding Functions
-
-    func createFeeding(
-        petId: UUID,
-        foodId: UUID,
-        amount: Double,
-        amountUnit: ContainerUnit,
-        calories: Double,
-        notes: String? = nil
-    ) async throws -> PetFeeding {
-        let feeding = FeedingCreate(
-            petId: petId,
-            foodId: foodId,
-            amount: amount,
-            amountUnit: amountUnit.rawValue,
-            calories: calories,
-            notes: notes,
-            fedAt: nil
-        )
-        let result = try await api.createFeeding(feeding)
-        invalidateDashboardCache(for: petId)
-
-        // Update feeding history cache by prepending new feeding (for quick actions)
-        updateFeedingHistoryCache(with: result, for: petId)
-
-        return result
-    }
-
-    /// Updates feeding history cache by prepending a new feeding
-    private func updateFeedingHistoryCache(with newFeeding: PetFeeding, for petId: UUID) {
-        if let cached = feedingHistoryCache[petId] {
-            // Prepend new feeding to the list
-            var feedings = cached.data.feedings
-            feedings.insert(newFeeding, at: 0)
-
-            // Update the cached response
-            let updatedResponse = FeedingListResponse(
-                feedings: feedings,
-                totalCalories: cached.data.totalCalories + newFeeding.calories,
-                total: cached.data.total + 1
-            )
-            feedingHistoryCache[petId] = CacheEntry(data: updatedResponse, timestamp: Date())
-
-            // Also update disk cache
-            let responseToSave = updatedResponse
-            Task { [persistentCache] in
-                await persistentCache.save(responseToSave, forKey: .feedingHistory(petId: petId))
-            }
-        }
-    }
-
-    func getTodayFeedings(for petId: UUID) async throws -> [PetFeeding] {
-        let response = try await api.getTodayFeedings(petId: petId)
-        return response.feedings
-    }
-
-    func getTodayCalories(for petId: UUID) async throws -> Double {
-        let response = try await api.getTodayFeedings(petId: petId)
-        return response.totalCalories
-    }
-
-    /// Returns both today's feedings and total calories in a single API call
-    func getTodayFeedingsWithCalories(for petId: UUID) async throws -> (feedings: [PetFeeding], totalCalories: Double) {
-        let response = try await api.getTodayFeedings(petId: petId)
-        return (feedings: response.feedings, totalCalories: response.totalCalories)
-    }
-
-    func getFeedingHistory(for petId: UUID, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> FeedingListResponse {
-        // Only cache first page (offset=0)
-        if offset == 0 {
-            // Check memory cache first
-            if !forceRefresh, let cached = getCachedFeedingHistory(for: petId) {
-                return cached
-            }
-
-            // Check disk cache for instant display
-            if !forceRefresh {
-                let diskCached: PersistentCacheManager.CachedData<FeedingListResponse>? = await persistentCache.load(forKey: .feedingHistory(petId: petId))
-                if let diskCached = diskCached {
-                    // Update memory cache
-                    cacheFeedingHistory(diskCached.data, for: petId)
-
-                    // If disk cache is stale, refresh in background
-                    if Date().timeIntervalSince(diskCached.timestamp) > cacheTTL {
-                        Task {
-                            try? await refreshFeedingHistoryInBackground(for: petId, limit: limit)
-                        }
-                    }
-                    return diskCached.data
-                }
-            }
-        }
-
-        // Fetch from network
-        let response = try await api.getFeedingHistory(petId: petId, limit: limit, offset: offset)
-
-        // Only cache first page
-        if offset == 0 {
-            cacheFeedingHistory(response, for: petId)
-            await persistentCache.save(response, forKey: .feedingHistory(petId: petId))
-        }
-
+        let response = try await api.getFamilyDetails(familyId: familyId)
+        cacheFamilyMembers(response, for: familyId)
         return response
     }
 
-    /// Refresh feeding history in background without throwing
-    private func refreshFeedingHistoryInBackground(for petId: UUID, limit: Int) async throws {
-        let response = try await api.getFeedingHistory(petId: petId, limit: limit, offset: 0)
-        cacheFeedingHistory(response, for: petId)
-        await persistentCache.save(response, forKey: .feedingHistory(petId: petId))
-    }
-
-    // MARK: - Quick Feeding Actions
-
-    /// Get quick feeding actions for a pet - derives from cached feeding history
-    /// Returns up to 5 unique foods with their most recent amount/unit combination
-    func getQuickFeedingActions(for petId: UUID, foods: [PetFood]) -> [QuickFeedingAction] {
-        guard let cached = getCachedFeedingHistoryData(for: petId) else {
-            return []
-        }
-        return deriveQuickActions(from: cached.feedings, foods: foods)
-    }
-
-    /// Async version that loads from disk cache if memory cache is empty
-    func getQuickFeedingActionsAsync(for petId: UUID, foods: [PetFood]) async -> [QuickFeedingAction] {
-        // Try memory cache first
-        if let cached = getCachedFeedingHistoryData(for: petId) {
-            let actions = deriveQuickActions(from: cached.feedings, foods: foods)
-            if !actions.isEmpty {
-                return actions
-            }
-        }
-
-        // Try disk cache
-        let diskCached: PersistentCacheManager.CachedData<FeedingListResponse>? =
-            await persistentCache.load(forKey: .feedingHistory(petId: petId))
-
-        if let diskCached = diskCached {
-            // Populate memory cache
-            cacheFeedingHistory(diskCached.data, for: petId)
-            return deriveQuickActions(from: diskCached.data.feedings, foods: foods)
-        }
-
-        return []
-    }
-
-    /// Helper to derive quick actions from feedings
-    private func deriveQuickActions(from feedings: [PetFeeding], foods: [PetFood]) -> [QuickFeedingAction] {
-        let foodsDict = Dictionary(uniqueKeysWithValues: foods.map { ($0.id, $0) })
-        var seenFoodIds = Set<UUID>()
-        var actions: [QuickFeedingAction] = []
-
-        // Feedings are already sorted by fedAt descending (most recent first)
-        for feeding in feedings {
-            guard !seenFoodIds.contains(feeding.foodId),
-                  let food = foodsDict[feeding.foodId] else {
-                continue
-            }
-
-            seenFoodIds.insert(feeding.foodId)
-            actions.append(QuickFeedingAction(from: feeding, food: food))
-
-            if actions.count >= 5 {
-                break
-            }
-        }
-
-        return actions
-    }
-
-    func updateFeeding(
-        id: UUID,
-        amount: Double? = nil,
-        amountUnit: ContainerUnit? = nil,
-        calories: Double? = nil,
-        notes: String? = nil,
-        fedAt: Date? = nil,
-        fedBy: UUID? = nil,
-        petId: UUID? = nil
-    ) async throws -> PetFeeding {
-        let update = FeedingUpdate(
-            amount: amount,
-            amountUnit: amountUnit?.rawValue,
-            calories: calories,
-            notes: notes,
-            fedAt: fedAt,
-            fedBy: fedBy
-        )
-        let result = try await api.updateFeeding(id: id, update: update)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateFeedingHistoryCache(for: petId)
-        }
+    func updateMemberRole(familyId: String, userId: String, role: String) async throws -> FamilyMember {
+        let result = try await api.updateMemberRole(familyId: familyId, userId: userId, role: role)
+        invalidateFamilyCache(for: familyId)
         return result
     }
 
-    func deleteFeeding(id: UUID, petId: UUID? = nil) async throws {
-        try await api.deleteFeeding(id: id)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateFeedingHistoryCache(for: petId)
-        }
-    }
-
-    // MARK: - Calorie Goal Functions
-
-    func getActiveCalorieGoal(for petId: UUID) async throws -> CalorieGoal? {
-        return try await api.getCalorieGoal(petId: petId)
-    }
-
-    func setCalorieGoal(for petId: UUID, dailyCalories: Double, notes: String? = nil) async throws -> CalorieGoal {
-        let result = try await api.setCalorieGoal(petId: petId, dailyCalories: dailyCalories, notes: notes)
-        invalidateDashboardCache(for: petId)
-        return result
-    }
-
-    // MARK: - Medication Functions
-
-    func getMedications(petId: UUID? = nil, activeOnly: Bool = false, forceRefresh: Bool = false) async throws -> [PetMedication] {
-        // Only cache non-activeOnly requests (activeOnly is time-sensitive)
-        if !activeOnly {
-            // Check memory cache first
-            if !forceRefresh, let cached = getCachedMedications(for: petId) {
-                return cached
-            }
-
-            // Check disk cache for instant display
-            if !forceRefresh {
-                let diskCached: PersistentCacheManager.CachedData<[PetMedication]>? = await persistentCache.load(forKey: .medications(petId: petId))
-                if let diskCached = diskCached {
-                    // Update memory cache
-                    cacheMedications(diskCached.data, for: petId)
-
-                    // If disk cache is stale, refresh in background
-                    if Date().timeIntervalSince(diskCached.timestamp) > medicationsCacheTTL {
-                        Task {
-                            try? await refreshMedicationsInBackground(petId: petId)
-                        }
-                    }
-                    return diskCached.data
-                }
-            }
-        }
-
-        // Fetch from network
-        let medications = try await api.getMedications(petId: petId, activeOnly: activeOnly)
-
-        // Only cache non-activeOnly results
-        if !activeOnly {
-            cacheMedications(medications, for: petId)
-            await persistentCache.save(medications, forKey: .medications(petId: petId))
-        }
-
-        return medications
-    }
-
-    /// Refresh medications in background without throwing
-    private func refreshMedicationsInBackground(petId: UUID?) async throws {
-        let medications = try await api.getMedications(petId: petId, activeOnly: false)
-        cacheMedications(medications, for: petId)
-        await persistentCache.save(medications, forKey: .medications(petId: petId))
-    }
-
-    func getActiveMedications(for petId: UUID) async throws -> [PetMedication] {
-        return try await api.getActiveMedications(petId: petId)
-    }
-
-    func createMedication(
-        petId: UUID,
-        name: String,
-        medicationType: MedicationType,
-        startDate: Date,
-        endDate: Date?,
-        timesPerDay: Int,
-        notes: String?,
-        remindersEnabled: Bool = false,
-        scheduledTimes: [ScheduledTimeCreate]? = nil
-    ) async throws -> PetMedication {
-        let medication = MedicationCreate(
-            petId: petId,
-            name: name,
-            medicationType: medicationType.rawValue,
-            startDate: startDate,
-            endDate: endDate,
-            timesPerDay: timesPerDay,
-            notes: notes,
-            remindersEnabled: remindersEnabled ? true : nil,
-            timezone: remindersEnabled ? TimeZone.current.identifier : nil,
-            scheduledTimes: remindersEnabled ? scheduledTimes : nil
-        )
-        let result = try await api.createMedication(medication)
-        invalidateDashboardCache(for: petId)
-        appendMedicationToCache(result, for: nil)  // Use nil to update "all medications" cache
-        return result
-    }
-
-    func updateMedication(
-        id: UUID,
-        name: String? = nil,
-        medicationType: MedicationType? = nil,
-        startDate: Date? = nil,
-        endDate: Date? = nil,
-        timesPerDay: Int? = nil,
-        notes: String? = nil,
-        remindersEnabled: Bool? = nil,
-        scheduledTimes: [ScheduledTimeCreate]? = nil,
-        petId: UUID? = nil
-    ) async throws -> PetMedication {
-        let update = MedicationUpdate(
-            name: name,
-            medicationType: medicationType?.rawValue,
-            startDate: startDate,
-            endDate: endDate,
-            timesPerDay: timesPerDay,
-            notes: notes,
-            remindersEnabled: remindersEnabled,
-            timezone: remindersEnabled == true ? TimeZone.current.identifier : nil,
-            scheduledTimes: remindersEnabled == true ? scheduledTimes : nil
-        )
-        let result = try await api.updateMedication(id: id, update: update)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateMedicationsCache(for: petId)
-        } else {
-            invalidateMedicationsCache()
-        }
-        return result
-    }
-
-    func deleteMedication(id: UUID, petId: UUID? = nil) async throws -> MedicationDeleteResponse {
-        let result = try await api.deleteMedication(id: id)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateMedicationsCache(for: petId)
-        } else {
-            invalidateMedicationsCache()
-        }
-        return result
-    }
-
-    // MARK: - Dose Functions
-
-    func recordDose(medicationId: UUID, petId: UUID? = nil, notes: String? = nil) async throws -> PetMedicationDose {
-        let dose = DoseCreate(
-            medicationId: medicationId,
-            notes: notes,
-            givenAt: nil
-        )
-        let result = try await api.recordDose(dose)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateMedicationHistoryCache(for: petId)
-        }
-        return result
-    }
-
-    func getTodayDoses(for medicationId: UUID) async throws -> [PetMedicationDose] {
-        return try await api.getTodayDoses(medicationId: medicationId)
-    }
-
-    func getLastDose(for medicationId: UUID) async throws -> PetMedicationDose? {
-        return try await api.getLastDose(medicationId: medicationId)
-    }
-
-    func getDoses(for medicationId: UUID, limit: Int = 50) async throws -> [PetMedicationDose] {
-        return try await api.getDoses(medicationId: medicationId, limit: limit)
-    }
-
-    func updateDose(
-        id: UUID,
-        givenAt: Date? = nil,
-        givenBy: UUID? = nil,
-        notes: String? = nil,
-        petId: UUID? = nil
-    ) async throws -> PetMedicationDose {
-        let update = DoseUpdate(
-            givenAt: givenAt,
-            givenBy: givenBy,
-            notes: notes
-        )
-        let result = try await api.updateDose(id: id, update: update)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateMedicationHistoryCache(for: petId)
-        }
-        return result
-    }
-
-    func deleteDose(id: UUID, petId: UUID? = nil) async throws {
-        try await api.deleteDose(id: id)
-        if let petId = petId {
-            invalidateDashboardCache(for: petId)
-            invalidateMedicationHistoryCache(for: petId)
-        }
-    }
-
-    func getAllDoses(petId: UUID, limit: Int = 50, offset: Int = 0, forceRefresh: Bool = false) async throws -> AllDosesListResponse {
-        // Only cache first page
-        let shouldCache = offset == 0
-
-        // Check memory cache first (fast path)
-        if shouldCache && !forceRefresh, let cached = getCachedMedicationHistory(for: petId) {
-            return cached
-        }
-
-        // Check disk cache (instant display, trigger background refresh)
-        if shouldCache && !forceRefresh,
-           let diskCached = await getCachedMedicationHistoryFromDisk(for: petId) {
-            // Trigger background refresh
-            Task {
-                if let fresh = try? await api.getAllDoses(petId: petId, limit: limit, offset: offset) {
-                    cacheMedicationHistory(fresh, for: petId)
-                    await persistentCache.save(fresh, forKey: .medicationHistory(petId: petId))
-                }
-            }
-            return diskCached
-        }
-
-        // Fetch from network
-        let response = try await api.getAllDoses(petId: petId, limit: limit, offset: offset)
-
-        // Update caches for first page
-        if shouldCache {
-            cacheMedicationHistory(response, for: petId)
-            await persistentCache.save(response, forKey: .medicationHistory(petId: petId))
-        }
-
-        return response
-    }
-
-    // MARK: - Family Functions
-
-    private var familyMembersCache: [String: CacheEntry<[FamilyMemberResponse]>] = [:]
-    private let familyMembersCacheTTL: TimeInterval = 300  // 5 minutes
-
-    func getFamilyMembers(familyId: String, forceRefresh: Bool = false) async throws -> [FamilyMemberResponse] {
-        // Check memory cache first
-        if !forceRefresh,
-           let entry = familyMembersCache[familyId],
-           Date().timeIntervalSince(entry.timestamp) < familyMembersCacheTTL {
-            return entry.data
-        }
-
-        // Check disk cache for instant display
-        if !forceRefresh {
-            let diskCached: PersistentCacheManager.CachedData<[FamilyMemberResponse]>? = await persistentCache.load(forKey: .familyMembers(familyId: familyId))
-            if let diskCached = diskCached {
-                // Update memory cache
-                familyMembersCache[familyId] = CacheEntry(data: diskCached.data, timestamp: diskCached.timestamp)
-
-                // If disk cache is stale, refresh in background
-                if Date().timeIntervalSince(diskCached.timestamp) > familyMembersCacheTTL {
-                    Task {
-                        try? await refreshFamilyMembersInBackground(familyId: familyId)
-                    }
-                }
-                return diskCached.data
-            }
-        }
-
-        // Fetch from API
-        let response = try await api.getFamilyMembers(familyId: familyId)
-        familyMembersCache[familyId] = CacheEntry(data: response.members, timestamp: Date())
-        await persistentCache.save(response.members, forKey: .familyMembers(familyId: familyId))
-        return response.members
-    }
-
-    /// Refresh family members in background without throwing
-    private func refreshFamilyMembersInBackground(familyId: String) async throws {
-        let response = try await api.getFamilyMembers(familyId: familyId)
-        familyMembersCache[familyId] = CacheEntry(data: response.members, timestamp: Date())
-        await persistentCache.save(response.members, forKey: .familyMembers(familyId: familyId))
-    }
-
-    func updateMemberRole(familyId: String, memberUserId: String, role: String) async throws -> FamilyMemberResponse {
-        let result = try await api.updateMemberRole(familyId: familyId, memberUserId: memberUserId, role: role)
-        // Invalidate family members cache
-        familyMembersCache.removeValue(forKey: familyId)
-        Task { await persistentCache.delete(forKey: .familyMembers(familyId: familyId)) }
-        return result
-    }
-
-    func removeFamilyMember(familyId: String, memberUserId: String) async throws {
-        try await api.removeFamilyMember(familyId: familyId, memberUserId: memberUserId)
-        // Invalidate family members cache
-        familyMembersCache.removeValue(forKey: familyId)
-        Task { await persistentCache.delete(forKey: .familyMembers(familyId: familyId)) }
-    }
-
-    // MARK: - Health Journal Functions
-
-    func getHealthCategories(for petId: UUID) async throws -> [HealthCategory] {
-        return try await api.getHealthCategories(petId: petId)
-    }
-
-    func createHealthEvent(
-        petId: UUID,
-        categoryName: String,
-        occurredAt: Date = Date(),
-        notes: String?
-    ) async throws -> HealthEvent {
-        let event = HealthEventCreate(
-            categoryName: categoryName,
-            occurredAt: occurredAt,
-            notes: notes
-        )
-        return try await api.createHealthEvent(petId: petId, event: event)
-    }
-
-    func getHealthEvents(for petId: UUID, limit: Int = 100) async throws -> [HealthEventWithCategory] {
-        return try await api.getHealthEvents(petId: petId, limit: limit)
-    }
-
-    func deleteHealthEvent(id: UUID) async throws {
-        try await api.deleteHealthEvent(id: id)
-    }
-
-    // MARK: - Dashboard Functions
-
-    /// Get all dashboard data for a pet in a single call with caching
-    func getDashboardData(for petId: UUID, forceRefresh: Bool = false) async throws -> DashboardData {
-        // Check memory cache first
-        if !forceRefresh, let cached = getCachedDashboard(for: petId) {
-            return cached
-        }
-
-        // Check disk cache for instant display
-        if !forceRefresh {
-            let diskCached: PersistentCacheManager.CachedData<DashboardData>? = await persistentCache.load(forKey: .dashboard(petId: petId))
-            if let diskCached = diskCached {
-                // Update memory cache
-                cacheDashboard(diskCached.data, for: petId)
-
-                // If disk cache is stale, refresh in background
-                if Date().timeIntervalSince(diskCached.timestamp) > cacheTTL {
-                    Task {
-                        try? await refreshDashboardInBackground(for: petId)
-                    }
-                }
-                return diskCached.data
-            }
-        }
-
-        // Fetch from API
-        let data = try await api.getDashboardData(petId: petId)
-        cacheDashboard(data, for: petId)
-        await persistentCache.save(data, forKey: .dashboard(petId: petId))
-        return data
-    }
-
-    /// Refresh dashboard in background without throwing
-    private func refreshDashboardInBackground(for petId: UUID) async throws {
-        let data = try await api.getDashboardData(petId: petId)
-        cacheDashboard(data, for: petId)
-        await persistentCache.save(data, forKey: .dashboard(petId: petId))
-    }
-
-    // MARK: - Helper Functions
-
-    func getUserEmail(for userId: String?) async -> String {
-        // Check if this is the current user
-        // For now, return a generic label
-        if let userId = userId, userId == AuthManager.shared.userId {
-            return AuthManager.shared.userEmail ?? "You"
-        }
-        return "Family Member"
+    func removeFamilyMember(familyId: String, userId: String) async throws {
+        try await api.removeFamilyMember(familyId: familyId, userId: userId)
+        invalidateFamilyCache(for: familyId)
     }
 
     // MARK: - Background Refresh
 
-    /// Refresh all data in the background (called by BGAppRefresh)
     func refreshAllDataInBackground() async {
-        guard AuthManager.shared.isAuthenticated else {
-            print("DataService: Not authenticated, skipping background refresh")
-            return
-        }
-
-        print("DataService: Starting background refresh")
-
         do {
-            // Refresh pets first (needed to know which dashboards to refresh)
-            let pets = try await getPets(forceRefresh: true)
-            print("DataService: Refreshed \(pets.count) pets")
-
-            // Refresh foods (family-wide)
-            let foods = try await getFoods(forceRefresh: true)
-            print("DataService: Refreshed \(foods.count) foods")
-
-            // Refresh medications (family-wide)
-            let medications = try await getMedications(forceRefresh: true)
-            print("DataService: Refreshed \(medications.count) medications")
-
-            // Refresh family members if we have a family ID
-            if let familyId = AuthManager.shared.familyId {
-                let members = try await getFamilyMembers(familyId: familyId, forceRefresh: true)
-                print("DataService: Refreshed \(members.count) family members")
-            }
-
-            // Refresh dashboard for each pet
-            for pet in pets {
-                let _ = try await getDashboardData(for: pet.id, forceRefresh: true)
-                print("DataService: Refreshed dashboard for \(pet.name)")
-            }
-
-            print("DataService: Background refresh completed successfully")
+            _ = try await getPets(forceRefresh: true)
         } catch {
-            print("DataService: Background refresh failed: \(error)")
+            print("Background refresh failed: \(error)")
         }
     }
 
-    /// Prefetch data when app enters foreground (lightweight refresh)
-    func prefetchDataOnForeground() async {
-        guard AuthManager.shared.isAuthenticated else { return }
-
-        print("DataService: Prefetching data on foreground")
-
-        // These calls will return disk cache instantly if available,
-        // and trigger background refresh if stale
-        _ = try? await getFoods()
-        _ = try? await getMedications()
+    func prefetchDataOnForeground() {
+        Task {
+            _ = try? await getPets(forceRefresh: false)
+        }
     }
 }

@@ -485,7 +485,8 @@ struct FamilyManagementView: View {
         guard let familyId = authManager.currentFamily?.id else {
             return []
         }
-        return try await DataService.shared.getFamilyMembers(familyId: familyId)
+        let response = try await DataService.shared.getFamilyMembers(for: familyId)
+        return response.members
     }
 
     private func deletePet(_ pet: Pet) async {
@@ -526,7 +527,7 @@ struct FamilyManagementView: View {
         guard let familyId = authManager.currentFamily?.id else { return }
 
         do {
-            try await DataService.shared.removeFamilyMember(familyId: familyId, memberUserId: member.userId)
+            try await DataService.shared.removeFamilyMember(familyId: familyId, userId: member.userId)
             memberToRemove = nil
             familyMembers.removeAll { $0.userId == member.userId }
         } catch {

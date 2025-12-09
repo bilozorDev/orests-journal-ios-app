@@ -20,9 +20,7 @@ struct Orest_s_JournalApp: App {
             switch newPhase {
             case .active:
                 // Prefetch data when app becomes active
-                Task {
-                    await DataService.shared.prefetchDataOnForeground()
-                }
+                DataService.shared.prefetchDataOnForeground()
             case .background:
                 // Schedule background refresh when entering background
                 BackgroundTaskManager.shared.scheduleAppRefresh()

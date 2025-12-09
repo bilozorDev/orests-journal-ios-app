@@ -148,10 +148,20 @@ struct EditMemberRoleSheet: View {
         do {
             let updatedMember = try await DataService.shared.updateMemberRole(
                 familyId: familyId,
-                memberUserId: member.userId,
+                userId: member.userId,
                 role: selectedRole
             )
-            onSave?(updatedMember)
+            // Convert FamilyMember to FamilyMemberResponse for the callback
+            let response = FamilyMemberResponse(
+                id: updatedMember.id,
+                userId: updatedMember.userId,
+                email: updatedMember.email,
+                firstName: updatedMember.firstName,
+                lastName: updatedMember.lastName,
+                role: updatedMember.role,
+                joinedAt: updatedMember.joinedAt
+            )
+            onSave?(response)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
