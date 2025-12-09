@@ -22,7 +22,7 @@ struct FamilySetupView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             switch mode {
             case .choose:
                 chooseModeView
@@ -84,12 +84,6 @@ struct FamilySetupView: View {
             .padding(.horizontal, 32)
 
             Spacer()
-        }
-        .task {
-            // Check if user already has families
-            if authManager.hasFamily {
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
-            }
         }
     }
 
@@ -206,16 +200,11 @@ struct FamilySetupView: View {
             do {
                 // Create family via backend API
                 _ = try await authManager.createFamily(name: familyName)
-
-                // Small delay to let SwiftUI propagate state changes
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-
-                // Notify ContentView to refresh
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
+                // AuthManager is @Observable, so ContentView will react automatically
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isLoading = false  // Always reset loading state
+            isLoading = false
         }
     }
 
@@ -227,16 +216,11 @@ struct FamilySetupView: View {
             do {
                 // Join family via backend API
                 _ = try await authManager.joinFamily(inviteCode: inviteCode)
-
-                // Small delay to let SwiftUI propagate state changes
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-
-                // Notify ContentView to refresh
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
+                // AuthManager is @Observable, so ContentView will react automatically
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isLoading = false  // Always reset loading state
+            isLoading = false
         }
     }
 }

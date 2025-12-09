@@ -8,32 +8,9 @@
 import SwiftUI
 import PhotosUI
 
-// MARK: - Corner Radius Extension
-
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-struct RoundedCorner: Shape {
-    var radius: CGFloat = .infinity
-    var corners: UIRectCorner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(
-            roundedRect: rect,
-            byRoundingCorners: corners,
-            cornerRadii: CGSize(width: radius, height: radius)
-        )
-        return Path(path.cgPath)
-    }
-}
-
 // MARK: - Family Management View
 
 struct FamilyManagementView: View {
-    @Environment(\.dismiss) private var dismiss
     private var authManager = AuthManager.shared
     @State private var familyMembers: [FamilyMemberResponse] = []
     @State private var pets: [Pet] = []
@@ -587,16 +564,11 @@ struct FamilyManagementView: View {
     // MARK: - Helpers
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        return formatter.string(from: date)
+        Formatters.shortDate.string(from: date)
     }
 
     private func formatWeight(_ weight: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 1
-        return formatter.string(from: NSNumber(value: weight)) ?? "\(weight)"
+        Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 
     private func formatAge(from dateOfBirth: Date) -> String {

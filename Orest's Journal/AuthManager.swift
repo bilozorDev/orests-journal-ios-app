@@ -348,7 +348,7 @@ final class AuthManager {
     // MARK: - Keychain Operations
 
     private func saveTokenToKeychain(_ token: String) {
-        let data = token.data(using: .utf8)!
+        guard let data = token.data(using: .utf8) else { return }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

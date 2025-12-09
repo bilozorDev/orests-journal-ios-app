@@ -32,6 +32,13 @@ uvicorn app.main:app --reload           # Start dev server at localhost:8000
 
 - **Caching**: Stale-while-revalidate pattern, 1-min TTL (general), 5-min TTL (foods)
 
+- **Utilities** (`Orest's Journal/Utilities/`):
+  - `Formatters.swift` - Shared static formatters (avoid recreating expensive instances)
+    - `Formatters.shortDate` - DateFormatter with `.short` dateStyle
+    - `Formatters.weight` - NumberFormatter for weight (0-1 decimal places)
+  - `RoundedCorner.swift` - Custom Shape for rounding specific corners
+    - `View.cornerRadius(_:corners:)` extension for selective corner rounding
+
 ### Backend (FastAPI)
 - **Structure**: `backend/app/` with `api/endpoints/`, `models/`, `schemas/`, `services/`
 - **Database**: Neon PostgreSQL with SQLAlchemy, migrations via Alembic
@@ -43,7 +50,10 @@ uvicorn app.main:app --reload           # Start dev server at localhost:8000
 
 ### iOS
 - Views organized by feature domain (Auth, Pets, Medications, Feeding, Health)
-- Use `@Observable` pattern for state management
+- Use `@Observable` pattern for state management (AuthManager is @Observable)
+- Use `NavigationStack` (not deprecated `NavigationView`)
+- Use `Formatters.shortDate` / `Formatters.weight` for formatting (don't recreate formatters)
+- Use `Task.sleep(for:)` instead of `DispatchQueue.main.asyncAfter`
 - API responses use snake_case (auto-converted by APIClient)
 - Background modes: fetch, processing, remote-notification
 

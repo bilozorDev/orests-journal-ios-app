@@ -15,9 +15,8 @@ struct ProfileSetupView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                Form {
+        NavigationStack {
+            Form {
                     Section {
                         VStack(spacing: 16) {
                             Image(systemName: "person.crop.circle.fill")
@@ -74,7 +73,6 @@ struct ProfileSetupView: View {
                         .disabled(firstName.isEmpty || isLoading)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
-                    }
                 }
             }
         }

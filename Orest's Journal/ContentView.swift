@@ -37,7 +37,7 @@ struct ContentView: View {
                     FamilySetupView()
                 } else if !hasPet {
                     AddEditPetView(mode: .add) { _ in
-                        NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
+                        hasPet = true  // Pet was created, proceed to main app
                     }
                 } else {
                     MainTabView()
@@ -52,11 +52,6 @@ struct ContentView: View {
                 await checkPetStatus()
             }
             isLoading = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshFamilyStatus"))) { _ in
-            Task {
-                await checkPetStatus()
-            }
         }
         .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
             if !isAuthenticated {
@@ -175,7 +170,7 @@ struct SettingsView: View {
     @State private var showSignOutError = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     accountSection
@@ -420,10 +415,7 @@ struct SettingsView: View {
     }
 
     private func formatWeight(_ weight: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 1
-        return formatter.string(from: NSNumber(value: weight)) ?? "\(weight)"
+        Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 }
 

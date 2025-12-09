@@ -96,7 +96,7 @@ struct AddEditPetView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Pet Information")) {
                     TextField("Pet Name", text: $petName)
@@ -280,7 +280,8 @@ struct AddEditPetView: View {
             }
             .onChange(of: showSuccessToast) { _, isShowing in
                 if isShowing {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
                         withAnimation {
                             showSuccessToast = false
                         }
