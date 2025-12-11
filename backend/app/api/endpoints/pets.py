@@ -15,7 +15,7 @@ from app.schemas.pet import (
 )
 from app.services.storage import storage_service
 from app.services.apns import apns_service
-from app.services.family_notifications import get_other_family_member_tokens
+from app.services.family_notifications import get_filtered_family_member_tokens
 from app.cache.helpers import cache_get, cache_set, cache_delete
 from app.cache.keys import key_pets, TTL_PETS
 
@@ -91,7 +91,7 @@ async def notify_family_pet_change(
         pet_name: Name of the pet for notification text
         pet_id: ID of the pet
     """
-    tokens = await get_other_family_member_tokens(db, org_id, exclude_user_id)
+    tokens = await get_filtered_family_member_tokens(db, org_id, exclude_user_id, notification_type)
     if not tokens:
         return
 

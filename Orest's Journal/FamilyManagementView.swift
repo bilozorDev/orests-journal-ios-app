@@ -219,20 +219,15 @@ struct FamilyManagementView: View {
             Text("You are the only member of this family. Leaving will permanently delete the family and all its data.")
         }
         .task(id: navigationManager.familyRefreshTrigger) {
-            // Consolidated refresh logic: handles initial load and subsequent refresh requests
-            // Using counter-based trigger ensures task always re-runs on refresh request
-            let needsRefresh = navigationManager.tabsNeedingRefresh.contains(.family)
-            if !hasLoaded || needsRefresh {
-                await loadData(forceRefresh: needsRefresh)
-                if needsRefresh {
-                    navigationManager.markTabRefreshed(.family)
-                }
-            }
+            // Refresh when trigger changes (from deeplink or notification)
+            // Initial load when hasLoaded is false, force refresh on subsequent triggers
+            let forceRefresh = hasLoaded
+            await loadData(forceRefresh: forceRefresh)
         }
         .onChange(of: navigationManager.pendingDestination) { _, newValue in
-            // Handle notification navigation while already on Family tab
+            // Handle notification navigation when already on Family screen
             if newValue == .familyManagement {
-                navigationManager.requestTabRefresh(.family)
+                navigationManager.requestFamilyRefresh()
                 navigationManager.clearPendingDestination()
             }
         }

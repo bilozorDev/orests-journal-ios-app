@@ -2,8 +2,8 @@ import uuid
 import secrets
 import string
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Integer
+from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -28,6 +28,12 @@ class User(Base):
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Brute force protection
+    is_locked_out = Column(Boolean, default=False, nullable=False)
+    lockout_expires_at = Column(DateTime, nullable=True)
+    failed_invite_attempts = Column(Integer, default=0, nullable=False)
+    last_failed_invite_at = Column(DateTime, nullable=True)
 
     # Relationships
     family_memberships = relationship("FamilyMember", back_populates="user", cascade="all, delete-orphan")
@@ -78,3 +84,18 @@ class InviteAttemptLog(Base):
     ip_address = Column(String(45), nullable=True)  # IPv6 max length
     attempted_code = Column(String(8), nullable=False)
     attempted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    was_successful = Column(Boolean, default=False, nullable=False)
+
+
+class SecurityAlert(Base):
+    """Security alerts for admin review."""
+    __tablename__ = "security_alerts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_type = Column(String(50), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    description = Column(String(500), nullable=False)
+    alert_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    is_reviewed = Column(Boolean, default=False, nullable=False, index=True)

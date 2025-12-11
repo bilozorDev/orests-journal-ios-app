@@ -370,6 +370,14 @@ class APIClient: APIClientProtocol {
         let request = DeviceTokenDeleteRequest(deviceToken: token)
         try await delete("/notifications/device-token", body: request)
     }
+
+    func getNotificationPreferences() async throws -> NotificationPreferences {
+        return try await get("/notifications/preferences")
+    }
+
+    func updateNotificationPreferences(_ update: NotificationPreferencesUpdate) async throws -> NotificationPreferences {
+        return try await patch("/notifications/preferences", body: update)
+    }
 }
 
 // MARK: - Request/Response Types
@@ -448,4 +456,59 @@ struct DeviceTokenResponse: Decodable {
     let isActive: Bool
     let createdAt: Date
     let updatedAt: Date
+}
+
+// MARK: - Notification Preferences Types
+
+struct NotificationPreferences: Codable {
+    // Family Updates
+    var familyMemberJoined: Bool
+    var familyRoleChanged: Bool
+    var familyMemberLeft: Bool
+    var familyMemberLeftPromoted: Bool
+    var familyAccountDeleted: Bool
+    var familyAccountDeletedPromoted: Bool
+
+    // Pet Updates
+    var petAdded: Bool
+    var petUpdated: Bool
+    var petDeleted: Bool
+
+    /// All family-related preferences enabled
+    var allFamilyUpdatesEnabled: Bool {
+        familyMemberJoined && familyRoleChanged && familyMemberLeft &&
+        familyMemberLeftPromoted && familyAccountDeleted && familyAccountDeletedPromoted
+    }
+
+    /// All pet-related preferences enabled
+    var allPetUpdatesEnabled: Bool {
+        petAdded && petUpdated && petDeleted
+    }
+
+    /// Default preferences (all enabled)
+    static var defaults: NotificationPreferences {
+        NotificationPreferences(
+            familyMemberJoined: true,
+            familyRoleChanged: true,
+            familyMemberLeft: true,
+            familyMemberLeftPromoted: true,
+            familyAccountDeleted: true,
+            familyAccountDeletedPromoted: true,
+            petAdded: true,
+            petUpdated: true,
+            petDeleted: true
+        )
+    }
+}
+
+struct NotificationPreferencesUpdate: Encodable {
+    var familyMemberJoined: Bool?
+    var familyRoleChanged: Bool?
+    var familyMemberLeft: Bool?
+    var familyMemberLeftPromoted: Bool?
+    var familyAccountDeleted: Bool?
+    var familyAccountDeletedPromoted: Bool?
+    var petAdded: Bool?
+    var petUpdated: Bool?
+    var petDeleted: Bool?
 }

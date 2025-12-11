@@ -129,11 +129,6 @@ struct MainTabView: View {
                 .tag(Tab.health)
                 .accessibilityIdentifier(AccessibilityIdentifier.healthTab)
 
-            FamilyManagementView()
-                .tabItem { Label("Family", systemImage: "figure.2.and.child.holdinghands") }
-                .tag(Tab.family)
-                .accessibilityIdentifier(AccessibilityIdentifier.familyTab)
-
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gear") }
                 .tag(Tab.settings)
@@ -165,20 +160,37 @@ struct PlaceholderView: View {
     }
 }
 
+// MARK: - Settings Navigation Destinations
+
+enum SettingsDestination: Hashable {
+    case family
+    case notifications
+}
+
 // MARK: - Settings View
 
 struct SettingsView: View {
     private var authManager = AuthManager.shared
+    @Bindable private var navigationManager = NavigationManager.shared
+    @State private var navigationPath = NavigationPath()
     @State private var familyMembers: [FamilyMemberResponse] = []
     @State private var hasLoaded = false
     @State private var showEditProfile = false
     @State private var showDeleteAccount = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(spacing: 20) {
-                    accountSection
+                    // Settings menu group
+                    VStack(spacing: 0) {
+                        familySection
+                        Divider().padding(.leading, 54)
+                        accountSection
+                        Divider().padding(.leading, 54)
+                        notificationsSection
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     Spacer()
 
@@ -188,11 +200,28 @@ struct SettingsView: View {
                 }
                 .padding()
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: SettingsDestination.self) { destination in
+                switch destination {
+                case .family:
+                    FamilyManagementView()
+                case .notifications:
+                    NotificationPreferencesView()
+                }
+            }
             .task {
                 guard !hasLoaded else { return }
                 await loadFamilyMembers()
+            }
+            .onChange(of: navigationManager.pendingDestination) { _, destination in
+                handlePendingDestination(destination)
+            }
+            .onAppear {
+                // Handle pending destination on appear (e.g., from deeplink)
+                if let destination = navigationManager.pendingDestination {
+                    handlePendingDestination(destination)
+                }
             }
             .sheet(isPresented: $showEditProfile) {
                 EditProfileSheet()
@@ -203,46 +232,65 @@ struct SettingsView: View {
         }
     }
 
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Account")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Button("Edit") {
-                    showEditProfile = true
-                }
-                .font(.subheadline)
-                .accessibilityIdentifier(AccessibilityIdentifier.editProfileButton)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "person.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(authManager.displayName ?? authManager.userEmail ?? "Unknown")
-                            .font(.body)
-                            .fontWeight(.medium)
-
-                        if let email = authManager.userEmail, authManager.displayName != nil {
-                            Text(email)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-            }
+    private var familySection: some View {
+        NavigationLink(value: SettingsDestination.family) {
+            settingsRow(
+                icon: "house.fill",
+                iconColor: .green,
+                title: "Family"
+            )
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(AccessibilityIdentifier.familyTab)
+    }
+
+    private var accountSection: some View {
+        Button {
+            showEditProfile = true
+        } label: {
+            settingsRow(
+                icon: "person.fill",
+                iconColor: .blue,
+                title: "Account"
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(AccessibilityIdentifier.editProfileButton)
+    }
+
+    private var notificationsSection: some View {
+        NavigationLink(value: SettingsDestination.notifications) {
+            settingsRow(
+                icon: "bell.badge.fill",
+                iconColor: .red,
+                title: "Notifications"
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsRow(icon: String, iconColor: Color, title: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 29, height: 29)
+                .background(iconColor)
+                .cornerRadius(6)
+
+            Text(title)
+                .font(.body)
+                .foregroundColor(.primary)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color(uiColor: .tertiaryLabel))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
     }
 
     private var signOutButton: some View {
@@ -280,8 +328,20 @@ struct SettingsView: View {
         .accessibilityIdentifier(AccessibilityIdentifier.deleteAccountButton)
     }
 
+    private func handlePendingDestination(_ destination: AppDestination?) {
+        guard let destination = destination else { return }
+
+        switch destination {
+        case .familyManagement:
+            // Clear path first then push family
+            navigationPath = NavigationPath()
+            navigationPath.append(SettingsDestination.family)
+        }
+
+        navigationManager.clearPendingDestination()
+    }
+
     private func loadFamilyMembers() async {
-        // Load family members (needed for delete account flow)
         guard let familyId = authManager.currentFamily?.id else {
             hasLoaded = true
             return

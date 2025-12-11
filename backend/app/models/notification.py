@@ -48,6 +48,33 @@ class MedicationSchedule(Base):
     )
 
 
+class NotificationPreference(Base):
+    """User notification preferences - controls which notifications they receive."""
+    __tablename__ = "notification_preferences"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    # Family Updates
+    family_member_joined = Column(Boolean, default=True, nullable=False)
+    family_role_changed = Column(Boolean, default=True, nullable=False)
+    family_member_left = Column(Boolean, default=True, nullable=False)
+    family_member_left_promoted = Column(Boolean, default=True, nullable=False)
+    family_account_deleted = Column(Boolean, default=True, nullable=False)
+    family_account_deleted_promoted = Column(Boolean, default=True, nullable=False)
+
+    # Pet Updates
+    pet_added = Column(Boolean, default=True, nullable=False)
+    pet_updated = Column(Boolean, default=True, nullable=False)
+    pet_deleted = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", backref="notification_preferences")
+
+
 class NotificationLog(Base):
     """Track sent notifications to prevent duplicates."""
     __tablename__ = "notification_logs"

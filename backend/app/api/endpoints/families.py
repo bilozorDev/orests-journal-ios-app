@@ -12,10 +12,10 @@ from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.core.security import get_current_user_id
-from app.models.user import User, Family, FamilyMember, InviteAttemptLog, generate_invite_code
+from app.models.user import User, Family, FamilyMember, InviteAttemptLog, SecurityAlert, generate_invite_code
 from app.models.notification import UserDeviceToken
 from app.services.apns import apns_service
-from app.services.family_notifications import get_other_family_member_tokens
+from app.services.family_notifications import get_filtered_family_member_tokens
 from app.cache.helpers import cache_get, cache_set, cache_delete
 from app.cache.keys import key_family_detail, TTL_FAMILY
 
@@ -25,6 +25,13 @@ router = APIRouter()
 MAX_ATTEMPTS_PER_USER = 5  # Per hour
 MAX_ATTEMPTS_PER_IP = 10  # Per hour
 RATE_LIMIT_WINDOW = timedelta(hours=1)
+
+# --- Brute Force Protection Constants ---
+BACKOFF_BASE_SECONDS = 60      # 1 min base
+BACKOFF_MULTIPLIER = 2
+MAX_BACKOFF_SECONDS = 1800     # 30 min max
+LOCKOUT_THRESHOLD = 10         # Lock after 10 failures
+LOCKOUT_DURATION = timedelta(hours=1)
 
 
 # --- Pydantic Models ---
@@ -144,12 +151,14 @@ async def log_invite_attempt(
     user_id: Optional[UUID],
     ip_address: Optional[str],
     attempted_code: str,
+    was_successful: bool = False,
 ) -> None:
     """Log an invite code attempt for rate limiting."""
     log_entry = InviteAttemptLog(
         user_id=user_id,
         ip_address=ip_address,
         attempted_code=attempted_code.upper(),
+        was_successful=was_successful,
     )
     db.add(log_entry)
     await db.commit()
@@ -219,6 +228,159 @@ def get_display_name(user: Optional[User]) -> str:
     if user.email:
         return user.email.split("@")[0]
     return "Someone"
+
+
+# --- Brute Force Protection Functions ---
+
+def calculate_backoff_seconds(failed_attempts: int) -> int:
+    """
+    Calculate exponential backoff wait time.
+
+    Backoff schedule:
+    - 1 failure: 60 seconds (1 min)
+    - 2 failures: 120 seconds (2 min)
+    - 3 failures: 240 seconds (4 min)
+    - 4 failures: 480 seconds (8 min)
+    - 5 failures: 960 seconds (16 min)
+    - 6+ failures: 1800 seconds (30 min max)
+    """
+    if failed_attempts <= 0:
+        return 0
+
+    backoff = BACKOFF_BASE_SECONDS * (BACKOFF_MULTIPLIER ** (failed_attempts - 1))
+    return min(backoff, MAX_BACKOFF_SECONDS)
+
+
+async def check_user_lockout(db: AsyncSession, user_id: UUID) -> None:
+    """
+    Check if user is locked out. If lockout has expired, clear it.
+    Raises HTTPException if user is still locked out.
+    """
+    user_query = select(User).where(User.id == user_id)
+    result = await db.execute(user_query)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return
+
+    if user.is_locked_out:
+        if user.lockout_expires_at and datetime.utcnow() >= user.lockout_expires_at:
+            # Lockout expired - clear it
+            user.is_locked_out = False
+            user.lockout_expires_at = None
+            user.failed_invite_attempts = 0
+            user.last_failed_invite_at = None
+            await db.commit()
+        else:
+            # Still locked out
+            remaining = user.lockout_expires_at - datetime.utcnow() if user.lockout_expires_at else timedelta(0)
+            minutes_remaining = max(1, int(remaining.total_seconds() / 60))
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account temporarily locked. Try again in {minutes_remaining} minutes.",
+            )
+
+
+async def check_exponential_backoff(db: AsyncSession, user_id: UUID) -> None:
+    """
+    Check if user must wait due to exponential backoff from failed attempts.
+    Raises HTTPException if backoff period hasn't elapsed.
+    """
+    user_query = select(User).where(User.id == user_id)
+    result = await db.execute(user_query)
+    user = result.scalar_one_or_none()
+
+    if not user or user.failed_invite_attempts == 0:
+        return
+
+    backoff_seconds = calculate_backoff_seconds(user.failed_invite_attempts)
+
+    if user.last_failed_invite_at:
+        elapsed = (datetime.utcnow() - user.last_failed_invite_at).total_seconds()
+        if elapsed < backoff_seconds:
+            wait_remaining = int(backoff_seconds - elapsed)
+            if wait_remaining >= 60:
+                wait_msg = f"{wait_remaining // 60} minutes"
+            else:
+                wait_msg = f"{wait_remaining} seconds"
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many failed attempts. Please wait {wait_msg} before trying again.",
+            )
+
+
+async def create_security_alert(
+    db: AsyncSession,
+    alert_type: str,
+    user_id: Optional[UUID],
+    ip_address: Optional[str],
+    description: str,
+    alert_metadata: Optional[dict] = None,
+) -> None:
+    """Create a security alert for admin review."""
+    alert = SecurityAlert(
+        alert_type=alert_type,
+        user_id=user_id,
+        ip_address=ip_address,
+        description=description,
+        alert_metadata=alert_metadata,
+    )
+    db.add(alert)
+
+
+async def handle_failed_invite_attempt(
+    db: AsyncSession,
+    user_id: UUID,
+    ip_address: Optional[str],
+    attempted_code: str,
+) -> None:
+    """
+    Handle a failed invite attempt: increment counter, check for lockout trigger.
+    """
+    user_query = select(User).where(User.id == user_id)
+    result = await db.execute(user_query)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return
+
+    # Increment failed attempts
+    user.failed_invite_attempts = (user.failed_invite_attempts or 0) + 1
+    user.last_failed_invite_at = datetime.utcnow()
+
+    # Check if we should trigger lockout
+    if user.failed_invite_attempts >= LOCKOUT_THRESHOLD:
+        user.is_locked_out = True
+        user.lockout_expires_at = datetime.utcnow() + LOCKOUT_DURATION
+
+        # Create security alert
+        await create_security_alert(
+            db=db,
+            alert_type="account_lockout",
+            user_id=user_id,
+            ip_address=ip_address,
+            description=f"Account locked after {user.failed_invite_attempts} failed invite code attempts",
+            alert_metadata={
+                "attempted_code": attempted_code,
+                "lockout_expires_at": user.lockout_expires_at.isoformat(),
+            }
+        )
+
+    await db.commit()
+
+
+async def handle_successful_invite_attempt(db: AsyncSession, user_id: UUID) -> None:
+    """
+    Reset failed attempt counters on successful invite code use.
+    """
+    user_query = select(User).where(User.id == user_id)
+    result = await db.execute(user_query)
+    user = result.scalar_one_or_none()
+
+    if user and user.failed_invite_attempts > 0:
+        user.failed_invite_attempts = 0
+        user.last_failed_invite_at = None
+        await db.commit()
 
 
 # --- Endpoints ---
@@ -343,17 +505,21 @@ async def join_family(
 ):
     """
     Join a family using an invite code.
-    Protected against brute force attacks with rate limiting.
+    Protected against brute force attacks with rate limiting, exponential backoff,
+    and account lockout.
     """
     user_uuid = UUID(user_id)
     ip_address = get_client_ip(http_request)
     invite_code = request.invite_code.upper().strip()
 
+    # Check if account is locked out
+    await check_user_lockout(db, user_uuid)
+
+    # Check exponential backoff (must wait between attempts)
+    await check_exponential_backoff(db, user_uuid)
+
     # Check rate limits before processing
     await check_rate_limit(db, user_uuid, ip_address)
-
-    # Log this attempt (before checking if code is valid)
-    await log_invite_attempt(db, user_uuid, ip_address, invite_code)
 
     # Find family by invite code
     family_query = select(Family).where(Family.invite_code == invite_code)
@@ -361,6 +527,9 @@ async def join_family(
     family = result.scalar_one_or_none()
 
     if not family:
+        # Log failed attempt and handle backoff/lockout
+        await log_invite_attempt(db, user_uuid, ip_address, invite_code, was_successful=False)
+        await handle_failed_invite_attempt(db, user_uuid, ip_address, invite_code)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid invite code",
@@ -389,6 +558,10 @@ async def join_family(
     db.add(membership)
     await db.commit()
 
+    # Log successful attempt and reset failure counters
+    await log_invite_attempt(db, user_uuid, ip_address, invite_code, was_successful=True)
+    await handle_successful_invite_attempt(db, user_uuid)
+
     # Invalidate family cache since member list changed
     await cache_delete(key_family_detail(str(family.id)))
 
@@ -405,7 +578,7 @@ async def join_family(
         elif new_user.email:
             member_name = new_user.email.split("@")[0]
 
-    tokens = await get_other_family_member_tokens(db, family.id, user_uuid)
+    tokens = await get_filtered_family_member_tokens(db, family.id, user_uuid, "member_joined")
     if tokens:
         await apns_service.send_to_multiple(
             device_tokens=tokens,
@@ -498,7 +671,13 @@ async def update_family(
     """
     Update family details. Only admins can update the family.
     """
-    family_uuid = UUID(family_id)
+    try:
+        family_uuid = UUID(family_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid family_id format",
+        )
     user_uuid = UUID(user_id)
 
     # Check if user is an admin of this family

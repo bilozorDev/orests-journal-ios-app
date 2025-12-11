@@ -6,8 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
-from app.models.notification import UserDeviceToken
-from app.schemas.notification import DeviceTokenCreate, DeviceTokenDelete, DeviceTokenResponse
+from app.models.notification import UserDeviceToken, NotificationPreference
+from app.schemas.notification import (
+    DeviceTokenCreate, DeviceTokenDelete, DeviceTokenResponse,
+    NotificationPreferencesUpdate, NotificationPreferencesResponse,
+)
 from app.services.apns import apns_service
 
 router = APIRouter()
@@ -162,3 +165,76 @@ async def send_test_notification(
         devices_total=len(device_tokens),
         message=f"Sent to {success_count}/{len(device_tokens)} devices",
     )
+
+
+# Notification Preferences Endpoints
+
+@router.get("/preferences", response_model=NotificationPreferencesResponse)
+async def get_notification_preferences(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get notification preferences for the current user.
+
+    Returns defaults (all True) if no preferences have been set.
+    """
+    user_uuid = UUID(user_id)
+
+    result = await db.execute(
+        select(NotificationPreference).where(
+            NotificationPreference.user_id == user_uuid
+        )
+    )
+    prefs = result.scalar_one_or_none()
+
+    if not prefs:
+        # Return default preferences (all enabled)
+        return NotificationPreferencesResponse(
+            family_member_joined=True,
+            family_role_changed=True,
+            family_member_left=True,
+            family_member_left_promoted=True,
+            family_account_deleted=True,
+            family_account_deleted_promoted=True,
+            pet_added=True,
+            pet_updated=True,
+            pet_deleted=True,
+        )
+
+    return NotificationPreferencesResponse.model_validate(prefs)
+
+
+@router.patch("/preferences", response_model=NotificationPreferencesResponse)
+async def update_notification_preferences(
+    request: NotificationPreferencesUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update notification preferences for the current user.
+
+    Creates preferences record if it doesn't exist (upsert pattern).
+    Only updates fields that are provided in the request.
+    """
+    user_uuid = UUID(user_id)
+
+    result = await db.execute(
+        select(NotificationPreference).where(
+            NotificationPreference.user_id == user_uuid
+        )
+    )
+    prefs = result.scalar_one_or_none()
+
+    if not prefs:
+        # Create new preferences with defaults
+        prefs = NotificationPreference(user_id=user_uuid)
+        db.add(prefs)
+
+    # Update only provided fields
+    update_data = request.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(prefs, field, value)
+
+    await db.commit()
+    await db.refresh(prefs)
+
+    return NotificationPreferencesResponse.model_validate(prefs)

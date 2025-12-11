@@ -49,3 +49,38 @@ class NotificationLogResponse(BaseModel):
     scheduled_time: datetime
     sent_at: datetime
     recipient_count: int
+
+
+# Notification Preferences Schemas
+class NotificationPreferencesUpdate(BaseModel):
+    """Request to update notification preferences. All fields optional - only update provided ones."""
+    # Family Updates
+    family_member_joined: Optional[bool] = None
+    family_role_changed: Optional[bool] = None
+    family_member_left: Optional[bool] = None
+    family_member_left_promoted: Optional[bool] = None
+    family_account_deleted: Optional[bool] = None
+    family_account_deleted_promoted: Optional[bool] = None
+
+    # Pet Updates
+    pet_added: Optional[bool] = None
+    pet_updated: Optional[bool] = None
+    pet_deleted: Optional[bool] = None
+
+
+class NotificationPreferencesResponse(BaseModel):
+    """Response with all notification preferences."""
+    model_config = ConfigDict(from_attributes=True)
+
+    # Family Updates
+    family_member_joined: bool
+    family_role_changed: bool
+    family_member_left: bool
+    family_member_left_promoted: bool
+    family_account_deleted: bool
+    family_account_deleted_promoted: bool
+
+    # Pet Updates
+    pet_added: bool
+    pet_updated: bool
+    pet_deleted: bool

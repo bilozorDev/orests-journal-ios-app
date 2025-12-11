@@ -164,21 +164,42 @@ class TestUpdateFamily:
     async def test_update_family_name_empty_validation(
         self,
         client: AsyncClient,
+        mock_db_session: AsyncMock,
         admin_auth_headers: dict,
         test_family_id: str,
+        test_admin_user_id: str,
     ):
-        """Validation error for empty name."""
-        # Empty string should fail Pydantic validation
+        """Empty string is accepted (no min_length validation currently)."""
+        # Setup mocks for admin membership check and family update
+        mock_membership = create_mock_membership(
+            user_id=test_admin_user_id,
+            family_id=test_family_id,
+            role="admin",
+        )
+        mock_family = create_mock_family(
+            family_id=test_family_id,
+            name="Old Family Name",
+        )
+
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = mock_membership
+
+        family_result = MagicMock()
+        family_result.scalar_one_or_none.return_value = mock_family
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[membership_result, family_result]
+        )
+
         response = await client.patch(
             f"/api/v1/families/{test_family_id}",
             json={"name": ""},
             headers=admin_auth_headers,
         )
 
-        # Empty string is technically valid in current schema,
-        # but you might want to add min_length=1 validation
-        # For now, this test documents current behavior
-        assert response.status_code in [200, 403, 422]
+        # Empty string is technically valid in current schema (no min_length)
+        # This documents current behavior - consider adding min_length=1
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_update_family_no_auth(
@@ -192,7 +213,8 @@ class TestUpdateFamily:
             json={"name": "New Name"},
         )
 
-        assert response.status_code == 403  # HTTPBearer returns 403 for missing token
+        # HTTPBearer returns 401 Unauthorized for missing token
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_update_family_invalid_uuid(
@@ -200,14 +222,15 @@ class TestUpdateFamily:
         client: AsyncClient,
         admin_auth_headers: dict,
     ):
-        """Returns error for invalid family ID format."""
+        """Invalid UUID returns 422 Unprocessable Entity."""
         response = await client.patch(
             "/api/v1/families/not-a-valid-uuid",
             json={"name": "New Name"},
             headers=admin_auth_headers,
         )
 
-        assert response.status_code == 422  # Pydantic validation error
+        assert response.status_code == 422
+        assert "Invalid family_id format" in response.json()["detail"]
 
 
 class TestUpdateMemberRole:
@@ -509,3 +532,211 @@ class TestUpdateMemberRole:
         detail = response.json()["detail"]
         assert isinstance(detail, list)
         assert any("'admin' or 'member'" in str(err) for err in detail)
+
+
+class TestBruteForceProtection:
+    """Tests for invite code brute force protection."""
+
+    @pytest.mark.asyncio
+    async def test_exponential_backoff_after_failure(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+    ):
+        """User must wait after a failed attempt due to backoff."""
+        from datetime import datetime, timedelta
+
+        # Create mock user with 1 failed attempt that just happened
+        mock_user = MagicMock()
+        mock_user.id = test_user_id
+        mock_user.is_locked_out = False
+        mock_user.lockout_expires_at = None
+        mock_user.failed_invite_attempts = 1
+        mock_user.last_failed_invite_at = datetime.utcnow()  # Just happened
+
+        # Mock lockout check - user not locked
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = mock_user
+
+        mock_db_session.execute = AsyncMock(return_value=user_result)
+
+        response = await client.post(
+            "/api/v1/families/join",
+            json={"invite_code": "WRONGCODE"},
+            headers=auth_headers,
+        )
+
+        # Should be blocked by backoff
+        assert response.status_code == 429
+        assert "wait" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_account_lockout_after_threshold(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+    ):
+        """Account is locked after 10 consecutive failures."""
+        from datetime import datetime, timedelta
+
+        # Create mock user that is locked out
+        mock_user = MagicMock()
+        mock_user.id = test_user_id
+        mock_user.is_locked_out = True
+        mock_user.lockout_expires_at = datetime.utcnow() + timedelta(minutes=30)
+        mock_user.failed_invite_attempts = 10
+        mock_user.last_failed_invite_at = datetime.utcnow()
+
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = mock_user
+
+        mock_db_session.execute = AsyncMock(return_value=user_result)
+
+        response = await client.post(
+            "/api/v1/families/join",
+            json={"invite_code": "ANYCODE12"},
+            headers=auth_headers,
+        )
+
+        # Should be blocked by lockout
+        assert response.status_code == 403
+        assert "locked" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_lockout_expires_allows_retry(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Expired lockout allows user to try again."""
+        from datetime import datetime, timedelta
+
+        # Create mock user with expired lockout
+        mock_user = MagicMock()
+        mock_user.id = test_user_id
+        mock_user.is_locked_out = True
+        mock_user.lockout_expires_at = datetime.utcnow() - timedelta(minutes=1)  # Expired
+        mock_user.failed_invite_attempts = 10
+        mock_user.last_failed_invite_at = datetime.utcnow() - timedelta(hours=2)
+
+        # Family that will be found
+        mock_family = create_mock_family(
+            family_id=test_family_id,
+            invite_code="VALIDCOD",
+        )
+
+        # Mock membership - user not yet a member
+        mock_membership = None
+
+        # Setup mock query results
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = mock_user
+
+        family_result = MagicMock()
+        family_result.scalar_one_or_none.return_value = mock_family
+
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = mock_membership
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
+        tokens_result = MagicMock()
+        tokens_result.scalars.return_value.all.return_value = []
+
+        # Multiple execute calls for different queries
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                user_result,   # check_user_lockout - finds user, clears expired lockout
+                user_result,   # check_exponential_backoff - cleared, no backoff
+                count_result,  # check_rate_limit - user count
+                count_result,  # check_rate_limit - IP count
+                family_result, # find family by code
+                existing_result, # check existing membership
+                user_result,   # log_invite_attempt commit
+                user_result,   # handle_successful_invite_attempt
+                user_result,   # get new_user for notification
+                tokens_result, # get other family member tokens
+            ]
+        )
+
+        response = await client.post(
+            "/api/v1/families/join",
+            json={"invite_code": "VALIDCOD"},
+            headers=auth_headers,
+        )
+
+        # Should succeed after lockout expires
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_successful_attempt_allowed_without_backoff(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """User with no failed attempts can join immediately."""
+        from datetime import datetime
+
+        # Create mock user with no failed attempts
+        mock_user = MagicMock()
+        mock_user.id = test_user_id
+        mock_user.is_locked_out = False
+        mock_user.lockout_expires_at = None
+        mock_user.failed_invite_attempts = 0
+        mock_user.last_failed_invite_at = None
+
+        mock_family = create_mock_family(
+            family_id=test_family_id,
+            invite_code="GOODCODE",
+        )
+
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = mock_user
+
+        family_result = MagicMock()
+        family_result.scalar_one_or_none.return_value = mock_family
+
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = None
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
+        tokens_result = MagicMock()
+        tokens_result.scalars.return_value.all.return_value = []
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                user_result,   # check_user_lockout
+                user_result,   # check_exponential_backoff
+                count_result,  # check_rate_limit - user
+                count_result,  # check_rate_limit - IP
+                family_result, # find family
+                existing_result, # check existing membership
+                user_result,   # log_invite_attempt
+                user_result,   # handle_successful_invite
+                user_result,   # get user for notification
+                tokens_result, # get tokens
+            ]
+        )
+
+        response = await client.post(
+            "/api/v1/families/join",
+            json={"invite_code": "GOODCODE"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["family"]["id"] == test_family_id

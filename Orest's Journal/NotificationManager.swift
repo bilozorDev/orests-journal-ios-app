@@ -207,12 +207,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             if let familyId = familyId {
                 await DataService.shared.invalidateFamilyCache(for: familyId)
                 // Also tell the view to refresh when it becomes visible
-                NavigationManager.shared.requestTabRefresh(.family)
+                NavigationManager.shared.requestFamilyRefresh()
             }
         case "pet_added", "pet_updated", "pet_deleted":
             // Pet changes from other family members - refresh pets list
             DataService.shared.invalidatePetsCache()
-            NavigationManager.shared.requestTabRefresh(.family)
+            NavigationManager.shared.requestFamilyRefresh()
         default:
             break
         }

@@ -13,8 +13,7 @@ enum Tab: Int {
     case food = 1
     case medication = 2
     case health = 3
-    case family = 4
-    case settings = 5
+    case settings = 4
 }
 
 enum AppDestination: Equatable {
@@ -36,8 +35,7 @@ final class NavigationManager {
     func navigate(to destination: AppDestination) {
         switch destination {
         case .familyManagement:
-            selectedTab = .family
-            tabsNeedingRefresh.insert(.family)
+            selectedTab = .settings
             familyRefreshTrigger += 1
         }
         pendingDestination = destination
@@ -49,9 +47,10 @@ final class NavigationManager {
 
     func requestTabRefresh(_ tab: Tab) {
         tabsNeedingRefresh.insert(tab)
-        if tab == .family {
-            familyRefreshTrigger += 1
-        }
+    }
+
+    func requestFamilyRefresh() {
+        familyRefreshTrigger += 1
     }
 
     func clearPendingDestination() {
