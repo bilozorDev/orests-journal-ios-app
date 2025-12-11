@@ -269,7 +269,7 @@ class APIClient: APIClientProtocol {
         try await delete("/pets/\(id.uuidString.lowercased())")
     }
 
-    func uploadPetPhoto(imageData: Data) async throws -> String {
+    func uploadPetPhoto(imageData: Data, mimeType: String = "image/jpeg") async throws -> String {
         guard let url = URL(string: APIConfiguration.baseURL + "/uploads/pet-photo") else {
             throw APIError.invalidURL
         }
@@ -286,12 +286,17 @@ class APIClient: APIClientProtocol {
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
+        // Determine file extension from mime type
+        let fileExtension = mimeType == "image/png" ? "png" : "jpg"
+        let filename = "pet.\(fileExtension)"
+
         var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"pet.jpg\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        // These ASCII strings are guaranteed to convert successfully
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
         body.append(imageData)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
 
         request.httpBody = body
 

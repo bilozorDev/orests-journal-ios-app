@@ -182,8 +182,8 @@ final class DataService {
 
     // MARK: - Photo Upload
 
-    func uploadPetPhoto(imageData: Data) async throws -> String {
-        return try await api.uploadPetPhoto(imageData: imageData)
+    func uploadPetPhoto(imageData: Data, mimeType: String = "image/jpeg") async throws -> String {
+        return try await api.uploadPetPhoto(imageData: imageData, mimeType: mimeType)
     }
 
     // MARK: - Calorie Goals

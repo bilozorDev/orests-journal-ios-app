@@ -16,14 +16,37 @@ actor ImageProcessor {
     static let shared = ImageProcessor()
     private let context = CIContext()
 
+    /// Maximum image dimension (width or height) for processing.
+    /// Images larger than this will be resized to prevent memory issues.
+    private let maxImageDimension: CGFloat = 2048
+
+    /// Resizes an image if it exceeds the maximum dimension while preserving aspect ratio.
+    private func resizeIfNeeded(_ image: UIImage) -> UIImage {
+        let size = image.size
+        let maxDim = max(size.width, size.height)
+
+        guard maxDim > maxImageDimension else { return image }
+
+        let scale = maxImageDimension / maxDim
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
     /// Removes background from an image using Vision Framework subject lifting.
     /// Returns the image with a transparent background.
-    /// - Parameter image: The source UIImage
+    /// - Parameter image: The source UIImage (will be resized if too large)
     /// - Returns: UIImage with transparent background
     /// - Throws: ImageProcessingError if processing fails
     @available(iOS 17.0, *)
     func removeBackground(from image: UIImage) async throws -> UIImage {
-        guard let inputCIImage = CIImage(image: image) else {
+        // Resize image if too large to prevent memory issues
+        let processableImage = resizeIfNeeded(image)
+
+        guard let inputCIImage = CIImage(image: processableImage) else {
             throw ImageProcessingError.invalidInput
         }
 
@@ -56,7 +79,7 @@ actor ImageProcessor {
             throw ImageProcessingError.filterFailed
         }
 
-        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        return UIImage(cgImage: cgImage, scale: processableImage.scale, orientation: processableImage.imageOrientation)
     }
 
     enum ImageProcessingError: LocalizedError {

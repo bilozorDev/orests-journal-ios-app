@@ -34,8 +34,8 @@ struct AddEditPetView: View {
     @State private var isUploadingPhoto = false
     @State private var errorMessage: String?
     @State private var hasSaved = false  // Prevent double-tap duplicate creation
-    @State private var showCamera = false
     @State private var isRemovingBackground = false
+    @State private var photoLoadTask: Task<Void, Never>?  // For cancelling rapid photo selections
     @State private var originalImage: UIImage?  // Store original before bg removal
     @State private var hasRemovedBackground = false
     @State private var isLoadingPhoto = false  // Loading state for photo selection
@@ -302,6 +302,9 @@ struct AddEditPetView: View {
             .task {
                 await loadExistingCalorieGoal()
             }
+            .onDisappear {
+                photoLoadTask?.cancel()
+            }
         }
     }
 
@@ -333,6 +336,7 @@ struct AddEditPetView: View {
                         .scaledToFit()
                         .frame(maxHeight: 200)
                         .cornerRadius(10)
+                        .accessibilityLabel("Selected photo of \(petName.isEmpty ? "pet" : petName)")
 
                     // Loading overlay during background removal
                     if isRemovingBackground {
@@ -347,6 +351,7 @@ struct AddEditPetView: View {
                                 .font(.caption)
                                 .foregroundColor(.white)
                         }
+                        .accessibilityLabel("Processing photo, please wait")
                     }
                 }
             } else if let existingUrl = existingPhotoUrl, let url = URL(string: existingUrl) {
@@ -356,12 +361,14 @@ struct AddEditPetView: View {
                         .scaledToFit()
                         .frame(maxHeight: 200)
                         .cornerRadius(10)
+                        .accessibilityLabel("Current photo of \(petName.isEmpty ? "pet" : petName)")
                 } placeholder: {
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
                         .frame(height: 200)
                         .cornerRadius(10)
                         .overlay(ProgressView())
+                        .accessibilityLabel("Loading photo")
                 }
             }
 
@@ -380,17 +387,28 @@ struct AddEditPetView: View {
                     ) {
                         Label("Select from Photo Library", systemImage: "photo.on.rectangle")
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.photoPickerButton)
+                    .accessibilityHint("Opens photo library to select a pet photo")
                     .onChange(of: selectedPhoto) { _, newValue in
-                        Task {
+                        // Ignore new selections while one is already being processed
+                        // This prevents the "double-tap" issue where users select again
+                        // thinking the first selection didn't work
+                        guard !isLoadingPhoto else { return }
+
+                        photoLoadTask = Task {
                             isLoadingPhoto = true
                             errorMessage = nil  // Clear previous errors
+
                             do {
-                                if let data = try await newValue?.loadTransferable(type: Data.self),
-                                   let image = UIImage(data: data) {
-                                    selectedImage = image
-                                    originalImage = image  // Store original
-                                    hasRemovedBackground = false
-                                    photoWasRemoved = false  // Reset removal flag when new photo selected
+                                if let data = try await newValue?.loadTransferable(type: Data.self) {
+                                    if let image = UIImage(data: data) {
+                                        selectedImage = image
+                                        originalImage = image  // Store original
+                                        hasRemovedBackground = false
+                                        photoWasRemoved = false  // Reset removal flag when new photo selected
+                                    } else {
+                                        errorMessage = "Could not decode the selected photo"
+                                    }
                                 } else if newValue != nil {
                                     errorMessage = "Could not load the selected photo"
                                 }
@@ -422,6 +440,8 @@ struct AddEditPetView: View {
                         .buttonStyle(.bordered)
                         .tint(hasRemovedBackground ? .orange : .blue)
                         .disabled(isRemovingBackground)
+                        .accessibilityIdentifier(AccessibilityIdentifier.removeBackgroundButton)
+                        .accessibilityHint(hasRemovedBackground ? "Restores the original photo" : "Removes the background from the photo")
                     }
 
                     // Remove photo button
@@ -431,6 +451,7 @@ struct AddEditPetView: View {
                         Label("Remove Photo", systemImage: "trash")
                     }
                     .disabled(isRemovingBackground)
+                    .accessibilityIdentifier(AccessibilityIdentifier.removePhotoButton)
                 }
             } else if existingPhotoUrl != nil {
                 // Remove existing photo button
@@ -439,6 +460,7 @@ struct AddEditPetView: View {
                 } label: {
                     Label("Remove Photo", systemImage: "trash")
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.removePhotoButton)
             }
         }
     }
@@ -496,9 +518,16 @@ struct AddEditPetView: View {
             // Upload new photo if selected
             if let image = selectedImage {
                 isUploadingPhoto = true
-                if let imageData = image.jpegData(compressionQuality: 0.8) {
-                    photoUrl = try await DataService.shared.uploadPetPhoto(imageData: imageData)
-                }
+
+                // Compress image with adaptive quality to ensure it's under 5MB
+                let compressed = try ImageCompressor.shared.compressForUpload(
+                    image,
+                    hasTransparency: hasRemovedBackground
+                )
+                photoUrl = try await DataService.shared.uploadPetPhoto(
+                    imageData: compressed.data,
+                    mimeType: compressed.mimeType
+                )
                 isUploadingPhoto = false
             } else if photoWasRemoved {
                 // User explicitly removed the photo

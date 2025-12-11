@@ -20,6 +20,55 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
+    """Validate that a photo URL belongs to the expected R2 storage and org.
+
+    Returns the validated URL or None if invalid/empty.
+    Raises HTTPException if URL format is invalid.
+    """
+    if not photo_url:
+        return None
+
+    # Empty string signals photo removal
+    if photo_url == "":
+        return None
+
+    # Check if storage is configured
+    if not storage_service.is_configured:
+        # Allow any URL if storage not configured (dev mode)
+        return photo_url
+
+    public_url_base = storage_service.settings.s3_public_url
+
+    # Validate URL starts with our storage
+    if not photo_url.startswith(public_url_base):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid photo URL: must be from our storage service"
+        )
+
+    # Extract and validate path: folder/org_id/filename
+    path = photo_url.replace(f"{public_url_base}/", "")
+    path_parts = path.split("/")
+
+    if len(path_parts) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid photo URL format"
+        )
+
+    folder, url_org_id, filename = path_parts
+
+    # Validate org_id matches (security check)
+    if url_org_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Photo URL belongs to a different organization"
+        )
+
+    return photo_url
+
+
 @router.get("", response_model=PetListResponse)
 async def list_pets(
     db: AsyncSession = Depends(get_db),
@@ -55,11 +104,14 @@ async def create_pet(
     # Verify user belongs to this family
     await verify_family_access(db, user_id, org_id)
 
+    # Validate photo URL belongs to this org
+    validated_photo_url = validate_photo_url(pet_in.photo_url, org_id)
+
     pet = Pet(
         org_id=UUID(org_id),
         name=pet_in.name,
         kind=pet_in.kind,
-        photo_url=pet_in.photo_url,
+        photo_url=validated_photo_url,
         current_weight=pet_in.current_weight,
         date_of_birth=pet_in.date_of_birth,
         created_by=UUID(user_id),
@@ -112,9 +164,10 @@ async def update_pet(
     # Update fields
     update_data = pet_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        # Treat empty string as None for photo_url (iOS sends "" to clear photo)
-        if field == "photo_url" and value == "":
-            value = None
+        # Validate and handle photo_url
+        if field == "photo_url":
+            # Validate photo URL belongs to this org (or is empty for removal)
+            value = validate_photo_url(value, str(pet.org_id))
         setattr(pet, field, value)
 
     await db.commit()
