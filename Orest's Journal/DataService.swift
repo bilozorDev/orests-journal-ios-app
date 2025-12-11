@@ -103,10 +103,18 @@ final class DataService {
         familyMembersCache[familyId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    func invalidateFamilyCache(for familyId: String) {
+    func invalidateFamilyCache(for familyId: String) async {
         familyMembersCache.removeValue(forKey: familyId)
+        await persistentCache.delete(forKey: .familyMembers(familyId: familyId))
+    }
+
+    /// Invalidate all caches (used when user is removed from family)
+    func invalidateAllCaches() {
+        petsCache = nil
+        familyMembersCache.removeAll()
+        calorieGoalCache.removeAll()
         Task {
-            await persistentCache.delete(forKey: .familyMembers(familyId: familyId))
+            await persistentCache.clearAll()
         }
     }
 
@@ -158,8 +166,10 @@ final class DataService {
         return result
     }
 
-    func updatePet(id: UUID, name: String? = nil, kind: String? = nil, photoUrl: String? = nil, currentWeight: Double? = nil, dateOfBirth: Date? = nil) async throws -> Pet {
-        let update = PetUpdate(name: name, kind: kind, photoUrl: photoUrl, currentWeight: currentWeight, dateOfBirth: dateOfBirth)
+    func updatePet(id: UUID, name: String? = nil, kind: String? = nil, photoUrl: String? = nil, currentWeight: Double? = nil, dateOfBirth: Date? = nil, clearPhoto: Bool = false) async throws -> Pet {
+        // Use empty string to signal photo removal to backend
+        let effectivePhotoUrl = clearPhoto ? "" : photoUrl
+        let update = PetUpdate(name: name, kind: kind, photoUrl: effectivePhotoUrl, currentWeight: currentWeight, dateOfBirth: dateOfBirth)
         let result = try await api.updatePet(id: id, update: update)
         invalidatePetsCache()
         return result
@@ -270,18 +280,18 @@ final class DataService {
 
     func updateMemberRole(familyId: String, userId: String, role: String) async throws -> FamilyMember {
         let result = try await api.updateMemberRole(familyId: familyId, userId: userId, role: role)
-        invalidateFamilyCache(for: familyId)
+        await invalidateFamilyCache(for: familyId)
         return result
     }
 
     func removeFamilyMember(familyId: String, userId: String) async throws {
         try await api.removeFamilyMember(familyId: familyId, userId: userId)
-        invalidateFamilyCache(for: familyId)
+        await invalidateFamilyCache(for: familyId)
     }
 
     func updateFamilyName(familyId: String, name: String) async throws -> AppFamily {
         let result = try await api.updateFamilyName(familyId: familyId, name: name)
-        invalidateFamilyCache(for: familyId)
+        await invalidateFamilyCache(for: familyId)
         return result
     }
 

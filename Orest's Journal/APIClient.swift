@@ -262,11 +262,11 @@ class APIClient: APIClientProtocol {
     }
 
     func updatePet(id: UUID, update: PetUpdate) async throws -> Pet {
-        return try await patch("/pets/\(id.uuidString)", body: update)
+        return try await patch("/pets/\(id.uuidString.lowercased())", body: update)
     }
 
     func deletePet(id: UUID) async throws {
-        try await delete("/pets/\(id.uuidString)")
+        try await delete("/pets/\(id.uuidString.lowercased())")
     }
 
     func uploadPetPhoto(imageData: Data) async throws -> String {
@@ -276,6 +276,8 @@ class APIClient: APIClientProtocol {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        // Longer timeout for uploads (60 seconds)
+        request.timeoutInterval = 60
 
         if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

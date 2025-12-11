@@ -29,5 +29,7 @@
 	<array>
 		<string>com.notip.orests-journal.refresh</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Take photos of your pet</string>
 </dict>
 </plist>

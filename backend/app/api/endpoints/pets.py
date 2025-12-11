@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,9 @@ from app.schemas.pet import (
     PetCreate, PetUpdate, PetResponse, PetListResponse,
     HealthRecordCreate, HealthRecordResponse,
 )
+from app.services.storage import storage_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -102,13 +106,29 @@ async def update_pet(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
+    # Store old photo URL for cleanup
+    old_photo_url = pet.photo_url
+
     # Update fields
     update_data = pet_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        # Treat empty string as None for photo_url (iOS sends "" to clear photo)
+        if field == "photo_url" and value == "":
+            value = None
         setattr(pet, field, value)
 
     await db.commit()
     await db.refresh(pet)
+
+    # Clean up old photo from R2 if it was replaced or cleared
+    if old_photo_url and old_photo_url != pet.photo_url:
+        try:
+            deleted = await storage_service.delete_image(old_photo_url)
+            if deleted:
+                logger.info(f"Deleted old pet photo: {old_photo_url}")
+        except Exception as e:
+            # Don't fail the update if photo cleanup fails
+            logger.error(f"Failed to delete old pet photo: {e}")
 
     return PetResponse.model_validate(pet)
 
@@ -123,8 +143,21 @@ async def delete_pet(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
+    # Store photo URL for cleanup before deleting
+    photo_url = pet.photo_url
+
     await db.delete(pet)
     await db.commit()
+
+    # Clean up photo from R2 after successful deletion
+    if photo_url:
+        try:
+            deleted = await storage_service.delete_image(photo_url)
+            if deleted:
+                logger.info(f"Deleted pet photo on pet deletion: {photo_url}")
+        except Exception as e:
+            # Don't fail the delete if photo cleanup fails
+            logger.error(f"Failed to delete pet photo on pet deletion: {e}")
 
 
 # Health Records

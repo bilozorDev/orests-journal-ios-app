@@ -34,6 +34,12 @@ struct AddEditPetView: View {
     @State private var isUploadingPhoto = false
     @State private var errorMessage: String?
     @State private var hasSaved = false  // Prevent double-tap duplicate creation
+    @State private var showCamera = false
+    @State private var isRemovingBackground = false
+    @State private var originalImage: UIImage?  // Store original before bg removal
+    @State private var hasRemovedBackground = false
+    @State private var isLoadingPhoto = false  // Loading state for photo selection
+    @State private var photoWasRemoved = false  // Track if user explicitly removed photo
 
     // Calorie goal state
     @State private var calorieGoal: String = ""
@@ -102,12 +108,14 @@ struct AddEditPetView: View {
                     TextField("Pet Name", text: $petName)
                         .textContentType(.name)
                         .autocorrectionDisabled(true)
+                        .accessibilityIdentifier(AccessibilityIdentifier.petNameTextField)
 
                     Picker("Kind", selection: $petKind) {
                         ForEach(petKinds, id: \.self) { kind in
                             Text(kind).tag(kind)
                         }
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.petKindPicker)
                     .onChange(of: petKind) { _, _ in
                         // Update calorie goal if user was using the suggestion
                         if usesSuggestedGoal, let suggested = suggestedCalorieGoal {
@@ -127,6 +135,7 @@ struct AddEditPetView: View {
                 Section(header: Text("Current Weight (lbs)")) {
                     TextField("Weight", text: $currentWeight)
                         .keyboardType(.decimalPad)
+                        .accessibilityIdentifier(AccessibilityIdentifier.petWeightTextField)
                 }
 
                 Section(header: Text("Nutrition (Optional)")) {
@@ -215,6 +224,7 @@ struct AddEditPetView: View {
                                     .cornerRadius(10)
                             }
                             .disabled(!isFormValid || isSaving)
+                            .accessibilityIdentifier(AccessibilityIdentifier.savePetButton)
 
                             Button(action: {
                                 Task {
@@ -229,6 +239,7 @@ struct AddEditPetView: View {
                                     .cornerRadius(10)
                             }
                             .disabled(!isFormValid || isSaving)
+                            .accessibilityIdentifier(AccessibilityIdentifier.saveAndAddAnotherPetButton)
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
@@ -313,14 +324,31 @@ struct AddEditPetView: View {
 
     @ViewBuilder
     private var photoSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             // Current/Selected Image Display
             if let selectedImage {
-                Image(uiImage: selectedImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 200)
-                    .cornerRadius(10)
+                ZStack {
+                    Image(uiImage: selectedImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 200)
+                        .cornerRadius(10)
+
+                    // Loading overlay during background removal
+                    if isRemovingBackground {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.black.opacity(0.5))
+                            .frame(maxHeight: 200)
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                                .tint(.white)
+                            Text("Processing...")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
             } else if let existingUrl = existingPhotoUrl, let url = URL(string: existingUrl) {
                 AsyncImage(url: url) { image in
                     image
@@ -337,34 +365,114 @@ struct AddEditPetView: View {
                 }
             }
 
-            HStack(spacing: 16) {
-                // Photo Library Picker
-                PhotosPicker(
-                    selection: $selectedPhoto,
-                    matching: .images
-                ) {
-                    Label("Photo Library", systemImage: "photo.on.rectangle")
-                }
-                .onChange(of: selectedPhoto) { _, newValue in
-                    Task {
-                        if let data = try? await newValue?.loadTransferable(type: Data.self),
-                           let image = UIImage(data: data) {
-                            selectedImage = image
+            // Show Photo Library picker only when no photo selected
+            if selectedImage == nil && existingPhotoUrl == nil {
+                if isLoadingPhoto {
+                    HStack {
+                        ProgressView()
+                        Text("Loading photo...")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    PhotosPicker(
+                        selection: $selectedPhoto,
+                        matching: .images
+                    ) {
+                        Label("Select from Photo Library", systemImage: "photo.on.rectangle")
+                    }
+                    .onChange(of: selectedPhoto) { _, newValue in
+                        Task {
+                            isLoadingPhoto = true
+                            errorMessage = nil  // Clear previous errors
+                            do {
+                                if let data = try await newValue?.loadTransferable(type: Data.self),
+                                   let image = UIImage(data: data) {
+                                    selectedImage = image
+                                    originalImage = image  // Store original
+                                    hasRemovedBackground = false
+                                    photoWasRemoved = false  // Reset removal flag when new photo selected
+                                } else if newValue != nil {
+                                    errorMessage = "Could not load the selected photo"
+                                }
+                            } catch {
+                                errorMessage = "Failed to load photo: \(error.localizedDescription)"
+                            }
+                            isLoadingPhoto = false
                         }
                     }
                 }
+            }
 
-                // Remove photo button
-                if selectedImage != nil || existingPhotoUrl != nil {
-                    Button(role: .destructive) {
-                        selectedImage = nil
-                        existingPhotoUrl = nil
-                        selectedPhoto = nil
-                    } label: {
-                        Label("Remove", systemImage: "trash")
+            // Actions for selected photo
+            if selectedImage != nil {
+                VStack(spacing: 12) {
+                    // Background removal toggle (iOS 17+)
+                    if #available(iOS 17.0, *) {
+                        Button {
+                            Task {
+                                await toggleBackgroundRemoval()
+                            }
+                        } label: {
+                            Label(
+                                hasRemovedBackground ? "Restore Original" : "Remove Background",
+                                systemImage: hasRemovedBackground ? "arrow.uturn.backward" : "wand.and.stars"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(hasRemovedBackground ? .orange : .blue)
+                        .disabled(isRemovingBackground)
                     }
+
+                    // Remove photo button
+                    Button(role: .destructive) {
+                        clearPhoto()
+                    } label: {
+                        Label("Remove Photo", systemImage: "trash")
+                    }
+                    .disabled(isRemovingBackground)
+                }
+            } else if existingPhotoUrl != nil {
+                // Remove existing photo button
+                Button(role: .destructive) {
+                    clearPhoto()
+                } label: {
+                    Label("Remove Photo", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    private func clearPhoto() {
+        selectedImage = nil
+        originalImage = nil
+        existingPhotoUrl = nil
+        selectedPhoto = nil
+        hasRemovedBackground = false
+        photoWasRemoved = true  // Mark that user explicitly removed the photo
+    }
+
+    @available(iOS 17.0, *)
+    private func toggleBackgroundRemoval() async {
+        if hasRemovedBackground {
+            // Restore original
+            if let original = originalImage {
+                selectedImage = original
+                hasRemovedBackground = false
+            }
+        } else {
+            // Remove background
+            guard let image = selectedImage else { return }
+            isRemovingBackground = true
+            do {
+                let processed = try await ImageProcessor.shared.removeBackground(from: image)
+                selectedImage = processed
+                hasRemovedBackground = true
+                errorMessage = nil  // Clear any previous error on success
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isRemovingBackground = false
         }
     }
 
@@ -382,7 +490,8 @@ struct AddEditPetView: View {
         errorMessage = nil
 
         do {
-            var photoUrl = existingPhotoUrl
+            var photoUrl: String? = nil
+            var shouldClearPhoto = false
 
             // Upload new photo if selected
             if let image = selectedImage {
@@ -391,9 +500,13 @@ struct AddEditPetView: View {
                     photoUrl = try await DataService.shared.uploadPetPhoto(imageData: imageData)
                 }
                 isUploadingPhoto = false
-            } else if selectedImage == nil && existingPhotoUrl == nil {
-                // Photo was removed
+            } else if photoWasRemoved {
+                // User explicitly removed the photo
                 photoUrl = nil
+                shouldClearPhoto = true
+            } else if let existing = editingPet?.photoUrl {
+                // Keep existing photo if not changed
+                photoUrl = existing
             }
 
             let weight = currentWeight.isEmpty ? nil : Double(currentWeight)
@@ -407,7 +520,8 @@ struct AddEditPetView: View {
                     kind: petKind,
                     photoUrl: photoUrl,
                     currentWeight: weight,
-                    dateOfBirth: dateOfBirth
+                    dateOfBirth: dateOfBirth,
+                    clearPhoto: shouldClearPhoto
                 )
 
                 // Update calorie goal if changed
@@ -469,7 +583,11 @@ struct AddEditPetView: View {
         dateOfBirth = nil
         selectedPhoto = nil
         selectedImage = nil
+        originalImage = nil
         existingPhotoUrl = nil
+        hasRemovedBackground = false
+        photoWasRemoved = false
+        isLoadingPhoto = false
         calorieGoal = ""
         usesSuggestedGoal = false
         hasSaved = false  // Allow saving again for "Add Another"
