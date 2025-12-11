@@ -209,6 +209,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 // Also tell the view to refresh when it becomes visible
                 NavigationManager.shared.requestTabRefresh(.family)
             }
+        case "pet_added", "pet_updated", "pet_deleted":
+            // Pet changes from other family members - refresh pets list
+            DataService.shared.invalidatePetsCache()
+            NavigationManager.shared.requestTabRefresh(.family)
         default:
             break
         }
@@ -257,6 +261,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             break
         case "member_joined", "role_changed", "member_left", "member_left_promoted", "account_deleted", "account_deleted_promoted":
             // Use deep link URL - onOpenURL fires after app is fully ready
+            if let url = URL(string: "orestsjournal://family?refresh=true") {
+                UIApplication.shared.open(url)
+            }
+        case "pet_added", "pet_updated", "pet_deleted":
+            // Navigate to family tab where pets are displayed
             if let url = URL(string: "orestsjournal://family?refresh=true") {
                 UIApplication.shared.open(url)
             }

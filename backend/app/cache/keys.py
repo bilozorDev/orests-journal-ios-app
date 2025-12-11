@@ -10,6 +10,7 @@ TTL_FOODS = 3600            # 1 hour (organization-wide)
 TTL_DOSE_COUNTS = 60        # 1 minute (changes frequently)
 TTL_LAST_DOSE = 60          # 1 minute
 TTL_FAMILY = 300            # 5 minutes (family details with members)
+TTL_PETS = 300              # 5 minutes (matches iOS petsCacheTTL)
 
 
 def key_dashboard(pet_id: str, date: str) -> str:
@@ -69,3 +70,8 @@ def key_all_doses(org_id: str, pet_id: str = None, offset: int = 0, limit: int =
 def key_family_detail(family_id: str) -> str:
     """Cache key for family details including members."""
     return f"family:{family_id}"
+
+
+def key_pets(org_id: str) -> str:
+    """Cache key for organization pets list."""
+    return f"pets:{org_id}"

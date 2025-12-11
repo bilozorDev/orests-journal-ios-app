@@ -14,6 +14,10 @@ from app.schemas.pet import (
     HealthRecordCreate, HealthRecordResponse,
 )
 from app.services.storage import storage_service
+from app.services.apns import apns_service
+from app.services.family_notifications import get_other_family_member_tokens
+from app.cache.helpers import cache_get, cache_set, cache_delete
+from app.cache.keys import key_pets, TTL_PETS
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +73,47 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
     return photo_url
 
 
+async def notify_family_pet_change(
+    db: AsyncSession,
+    org_id: UUID,
+    exclude_user_id: UUID,
+    notification_type: str,
+    pet_name: str,
+    pet_id: UUID,
+) -> None:
+    """Send push notification to other family members about pet changes.
+
+    Args:
+        db: Database session
+        org_id: The family/org ID
+        exclude_user_id: User who triggered the change (won't receive notification)
+        notification_type: One of 'pet_added', 'pet_updated', 'pet_deleted'
+        pet_name: Name of the pet for notification text
+        pet_id: ID of the pet
+    """
+    tokens = await get_other_family_member_tokens(db, org_id, exclude_user_id)
+    if not tokens:
+        return
+
+    titles = {
+        "pet_added": f"{pet_name} was added",
+        "pet_updated": f"{pet_name} was updated",
+        "pet_deleted": f"{pet_name} was removed",
+    }
+
+    await apns_service.send_to_multiple(
+        device_tokens=tokens,
+        title=titles.get(notification_type, "Pet updated"),
+        body="Tap to refresh",
+        data={
+            "type": notification_type,
+            "family_id": str(org_id),
+            "pet_id": str(pet_id),
+            "pet_name": pet_name,
+        },
+    )
+
+
 @router.get("", response_model=PetListResponse)
 async def list_pets(
     db: AsyncSession = Depends(get_db),
@@ -86,11 +131,23 @@ async def list_pets(
     # Verify user belongs to this family
     await verify_family_access(db, user_id, org_id)
 
+    # Check cache first
+    cache_key = key_pets(org_id)
+    cached = await cache_get(cache_key, PetListResponse)
+    if cached:
+        return cached
+
+    # Fetch from database
     query = select(Pet).where(Pet.org_id == org_id).order_by(Pet.created_at.desc())
     result = await db.execute(query)
     pets = result.scalars().all()
 
-    return PetListResponse(pets=[PetResponse.model_validate(p) for p in pets])
+    response = PetListResponse(pets=[PetResponse.model_validate(p) for p in pets])
+
+    # Cache the response
+    await cache_set(cache_key, response, TTL_PETS)
+
+    return response
 
 
 @router.post("", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
@@ -130,6 +187,12 @@ async def create_pet(
 
     await db.commit()
     await db.refresh(pet)
+
+    # Invalidate cache and notify other family members
+    await cache_delete(key_pets(org_id))
+    await notify_family_pet_change(
+        db, pet.org_id, UUID(user_id), "pet_added", pet.name, pet.id
+    )
 
     return PetResponse.model_validate(pet)
 
@@ -183,6 +246,12 @@ async def update_pet(
             # Don't fail the update if photo cleanup fails
             logger.error(f"Failed to delete old pet photo: {e}")
 
+    # Invalidate cache and notify other family members
+    await cache_delete(key_pets(str(pet.org_id)))
+    await notify_family_pet_change(
+        db, pet.org_id, UUID(user_id), "pet_updated", pet.name, pet.id
+    )
+
     return PetResponse.model_validate(pet)
 
 
@@ -196,8 +265,10 @@ async def delete_pet(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
-    # Store photo URL for cleanup before deleting
+    # Store data for cleanup and notification before deleting
     photo_url = pet.photo_url
+    org_id = pet.org_id
+    pet_name = pet.name
 
     await db.delete(pet)
     await db.commit()
@@ -211,6 +282,12 @@ async def delete_pet(
         except Exception as e:
             # Don't fail the delete if photo cleanup fails
             logger.error(f"Failed to delete pet photo on pet deletion: {e}")
+
+    # Invalidate cache and notify other family members
+    await cache_delete(key_pets(str(org_id)))
+    await notify_family_pet_change(
+        db, org_id, UUID(user_id), "pet_deleted", pet_name, pet_id
+    )
 
 
 # Health Records
