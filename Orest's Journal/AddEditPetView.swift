@@ -401,6 +401,9 @@ struct AddEditPetView: View {
 
                             do {
                                 if let data = try await newValue?.loadTransferable(type: Data.self) {
+                                    // Check if task was cancelled while loading
+                                    if Task.isCancelled { return }
+
                                     if let image = UIImage(data: data) {
                                         selectedImage = image
                                         originalImage = image  // Store original
@@ -413,7 +416,10 @@ struct AddEditPetView: View {
                                     errorMessage = "Could not load the selected photo"
                                 }
                             } catch {
-                                errorMessage = "Failed to load photo: \(error.localizedDescription)"
+                                // Don't show error if task was cancelled
+                                if !Task.isCancelled {
+                                    errorMessage = "Failed to load photo: \(error.localizedDescription)"
+                                }
                             }
                             isLoadingPhoto = false
                         }

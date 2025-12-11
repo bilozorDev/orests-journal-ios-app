@@ -12,6 +12,11 @@ struct Orest_s_JournalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Check for test authentication token (UI testing mode)
+        AuthManager.shared.checkForTestAuth()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -47,10 +52,12 @@ struct Orest_s_JournalApp: App {
         switch url.host {
         case "family":
             // Invalidate cache and navigate to family
-            if let familyId = AuthManager.shared.currentFamily?.id {
-                DataService.shared.invalidateFamilyCache(for: familyId)
+            Task { @MainActor in
+                if let familyId = AuthManager.shared.currentFamily?.id {
+                    await DataService.shared.invalidateFamilyCache(for: familyId)
+                }
+                NavigationManager.shared.navigate(to: .familyManagement)
             }
-            NavigationManager.shared.navigate(to: .familyManagement)
         default:
             break
         }

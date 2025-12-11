@@ -14,8 +14,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-alembic upgrade head                    # Run database migrations
-uvicorn app.main:app --reload           # Start dev server at localhost:8000
+make start                              # Start Postgres + Redis (Docker)
+make migrate                            # Run database migrations
+make run                                # Start dev server at localhost:8000
+```
+
+### Backend Makefile Commands
+| Command | Description |
+|---------|-------------|
+| `make start` | Start Postgres + Redis containers |
+| `make stop` | Stop containers (keeps data) |
+| `make reset-db` | Fast reset - truncate all tables, clear Redis |
+| `make nuke-db` | Full reset - destroy volumes, recreate, run migrations |
+| `make migrate` | Run Alembic migrations |
+| `make run` | Start FastAPI dev server |
+| `make celery` | Start Celery worker |
+| `make celery-beat` | Start Celery beat scheduler |
+
+### Switch Database Environment
+```bash
+cd backend
+cp .env.local .env   # Use local Postgres (Docker)
+cp .env.neon .env    # Use Neon cloud database
 ```
 
 ## Architecture
@@ -121,6 +141,64 @@ Delete the app from device and reinstall, or clear Application Support directory
 3. Implement cache get/set in the data fetching method
 4. Add cache invalidation in all mutation methods
 5. Add `requestTabRefresh()` call where appropriate for UI updates
+
+## UI Testing
+
+### Running UI Tests
+UI tests require:
+1. **Backend running** - The tests authenticate via the backend `/auth/test-login` endpoint
+2. **Simulator** - Tests run on iOS Simulator (not physical device)
+
+**Preferred Simulator**: iPhone 16 Pro (iOS 18.6) - UUID: `D718C840-01E8-489A-9322-2DC4B9CF8D63`
+
+### Run All UI Tests
+```bash
+# Using xcodebuild (run from project root)
+xcodebuild test \
+  -project "Orest's Journal.xcodeproj" \
+  -scheme "Orest's Journal" \
+  -destination 'platform=iOS Simulator,id=D718C840-01E8-489A-9322-2DC4B9CF8D63' \
+  -parallel-testing-enabled NO
+```
+
+### Run Specific Test Class
+```bash
+xcodebuild test \
+  -project "Orest's Journal.xcodeproj" \
+  -scheme "Orest's Journal" \
+  -destination 'platform=iOS Simulator,id=D718C840-01E8-489A-9322-2DC4B9CF8D63' \
+  -only-testing:"Orest's JournalUITests/FamilyMemberManagementTests"
+```
+
+### Run Single Test Method
+```bash
+xcodebuild test \
+  -project "Orest's Journal.xcodeproj" \
+  -scheme "Orest's Journal" \
+  -destination 'platform=iOS Simulator,id=D718C840-01E8-489A-9322-2DC4B9CF8D63' \
+  -only-testing:"Orest's JournalUITests/CreateFamilyFlowTests/testCreateFamilyAndAddPet"
+```
+
+### Using XcodeBuildMCP (Claude Code)
+```
+# Run all tests on simulator
+test_sim({ projectPath: 'Orest\'s Journal.xcodeproj', scheme: 'Orest\'s Journal', simulatorId: 'D718C840-01E8-489A-9322-2DC4B9CF8D63' })
+```
+
+### Test Structure
+- **BaseUITest.swift** - Base class with auth helpers, multi-user setup, cleanup
+- **Tests/**
+  - `CreateFamilyFlowTests.swift` - Create family flow
+  - `AddPetFlowTests.swift` - Add pet flow
+  - `FamilyMemberManagementTests.swift` - Join family, change roles, remove members
+  - `PetManagementTests.swift` - Add/edit/delete pets
+  - `EndToEndFlowTests.swift` - Full user journeys
+
+### Test Data Cleanup
+Tests automatically clean up created users via `/auth/test-cleanup/{test_user_id}` in teardown.
+
+### API Base URL
+Tests use ngrok URL configured in `BaseUITest.apiBaseURL`. Update this when ngrok URL changes.
 
 ## API Documentation
 When backend is running: `http://localhost:8000/docs` (Swagger) or `/redoc`

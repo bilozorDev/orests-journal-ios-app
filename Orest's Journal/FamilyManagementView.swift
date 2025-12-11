@@ -38,6 +38,12 @@ struct FamilyManagementView: View {
     // Archived pets
     @State private var showArchivedPets = false
 
+    // Leave family state
+    @State private var showLeaveFamilyConfirmation = false
+    @State private var showLeaveFamilyWarning = false  // Warning when deleting family
+    @State private var showAdminPickerForLeave = false
+    @State private var isLeavingFamily = false
+
     var activePets: [Pet] {
         pets.filter { !($0.isArchived ?? false) }
     }
@@ -50,11 +56,39 @@ struct FamilyManagementView: View {
         authManager.currentFamily?.role == "admin"
     }
 
+    /// Other admins besides the current user
+    var otherAdmins: [FamilyMemberResponse] {
+        familyMembers.filter { $0.role == "admin" && $0.userId != authManager.userId }
+    }
+
+    /// Other members (non-admins) besides the current user
+    var otherNonAdminMembers: [FamilyMemberResponse] {
+        familyMembers.filter { $0.role != "admin" && $0.userId != authManager.userId }
+    }
+
+    /// Whether the current user is the only admin
+    var isOnlyAdmin: Bool {
+        isAdmin && otherAdmins.isEmpty
+    }
+
+    /// Whether there are other members (excluding current user)
+    var hasOtherMembers: Bool {
+        familyMembers.count > 1
+    }
+
+    /// Eligible members to promote as admin (non-admins, excluding self)
+    var eligibleForPromotion: [FamilyMemberResponse] {
+        familyMembers.filter { $0.role != "admin" && $0.userId != authManager.userId }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Household Section (combined family info + members)
                 householdSection
+
+                // Leave Family Button
+                leaveFamilyButton
 
                 // Pets Section
                 petsSection
@@ -112,10 +146,25 @@ struct FamilyManagementView: View {
                 )
             }
         }
+        .sheet(isPresented: $showAdminPickerForLeave) {
+            AdminPickerSheet(
+                members: eligibleForPromotion,
+                title: "Select New Admin",
+                message: "You are the only admin. Please select a member to become the new admin before leaving.",
+                confirmButtonText: "Confirm & Leave",
+                onConfirm: { newAdmin in
+                    Task {
+                        await leaveFamilyWithPromotion(newAdminUserId: newAdmin.userId)
+                    }
+                }
+            )
+        }
         .alert("Delete Pet", isPresented: $showDeletePetConfirmation) {
             Button("Cancel", role: .cancel) {
                 petToDelete = nil
             }
+            .accessibilityIdentifier(AccessibilityIdentifier.cancelDeletePetButton)
+
             Button("Delete", role: .destructive) {
                 if let pet = petToDelete {
                     Task {
@@ -123,6 +172,7 @@ struct FamilyManagementView: View {
                     }
                 }
             }
+            .accessibilityIdentifier(AccessibilityIdentifier.confirmDeletePetButton)
         } message: {
             Text("Are you sure you want to delete \"\(petToDelete?.name ?? "")\"? This action cannot be undone.")
         }
@@ -130,6 +180,8 @@ struct FamilyManagementView: View {
             Button("Cancel", role: .cancel) {
                 memberToRemove = nil
             }
+            .accessibilityIdentifier("cancel_remove_member_button")
+
             Button("Remove", role: .destructive) {
                 if let member = memberToRemove {
                     Task {
@@ -137,12 +189,38 @@ struct FamilyManagementView: View {
                     }
                 }
             }
+            .accessibilityIdentifier(AccessibilityIdentifier.confirmRemoveMemberButton)
         } message: {
             let memberName = memberToRemove?.displayName ?? "this member"
             Text("Are you sure you want to remove \(memberName) from the family?")
         }
-        .task(id: navigationManager.tabsNeedingRefresh.contains(.family)) {
+        .alert("Leave Family", isPresented: $showLeaveFamilyConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            .accessibilityIdentifier(AccessibilityIdentifier.cancelLeaveFamilyButton)
+
+            Button("Leave", role: .destructive) {
+                Task {
+                    await leaveFamily()
+                }
+            }
+            .accessibilityIdentifier(AccessibilityIdentifier.confirmLeaveFamilyButton)
+        } message: {
+            Text("Are you sure you want to leave this family?")
+        }
+        .alert("Delete Family", isPresented: $showLeaveFamilyWarning) {
+            Button("Cancel", role: .cancel) {}
+
+            Button("Delete Family & Leave", role: .destructive) {
+                Task {
+                    await leaveFamily()
+                }
+            }
+        } message: {
+            Text("You are the only member of this family. Leaving will permanently delete the family and all its data.")
+        }
+        .task(id: navigationManager.familyRefreshTrigger) {
             // Consolidated refresh logic: handles initial load and subsequent refresh requests
+            // Using counter-based trigger ensures task always re-runs on refresh request
             let needsRefresh = navigationManager.tabsNeedingRefresh.contains(.family)
             if !hasLoaded || needsRefresh {
                 await loadData(forceRefresh: needsRefresh)
@@ -235,6 +313,7 @@ struct FamilyManagementView: View {
                                 Image(systemName: "doc.on.doc")
                                     .foregroundColor(.blue)
                             }
+                            .accessibilityIdentifier(AccessibilityIdentifier.copyInviteCodeButton)
                             .accessibilityLabel("Copy invite code to clipboard")
 
                             Button(action: {
@@ -243,6 +322,7 @@ struct FamilyManagementView: View {
                                 Image(systemName: "square.and.arrow.up")
                                     .foregroundColor(.blue)
                             }
+                            .accessibilityIdentifier(AccessibilityIdentifier.shareInviteCodeButton)
                             .accessibilityLabel("Share invite code")
                         }
                         .padding()
@@ -256,6 +336,44 @@ struct FamilyManagementView: View {
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+
+    // MARK: - Leave Family Button
+
+    private var leaveFamilyButton: some View {
+        Button(action: handleLeaveFamilyTap) {
+            HStack {
+                if isLeavingFamily {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                }
+                Text("Leave Family")
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.orange)
+            .foregroundColor(.white)
+            .cornerRadius(12)
+        }
+        .disabled(isLeavingFamily)
+        .accessibilityIdentifier(AccessibilityIdentifier.leaveFamilyButton)
+    }
+
+    private func handleLeaveFamilyTap() {
+        // Scenario 1: Only admin with no other members -> show warning about deleting family
+        if isOnlyAdmin && !hasOtherMembers {
+            showLeaveFamilyWarning = true
+        }
+        // Scenario 2: Only admin with other members -> must pick new admin
+        else if isOnlyAdmin && hasOtherMembers {
+            showAdminPickerForLeave = true
+        }
+        // Scenario 3: Not only admin (either member or admin with other admins) -> simple leave
+        else {
+            showLeaveFamilyConfirmation = true
         }
     }
 
@@ -311,6 +429,7 @@ struct FamilyManagementView: View {
                     }) {
                         Label("Change Role", systemImage: "person.badge.key")
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.changeRoleButton)
 
                     Button(role: .destructive, action: {
                         memberToRemove = member
@@ -318,11 +437,13 @@ struct FamilyManagementView: View {
                     }) {
                         Label("Remove", systemImage: "person.badge.minus")
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.removeMemberButton)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundColor(.gray)
                         .accessibilityLabel("Member options for \(member.displayName)")
                 }
+                .accessibilityIdentifier("\(AccessibilityIdentifier.memberOptionsMenu)_\(member.userId)")
             }
         }
         .padding(.horizontal)
@@ -348,6 +469,7 @@ struct FamilyManagementView: View {
                         .font(.title3)
                         .foregroundColor(.blue)
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.addPetButton)
                 .accessibilityLabel("Add new pet")
             }
 
@@ -435,6 +557,7 @@ struct FamilyManagementView: View {
                 }) {
                     Label("Edit", systemImage: "pencil")
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.editPetButton)
 
                 Button(role: .destructive, action: {
                     petToDelete = pet
@@ -442,11 +565,13 @@ struct FamilyManagementView: View {
                 }) {
                     Label("Delete", systemImage: "trash")
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.deletePetButton)
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundColor(.gray)
                     .accessibilityLabel("Pet options for \(pet.name)")
             }
+            .accessibilityIdentifier("\(AccessibilityIdentifier.petOptionsMenu)_\(pet.id.uuidString)")
         }
         .padding()
         .background(Color.gray.opacity(0.1))
@@ -527,12 +652,15 @@ struct FamilyManagementView: View {
         }
         let response = try await DataService.shared.getFamilyMembers(for: currentFamily.id, forceRefresh: forceRefresh)
 
-        // Update authManager with fresh family data (preserve role from current family)
+        // Get current user's role from the fresh members list
+        let currentUserRole = response.members.first { $0.userId == authManager.userId }?.role ?? currentFamily.role
+
+        // Update authManager with fresh family data including updated role
         let updatedFamily = AppFamily(
             id: response.id,
             name: response.name,
             inviteCode: response.inviteCode,
-            role: currentFamily.role
+            role: currentUserRole
         )
         authManager.updateCurrentFamily(updatedFamily)
 
@@ -566,6 +694,35 @@ struct FamilyManagementView: View {
         }
 
         memberBeingRemoved = nil
+    }
+
+    private func leaveFamily() async {
+        isLeavingFamily = true
+
+        do {
+            _ = try await authManager.leaveFamily()
+            // AuthManager.handleLeftFamily() is called inside leaveFamily()
+            // which will update state and show LeftFamilyView
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLeavingFamily = false
+    }
+
+    private func leaveFamilyWithPromotion(newAdminUserId: String) async {
+        isLeavingFamily = true
+        showAdminPickerForLeave = false
+
+        do {
+            _ = try await authManager.leaveFamily(newAdminUserId: newAdminUserId)
+            // AuthManager.handleLeftFamily() is called inside leaveFamily()
+            // which will update state and show LeftFamilyView
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLeavingFamily = false
     }
 
     // MARK: - Helpers

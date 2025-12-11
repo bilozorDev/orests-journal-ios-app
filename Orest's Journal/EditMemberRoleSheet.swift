@@ -62,6 +62,7 @@ struct EditMemberRoleSheet: View {
                                 Text(role.capitalized)
                             }
                             .tag(role)
+                            .accessibilityIdentifier(role == "admin" ? AccessibilityIdentifier.rolePickerAdmin : AccessibilityIdentifier.rolePickerMember)
                         }
                     }
                     .pickerStyle(.inline)
@@ -108,6 +109,7 @@ struct EditMemberRoleSheet: View {
                     }
                 }
             }
+            .disabled(isSaving)
             .navigationTitle("Change Role")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -115,6 +117,7 @@ struct EditMemberRoleSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.cancelRoleButton)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -124,6 +127,7 @@ struct EditMemberRoleSheet: View {
                         }
                     }
                     .disabled(!hasChanges || isSaving)
+                    .accessibilityIdentifier(AccessibilityIdentifier.saveRoleButton)
                 }
             }
             .overlay {
@@ -162,6 +166,8 @@ struct EditMemberRoleSheet: View {
                 joinedAt: updatedMember.joinedAt
             )
             onSave?(response)
+            isSaving = false
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

@@ -68,6 +68,7 @@ struct FamilySetupView: View {
                     .foregroundColor(.white)
                     .cornerRadius(12)
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.createFamilyButton)
 
                 Button(action: { mode = .join }) {
                     HStack {
@@ -80,6 +81,7 @@ struct FamilySetupView: View {
                     .foregroundColor(.white)
                     .cornerRadius(12)
                 }
+                .accessibilityIdentifier(AccessibilityIdentifier.joinFamilyButton)
             }
             .padding(.horizontal, 32)
 
@@ -96,6 +98,7 @@ struct FamilySetupView: View {
                     .textContentType(.organizationName)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled(false)
+                    .accessibilityIdentifier(AccessibilityIdentifier.familyNameTextField)
             }
 
             Section(footer: Text("You can invite family members later by sharing your invite code.")) {
@@ -124,6 +127,7 @@ struct FamilySetupView: View {
                             .foregroundColor(.blue)
                     }
                     .disabled(familyName.isEmpty)
+                    .accessibilityIdentifier(AccessibilityIdentifier.submitCreateFamilyButton)
                 }
             }
         }
@@ -151,6 +155,7 @@ struct FamilySetupView: View {
                     .onChange(of: inviteCode) { _, newValue in
                         inviteCode = newValue.uppercased()
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifier.inviteCodeTextField)
             }
 
             if let error = errorMessage {
@@ -175,6 +180,7 @@ struct FamilySetupView: View {
                             .foregroundColor(.green)
                     }
                     .disabled(inviteCode.isEmpty)
+                    .accessibilityIdentifier(AccessibilityIdentifier.submitJoinFamilyButton)
                 }
             }
         }

@@ -9,48 +9,92 @@ FastAPI backend for the Orest's Journal pet health tracking iOS app.
 - **Clerk** - Authentication (Organizations = Families)
 - **Cloudflare R2** - File storage (S3-compatible)
 
-## Setup
+## Local Development Setup
 
 ### 1. Create virtual environment
 
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment
-
-Copy `.env.example` to `.env` and fill in your values:
+### 2. Start local services (Postgres + Redis)
 
 ```bash
-cp .env.example .env
+make start
 ```
 
-Required environment variables:
-- `DATABASE_URL` - Neon PostgreSQL connection string
-- `CLERK_SECRET_KEY` - Clerk API secret key
-- `CLERK_JWT_ISSUER` - Clerk JWT issuer URL
-- `S3_*` - Cloudflare R2 credentials
+This starts Docker containers for:
+- **PostgreSQL** (pgvector) on port 5432
+- **Redis** on port 6379
+
+### 3. Configure environment
+
+```bash
+cp .env.local .env   # Use local database
+# Or: cp .env.neon .env  # Use Neon cloud database
+```
 
 ### 4. Run database migrations
 
 ```bash
-alembic upgrade head
+make migrate
+# Or: alembic upgrade head
 ```
 
 ### 5. Start development server
 
 ```bash
-uvicorn app.main:app --reload
+make run
+# Or: uvicorn app.main:app --reload
 ```
 
 API will be available at `http://localhost:8000`
+
+## Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make start` | Start Postgres + Redis containers |
+| `make stop` | Stop containers (keeps data) |
+| `make reset-db` | Fast reset - truncate all tables, clear Redis |
+| `make nuke-db` | Full reset - destroy volumes, recreate, run migrations |
+| `make logs` | View container logs |
+| `make migrate` | Run Alembic migrations |
+| `make run` | Start FastAPI dev server |
+| `make celery` | Start Celery worker |
+| `make celery-beat` | Start Celery beat scheduler |
+
+## Database Management
+
+### Quick Reset (keeps schema)
+```bash
+make reset-db
+```
+Truncates all tables and clears Redis. Fast, no need to re-run migrations.
+
+### Full Reset (destroys everything)
+```bash
+make nuke-db
+```
+Destroys Docker volumes and recreates database from scratch. Use when schema changes.
+
+### Switch Between Local and Cloud Database
+```bash
+cp .env.local .env   # Local Postgres (Docker)
+cp .env.neon .env    # Neon cloud database
+```
+
+## TablePlus Connection (Local)
+
+| Field | Value |
+|-------|-------|
+| Host | `localhost` |
+| Port | `5432` |
+| User | `postgres` |
+| Password | `postgres` |
+| Database | `orests_journal` |
 
 ## API Documentation
 

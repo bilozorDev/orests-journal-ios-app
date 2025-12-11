@@ -29,7 +29,13 @@ struct ContentView: View {
             if isLoading || !authManager.isLoaded {
                 ProgressView("Loading...")
             } else if authManager.isAuthenticated {
-                if isCheckingStatus {
+                if authManager.wasRemovedFromFamily {
+                    RemovedFromFamilyView(familyName: authManager.removedFamilyName)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                } else if authManager.leftFamily {
+                    LeftFamilyView(familyName: authManager.leftFamilyName)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                } else if isCheckingStatus {
                     ProgressView("Setting up...")
                 } else if authManager.needsProfileSetup {
                     ProfileSetupView()
@@ -106,26 +112,32 @@ struct MainTabView: View {
             PlaceholderView(title: "Dashboard", icon: "house")
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(Tab.home)
+                .accessibilityIdentifier(AccessibilityIdentifier.homeTab)
 
             PlaceholderView(title: "Food", icon: "pawprint")
                 .tabItem { Label("Food", systemImage: "pawprint") }
                 .tag(Tab.food)
+                .accessibilityIdentifier(AccessibilityIdentifier.foodTab)
 
             PlaceholderView(title: "Medication", icon: "syringe")
                 .tabItem { Label("Medication", systemImage: "syringe") }
                 .tag(Tab.medication)
+                .accessibilityIdentifier(AccessibilityIdentifier.medicationTab)
 
             PlaceholderView(title: "Health", icon: "heart")
                 .tabItem { Label("Health", systemImage: "heart") }
                 .tag(Tab.health)
+                .accessibilityIdentifier(AccessibilityIdentifier.healthTab)
 
             FamilyManagementView()
                 .tabItem { Label("Family", systemImage: "figure.2.and.child.holdinghands") }
                 .tag(Tab.family)
+                .accessibilityIdentifier(AccessibilityIdentifier.familyTab)
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gear") }
                 .tag(Tab.settings)
+                .accessibilityIdentifier(AccessibilityIdentifier.settingsTab)
         }
     }
 }
@@ -157,11 +169,10 @@ struct PlaceholderView: View {
 
 struct SettingsView: View {
     private var authManager = AuthManager.shared
-    @State private var pets: [Pet] = []
-    @State private var isLoading = false
+    @State private var familyMembers: [FamilyMemberResponse] = []
     @State private var hasLoaded = false
-    @State private var errorMessage: String?
-    @State private var showSignOutError = false
+    @State private var showEditProfile = false
+    @State private var showDeleteAccount = false
 
     var body: some View {
         NavigationStack {
@@ -169,49 +180,44 @@ struct SettingsView: View {
                 VStack(spacing: 20) {
                     accountSection
 
-                    if let family = authManager.currentFamily {
-                        familySection(family: family)
-                    }
-
-                    petsSection
-
                     Spacer()
 
                     signOutButton
+
+                    deleteAccountButton
                 }
                 .padding()
-            }
-            .overlay {
-                if isLoading && !hasLoaded {
-                    ProgressView("Loading...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(uiColor: .systemBackground))
-                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 guard !hasLoaded else { return }
-                await loadData()
+                await loadFamilyMembers()
             }
-            .refreshable {
-                await loadData()
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileSheet()
             }
-            .alert("Sign Out Error", isPresented: $showSignOutError) {
-                Button("OK") {
-                    showSignOutError = false
-                }
-            } message: {
-                Text(errorMessage ?? "Failed to sign out")
+            .sheet(isPresented: $showDeleteAccount) {
+                DeleteAccountSheet(familyMembers: familyMembers)
             }
         }
     }
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Account")
-                .font(.headline)
-                .foregroundColor(.secondary)
+            HStack {
+                Text("Account")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button("Edit") {
+                    showEditProfile = true
+                }
+                .font(.subheadline)
+                .accessibilityIdentifier(AccessibilityIdentifier.editProfileButton)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -239,140 +245,6 @@ struct SettingsView: View {
         }
     }
 
-    private func familySection(family: AppFamily) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Family")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "house.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.green)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(family.name)
-                            .font(.body)
-                            .fontWeight(.medium)
-
-                        Text("Role: \(family.role.capitalized)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Invite Code")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        Text(family.inviteCode)
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.semibold)
-
-                        Spacer()
-
-                        Button(action: {
-                            UIPasteboard.general.string = family.inviteCode
-                        }) {
-                            Image(systemName: "doc.on.doc")
-                                .foregroundColor(.blue)
-                        }
-                        .accessibilityLabel("Copy invite code to clipboard")
-                    }
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(8)
-                }
-                .padding(.top, 4)
-
-                Text("Share this code to invite family members")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    private var petsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Pets")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            if pets.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "pawprint.circle")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray)
-                    Text("No pets in family")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(pets) { pet in
-                        HStack(spacing: 12) {
-                            if let photoUrl = pet.photoUrl, let url = URL(string: photoUrl) {
-                                AsyncImage(url: url) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                } placeholder: {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.2))
-                                        .overlay(ProgressView())
-                                }
-                                .frame(width: 60, height: 60)
-                                .clipShape(Circle())
-                            } else {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 60, height: 60)
-                                    .overlay(
-                                        Image(systemName: "pawprint.fill")
-                                            .foregroundColor(.gray)
-                                    )
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(pet.name)
-                                    .font(.body)
-                                    .fontWeight(.medium)
-
-                                Text(pet.kind)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-
-                                if let weight = pet.currentWeight {
-                                    Text("\(Formatters.formatWeight(weight)) lbs")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                }
-            }
-        }
-    }
-
     private var signOutButton: some View {
         Button(action: signOut) {
             HStack {
@@ -386,22 +258,43 @@ struct SettingsView: View {
             .cornerRadius(12)
         }
         .padding(.top, 20)
+        .accessibilityIdentifier(AccessibilityIdentifier.signOutButton)
     }
 
-    private func loadData() async {
-        isLoading = true
-        errorMessage = nil
+    private var deleteAccountButton: some View {
+        Button(action: { showDeleteAccount = true }) {
+            HStack {
+                Image(systemName: "trash.fill")
+                Text("Delete Account")
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.red.opacity(0.1))
+            .foregroundColor(.red)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.red, lineWidth: 1)
+            )
+        }
+        .accessibilityIdentifier(AccessibilityIdentifier.deleteAccountButton)
+    }
 
-        do {
-            pets = try await DataService.shared.getPets()
+    private func loadFamilyMembers() async {
+        // Load family members (needed for delete account flow)
+        guard let familyId = authManager.currentFamily?.id else {
             hasLoaded = true
-        } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
-            // Load cancelled during navigation - this is expected behavior
-        } catch {
-            errorMessage = error.localizedDescription
+            return
         }
 
-        isLoading = false
+        do {
+            let response = try await DataService.shared.getFamilyMembers(for: familyId)
+            familyMembers = response.members
+        } catch {
+            // Silently fail - not critical for settings
+        }
+
+        hasLoaded = true
     }
 
     private func signOut() {

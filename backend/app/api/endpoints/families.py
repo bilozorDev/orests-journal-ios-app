@@ -2,7 +2,7 @@
 Family management endpoints with invite code system and brute force protection.
 """
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel
@@ -43,6 +43,11 @@ class UpdateFamilyRequest(BaseModel):
     name: str
 
 
+class UpdateRoleRequest(BaseModel):
+    """Request to update a member's role."""
+    role: Literal["admin", "member"]
+
+
 class FamilyMemberResponse(BaseModel):
     """Family member data for responses."""
     id: str
@@ -75,6 +80,18 @@ class JoinFamilyResponse(BaseModel):
     """Response after successfully joining a family."""
     family: FamilyResponse
     message: str
+
+
+class LeaveFamilyRequest(BaseModel):
+    """Request to leave a family with optional admin promotion."""
+    new_admin_user_id: Optional[str] = None  # Required if only admin with members
+
+
+class LeaveFamilyResponse(BaseModel):
+    """Response after leaving a family."""
+    success: bool
+    action: Literal["left", "left_promoted", "family_deleted"]
+    family_name: str
 
 
 # --- Helper Functions ---
@@ -174,6 +191,63 @@ async def get_other_family_member_tokens(
     )
     tokens_result = await db.execute(tokens_query)
     return list(tokens_result.scalars().all())
+
+
+async def get_user_device_tokens(
+    db: AsyncSession,
+    user_id: UUID,
+) -> list[str]:
+    """Get active device tokens for a specific user."""
+    tokens_query = select(UserDeviceToken.device_token).where(
+        and_(
+            UserDeviceToken.user_id == user_id,
+            UserDeviceToken.is_active == True,
+        )
+    )
+    tokens_result = await db.execute(tokens_query)
+    return list(tokens_result.scalars().all())
+
+
+async def get_admin_device_tokens(
+    db: AsyncSession,
+    family_id: UUID,
+    exclude_user_id: Optional[UUID] = None,
+) -> list[str]:
+    """Get active device tokens for family admins, optionally excluding a user."""
+    # Get user IDs of admins
+    admins_query = select(FamilyMember.user_id).where(
+        FamilyMember.family_id == family_id,
+        FamilyMember.role == "admin",
+    )
+    if exclude_user_id:
+        admins_query = admins_query.where(FamilyMember.user_id != exclude_user_id)
+
+    admins_result = await db.execute(admins_query)
+    admin_ids = list(admins_result.scalars().all())
+
+    if not admin_ids:
+        return []
+
+    # Get their active device tokens
+    tokens_query = select(UserDeviceToken.device_token).where(
+        and_(
+            UserDeviceToken.user_id.in_(admin_ids),
+            UserDeviceToken.is_active == True,
+        )
+    )
+    tokens_result = await db.execute(tokens_query)
+    return list(tokens_result.scalars().all())
+
+
+def get_display_name(user: Optional[User]) -> str:
+    """Get display name for a user."""
+    if not user:
+        return "Someone"
+    if user.first_name:
+        return user.first_name
+    if user.email:
+        return user.email.split("@")[0]
+    return "Someone"
 
 
 # --- Endpoints ---
@@ -570,10 +644,324 @@ async def remove_family_member(
                 detail="Cannot remove the last admin. Transfer admin role first.",
             )
 
+    # Get family name for notification before deleting
+    family_query = select(Family).where(Family.id == family_uuid)
+    family_result = await db.execute(family_query)
+    family = family_result.scalar_one_or_none()
+    family_name = family.name if family else "the family"
+
     await db.delete(target_membership)
     await db.commit()
 
     # Invalidate family cache since member list changed
     await cache_delete(key_family_detail(family_id))
 
+    # Send notification to the removed user (not for self-removal)
+    if not is_self:
+        tokens = await get_user_device_tokens(db, target_uuid)
+        if tokens:
+            await apns_service.send_to_multiple(
+                device_tokens=tokens,
+                title="You were removed",
+                body=f"You are no longer a member of {family_name}",
+                data={
+                    "type": "member_removed",
+                    "family_id": str(family_uuid),
+                    "family_name": family_name,
+                },
+            )
+
     return {"message": "Member removed successfully"}
+
+
+@router.patch("/{family_id}/members/{member_user_id}/role", response_model=FamilyMemberResponse)
+async def update_member_role(
+    family_id: str,
+    member_user_id: str,
+    request: UpdateRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Update a family member's role. Only admins can change roles.
+    Sends a notification to the affected member.
+    """
+    family_uuid = UUID(family_id)
+    user_uuid = UUID(user_id)
+    target_uuid = UUID(member_user_id)
+    new_role = request.role  # Validated by Pydantic Literal type
+
+    # Check if current user is an admin of this family
+    current_membership_query = select(FamilyMember).where(
+        FamilyMember.family_id == family_uuid,
+        FamilyMember.user_id == user_uuid,
+    )
+    result = await db.execute(current_membership_query)
+    current_membership = result.scalar_one_or_none()
+
+    if not current_membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this family",
+        )
+
+    if current_membership.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only family admins can change member roles",
+        )
+
+    # Get target membership with user info
+    target_membership_query = (
+        select(FamilyMember)
+        .options(selectinload(FamilyMember.user))
+        .where(
+            FamilyMember.family_id == family_uuid,
+            FamilyMember.user_id == target_uuid,
+        )
+    )
+    result = await db.execute(target_membership_query)
+    target_membership = result.scalar_one_or_none()
+
+    if not target_membership:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found in this family",
+        )
+
+    # Prevent demoting the last admin
+    if target_membership.role == "admin" and new_role == "member":
+        admin_count_query = select(func.count()).where(
+            FamilyMember.family_id == family_uuid,
+            FamilyMember.role == "admin",
+        )
+        result = await db.execute(admin_count_query)
+        admin_count = result.scalar() or 0
+
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot demote the last admin. Promote another member first.",
+            )
+
+    # Update the role
+    old_role = target_membership.role
+    target_membership.role = new_role
+    await db.commit()
+    await db.refresh(target_membership)
+
+    # Invalidate family cache
+    await cache_delete(key_family_detail(family_id))
+
+    # Send notification to the affected member (if role actually changed)
+    if old_role != new_role:
+        # Get family name for notification
+        family_query = select(Family).where(Family.id == family_uuid)
+        family_result = await db.execute(family_query)
+        family = family_result.scalar_one_or_none()
+        family_name = family.name if family else "your family"
+
+        role_display = "an admin" if new_role == "admin" else "a member"
+        tokens = await get_user_device_tokens(db, target_uuid)
+        if tokens:
+            await apns_service.send_to_multiple(
+                device_tokens=tokens,
+                title="Your role was updated",
+                body=f"You are now {role_display} in {family_name}",
+                data={
+                    "type": "role_changed",
+                    "family_id": str(family_uuid),
+                    "new_role": new_role,
+                },
+            )
+
+    return FamilyMemberResponse(
+        id=str(target_membership.id),
+        user_id=str(target_membership.user_id),
+        email=target_membership.user.email if target_membership.user else None,
+        first_name=target_membership.user.first_name if target_membership.user else None,
+        last_name=target_membership.user.last_name if target_membership.user else None,
+        role=target_membership.role,
+        joined_at=target_membership.joined_at,
+    )
+
+
+@router.post("/{family_id}/leave", response_model=LeaveFamilyResponse)
+async def leave_family(
+    family_id: str,
+    request: Optional[LeaveFamilyRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Leave a family. Handles different scenarios:
+    - Member (admins exist): Leave, notify admins
+    - Admin (other admins exist): Leave, notify other admins
+    - Admin (no other admins, no other members): Delete family
+    - Admin (no other admins, has other members): Must specify new_admin_user_id
+    """
+    family_uuid = UUID(family_id)
+    user_uuid = UUID(user_id)
+
+    # Get current user's membership with user info
+    current_membership_query = (
+        select(FamilyMember)
+        .options(selectinload(FamilyMember.user))
+        .where(
+            FamilyMember.family_id == family_uuid,
+            FamilyMember.user_id == user_uuid,
+        )
+    )
+    result = await db.execute(current_membership_query)
+    current_membership = result.scalar_one_or_none()
+
+    if not current_membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this family",
+        )
+
+    # Get family info
+    family_query = select(Family).where(Family.id == family_uuid)
+    family_result = await db.execute(family_query)
+    family = family_result.scalar_one_or_none()
+
+    if not family:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Family not found",
+        )
+
+    family_name = family.name
+    is_admin = current_membership.role == "admin"
+    user_display_name = get_display_name(current_membership.user)
+
+    # Count other admins and other members
+    other_admins_query = select(func.count()).where(
+        FamilyMember.family_id == family_uuid,
+        FamilyMember.role == "admin",
+        FamilyMember.user_id != user_uuid,
+    )
+    result = await db.execute(other_admins_query)
+    other_admin_count = result.scalar() or 0
+
+    other_members_query = select(func.count()).where(
+        FamilyMember.family_id == family_uuid,
+        FamilyMember.user_id != user_uuid,
+    )
+    result = await db.execute(other_members_query)
+    other_member_count = result.scalar() or 0
+
+    action: Literal["left", "left_promoted", "family_deleted"]
+
+    if not is_admin:
+        # Member leaving - just remove and notify admins
+        await db.delete(current_membership)
+        await db.commit()
+        action = "left"
+
+        # Notify admins
+        admin_tokens = await get_admin_device_tokens(db, family_uuid)
+        if admin_tokens:
+            await apns_service.send_to_multiple(
+                device_tokens=admin_tokens,
+                title=f"{user_display_name} left",
+                body=f"{user_display_name} left {family_name}",
+                data={
+                    "type": "member_left",
+                    "family_id": str(family_uuid),
+                    "user_id": str(user_uuid),
+                },
+            )
+
+    elif other_admin_count > 0:
+        # Admin leaving but other admins exist - just remove and notify other admins
+        await db.delete(current_membership)
+        await db.commit()
+        action = "left"
+
+        # Notify other admins
+        admin_tokens = await get_admin_device_tokens(db, family_uuid, exclude_user_id=user_uuid)
+        if admin_tokens:
+            await apns_service.send_to_multiple(
+                device_tokens=admin_tokens,
+                title=f"{user_display_name} left",
+                body=f"{user_display_name} left {family_name}",
+                data={
+                    "type": "member_left",
+                    "family_id": str(family_uuid),
+                    "user_id": str(user_uuid),
+                },
+            )
+
+    elif other_member_count == 0:
+        # Only admin, no other members - delete the family entirely
+        await db.delete(family)
+        await db.commit()
+        action = "family_deleted"
+
+    else:
+        # Only admin with other members - must promote someone first
+        if not request or not request.new_admin_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You are the only admin. Please select a member to become the new admin.",
+            )
+
+        new_admin_uuid = UUID(request.new_admin_user_id)
+
+        # Verify the new admin is a member of this family
+        new_admin_membership_query = (
+            select(FamilyMember)
+            .options(selectinload(FamilyMember.user))
+            .where(
+                FamilyMember.family_id == family_uuid,
+                FamilyMember.user_id == new_admin_uuid,
+            )
+        )
+        result = await db.execute(new_admin_membership_query)
+        new_admin_membership = result.scalar_one_or_none()
+
+        if not new_admin_membership:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected user is not a member of this family",
+            )
+
+        if new_admin_uuid == user_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot select yourself as the new admin",
+            )
+
+        # Promote the new admin
+        new_admin_membership.role = "admin"
+        await db.flush()
+
+        # Remove current user's membership
+        await db.delete(current_membership)
+        await db.commit()
+        action = "left_promoted"
+
+        # Notify the new admin with consolidated message
+        new_admin_tokens = await get_user_device_tokens(db, new_admin_uuid)
+        if new_admin_tokens:
+            await apns_service.send_to_multiple(
+                device_tokens=new_admin_tokens,
+                title="You're now an admin",
+                body=f"{user_display_name} made you an admin before leaving {family_name}",
+                data={
+                    "type": "member_left_promoted",
+                    "family_id": str(family_uuid),
+                    "user_id": str(user_uuid),
+                },
+            )
+
+    # Invalidate family cache
+    await cache_delete(key_family_detail(family_id))
+
+    return LeaveFamilyResponse(
+        success=True,
+        action=action,
+        family_name=family_name,
+    )

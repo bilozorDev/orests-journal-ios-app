@@ -31,6 +31,8 @@ from app.core.config import get_settings
 from app.models.user import User, Family, FamilyMember
 from app.models.notification import UserDeviceToken
 from app.services.apns import apns_service
+from app.cache.helpers import cache_delete
+from app.cache.keys import key_family_detail
 
 
 async def get_db_session() -> AsyncSession:
@@ -122,6 +124,10 @@ async def join_family(db: AsyncSession, family: Family, user: User) -> bool:
     db.add(membership)
     await db.commit()
     print(f"Added {user.email} to family '{family.name}' as member")
+
+    # Invalidate Redis cache for this family
+    await cache_delete(key_family_detail(str(family.id)))
+    print(f"Invalidated Redis cache for family {family.id}")
 
     # Send notification to other family members
     member_name = user.first_name or user.email.split("@")[0] if user.email else "Someone"

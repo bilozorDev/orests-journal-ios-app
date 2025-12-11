@@ -29,6 +29,7 @@ final class NavigationManager {
     var selectedTab: Tab = .home
     var pendingDestination: AppDestination?
     private(set) var tabsNeedingRefresh: Set<Tab> = []
+    var familyRefreshTrigger: Int = 0
 
     private init() {}
 
@@ -37,6 +38,7 @@ final class NavigationManager {
         case .familyManagement:
             selectedTab = .family
             tabsNeedingRefresh.insert(.family)
+            familyRefreshTrigger += 1
         }
         pendingDestination = destination
     }
@@ -47,6 +49,9 @@ final class NavigationManager {
 
     func requestTabRefresh(_ tab: Tab) {
         tabsNeedingRefresh.insert(tab)
+        if tab == .family {
+            familyRefreshTrigger += 1
+        }
     }
 
     func clearPendingDestination() {

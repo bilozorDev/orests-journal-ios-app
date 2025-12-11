@@ -23,6 +23,11 @@ final class NotificationManager {
 
     /// Request notification permissions and register for push notifications
     func requestAuthorization() async {
+        // Skip notification permissions in UI test mode
+        guard !ProcessInfo.processInfo.arguments.contains("--uitesting") else {
+            return
+        }
+
         let center = UNUserNotificationCenter.current()
 
         do {
@@ -151,36 +156,56 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) {
         let userInfo = notification.request.content.userInfo
 
-        // Invalidate caches based on notification type
-        Task { @MainActor in
-            handleCacheInvalidation(userInfo: userInfo)
+        // Extract notification type
+        var notificationType: String?
+        if let type = userInfo["type"] as? String {
+            notificationType = type
+        } else if let data = userInfo["data"] as? [String: Any],
+                  let type = data["type"] as? String {
+            notificationType = type
         }
 
-        // Show notification even when app is in foreground
-        completionHandler([.banner, .sound, .badge])
+        // Invalidate caches based on notification type
+        Task { @MainActor in
+            await handleCacheInvalidation(userInfo: userInfo)
+        }
+
+        // Skip banner for member_removed (UI handles it with full-screen view)
+        if notificationType == "member_removed" {
+            completionHandler([])
+        } else {
+            completionHandler([.banner, .sound, .badge])
+        }
     }
 
-    private func handleCacheInvalidation(userInfo: [AnyHashable: Any]) {
+    private func handleCacheInvalidation(userInfo: [AnyHashable: Any]) async {
         // Extract notification type from userInfo or nested data
         var notificationType: String?
         var familyId: String?
+        var familyName: String?
 
         if let type = userInfo["type"] as? String {
             notificationType = type
             familyId = userInfo["family_id"] as? String
+            familyName = userInfo["family_name"] as? String
         } else if let data = userInfo["data"] as? [String: Any],
                   let type = data["type"] as? String {
             notificationType = type
             familyId = data["family_id"] as? String
+            familyName = data["family_name"] as? String
         }
 
-        // Invalidate family cache when family membership changes
+        // Handle notifications based on type
         guard let type = notificationType else { return }
 
         switch type {
-        case "member_joined", "member_removed", "role_changed":
+        case "member_removed":
+            // User was removed from the family - show removal screen
+            AuthManager.shared.handleRemovedFromFamily(familyName: familyName)
+        case "member_joined", "role_changed", "member_left", "member_left_promoted", "account_deleted", "account_deleted_promoted":
+            // All family membership changes should refresh the family members list
             if let familyId = familyId {
-                DataService.shared.invalidateFamilyCache(for: familyId)
+                await DataService.shared.invalidateFamilyCache(for: familyId)
                 // Also tell the view to refresh when it becomes visible
                 NavigationManager.shared.requestTabRefresh(.family)
             }
@@ -199,7 +224,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         // Invalidate caches based on notification type (in case app was in background)
         Task { @MainActor in
-            handleCacheInvalidation(userInfo: userInfo)
+            await handleCacheInvalidation(userInfo: userInfo)
         }
 
         // Handle notification based on type - check both top-level and nested in "data"
@@ -230,7 +255,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             // Could navigate to medication detail or record dose screen
             // TODO: Implement medication navigation
             break
-        case "member_joined":
+        case "member_joined", "role_changed", "member_left", "member_left_promoted", "account_deleted", "account_deleted_promoted":
             // Use deep link URL - onOpenURL fires after app is fully ready
             if let url = URL(string: "orestsjournal://family?refresh=true") {
                 UIApplication.shared.open(url)
