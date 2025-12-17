@@ -77,6 +77,13 @@ struct HealthView: View {
                                 removeEventFromList(event.id)
                             }
                         )
+                    } else {
+                        // Fallback view when pet data is unavailable
+                        ContentUnavailableView(
+                            "Pet Not Found",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text("Unable to load pet information for this event.")
+                        )
                     }
                 }
             }
@@ -398,31 +405,66 @@ struct HealthView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Check if we're actively filtering/searching
+    private var isFiltering: Bool {
+        !searchText.isEmpty || selectedCategory != nil
+    }
+
     private var emptyEventsView: some View {
         VStack(spacing: 16) {
-            Image(systemName: "heart.text.square")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            Text("No Health Events")
-                .font(.title2)
-                .fontWeight(.semibold)
-            Text("Tap + to record a health event")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            if isFiltering {
+                // No results matching filter/search criteria
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+                Text("No Matching Events")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Text("No events match your search criteria")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
 
-            Button {
-                showAddEvent = true
-            } label: {
-                Label("Add Health Event", systemImage: "plus")
-                    .font(.headline)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .clipShape(Capsule())
+                Button {
+                    // Clear filters
+                    searchText = ""
+                    selectedCategory = nil
+                } label: {
+                    Text("Clear Filters")
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                }
+                .padding(.top, 8)
+            } else {
+                // Truly no events
+                Image(systemName: "heart.text.square")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+                Text("No Health Events")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Text("Tap + to record a health event")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                Button {
+                    showAddEvent = true
+                } label: {
+                    Label("Add Health Event", systemImage: "plus")
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -560,23 +602,40 @@ struct HealthView: View {
 
     private func loadAllPetsEventsAndCategories() async {
         do {
+            // Parallel fetch events for all pets using TaskGroup
+            let results = try await withThrowingTaskGroup(
+                of: (petId: UUID, events: [HealthEventWithCategory], categories: [HealthCategory]).self
+            ) { group in
+                for pet in pets {
+                    group.addTask {
+                        let petEvents = try await self.dataService.getHealthEvents(for: pet.id)
+                        let petCategories = try await self.dataService.getHealthCategories(for: pet.id)
+                        return (petId: pet.id, events: petEvents, categories: petCategories)
+                    }
+                }
+
+                var allResults: [(petId: UUID, events: [HealthEventWithCategory], categories: [HealthCategory])] = []
+                for try await result in group {
+                    allResults.append(result)
+                }
+                return allResults
+            }
+
+            // Aggregate results
             var allEvents: [HealthEventWithCategory] = []
             var allCategories: [HealthCategory] = []
             var seenCategoryIds = Set<UUID>()
             var newEventPetMap: [UUID: UUID] = [:]
 
-            for pet in pets {
-                let petEvents = try await dataService.getHealthEvents(for: pet.id)
-                let petCategories = try await dataService.getHealthCategories(for: pet.id)
-
+            for result in results {
                 // Track which pet each event belongs to
-                for event in petEvents {
-                    newEventPetMap[event.id] = pet.id
+                for event in result.events {
+                    newEventPetMap[event.id] = result.petId
                 }
-                allEvents.append(contentsOf: petEvents)
+                allEvents.append(contentsOf: result.events)
 
                 // Deduplicate categories (they're family-wide but fetched per-pet)
-                for category in petCategories {
+                for category in result.categories {
                     if !seenCategoryIds.contains(category.id) {
                         seenCategoryIds.insert(category.id)
                         allCategories.append(category)

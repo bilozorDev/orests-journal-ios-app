@@ -131,8 +131,10 @@ struct SmartSearchView: View {
 
     private func removeEventFromResults(_ eventId: UUID) {
         searchResults.removeAll { $0.id == eventId }
-        // Navigate back to search results
-        navigationPath.removeLast()
+        // Navigate back to search results (guard against empty path)
+        if !navigationPath.isEmpty {
+            navigationPath.removeLast()
+        }
     }
 
     // MARK: - Available Content (AI is available)

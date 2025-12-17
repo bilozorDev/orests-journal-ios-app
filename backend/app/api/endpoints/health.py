@@ -3,27 +3,68 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, delete, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
+
+
+def escape_like(pattern: str) -> str:
+    """Escape special LIKE characters in a pattern.
+
+    Escapes %, _, and \ which have special meaning in SQL LIKE patterns.
+    """
+    return pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def to_utc_naive(dt: Optional[datetime]) -> Optional[datetime]:
+    """Convert a datetime to UTC and strip timezone info for naive DB storage.
+
+    This ensures consistent storage regardless of client timezone.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Convert to UTC, then strip timezone for naive storage
+        dt = dt.astimezone(timezone.utc)
+    return dt.replace(tzinfo=None)
+
+
 from app.core.security import get_current_user_id
 from app.core.authorization import verify_pet_access, verify_health_event_access
 from app.models.pet import Pet
 from app.models.health import PetHealthCategory, PetHealthEvent, PetHealthEventPhoto
 from app.schemas.health import (
-    HealthCategoryResponse,
+    HealthCategoryResponse, HealthCategoryListResponse,
     HealthEventCreate, HealthEventUpdate, HealthEventResponse, HealthEventListResponse,
     HealthEventWithCategory, HealthEventNested, HealthEventPhotoResponse,
 )
 from app.services.storage import storage_service
 from app.services.apns import apns_service
 from app.services.family_notifications import get_filtered_family_member_tokens
+from app.cache.helpers import cache_get, cache_set, cache_delete, cache_delete_pattern
+from app.cache.keys import (
+    TTL_HEALTH_EVENTS, TTL_HEALTH_CATEGORIES,
+    key_health_events, key_health_categories,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def invalidate_health_cache(pet_id: UUID, org_id: UUID) -> None:
+    """Invalidate health-related caches when data changes.
+
+    Args:
+        pet_id: The pet whose events were modified
+        org_id: The family org_id (for category cache)
+    """
+    # Invalidate all cached event pages for this pet
+    await cache_delete_pattern(f"health_events:{pet_id}:*")
+    # Invalidate categories for this family (they might have changed)
+    await cache_delete(key_health_categories(str(org_id)))
 
 
 def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
@@ -120,6 +161,12 @@ async def list_categories(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
+    # Try cache first (categories are family-wide)
+    cache_key = key_health_categories(str(pet.org_id))
+    cached = await cache_get(cache_key, HealthCategoryListResponse)
+    if cached:
+        return cached.categories
+
     # Categories are family-wide, filter by org_id
     query = (
         select(PetHealthCategory)
@@ -129,30 +176,38 @@ async def list_categories(
     result = await db.execute(query)
     categories = result.scalars().all()
 
-    return [HealthCategoryResponse.model_validate(c) for c in categories]
+    response = [HealthCategoryResponse.model_validate(c) for c in categories]
+
+    # Cache the result
+    await cache_set(cache_key, HealthCategoryListResponse(categories=response), TTL_HEALTH_CATEGORIES)
+
+    return response
 
 
 async def delete_orphaned_category(db: AsyncSession, category_id: UUID) -> bool:
     """Delete a category if it has no events referencing it.
 
+    Uses atomic DELETE with NOT EXISTS to prevent race conditions where
+    another request might create an event between check and delete.
+
     Returns True if category was deleted, False otherwise.
     """
-    # Count events using this category
-    count_query = select(func.count(PetHealthEvent.id)).where(
-        PetHealthEvent.category_id == category_id
+    # Atomic delete: only delete if no events reference this category
+    # This prevents the TOCTOU race condition
+    delete_stmt = (
+        delete(PetHealthCategory)
+        .where(PetHealthCategory.id == category_id)
+        .where(
+            ~exists(
+                select(PetHealthEvent.id).where(PetHealthEvent.category_id == category_id)
+            )
+        )
     )
-    result = await db.execute(count_query)
-    event_count = result.scalar() or 0
+    result = await db.execute(delete_stmt)
 
-    if event_count == 0:
-        # Category is orphaned, delete it
-        cat_query = select(PetHealthCategory).where(PetHealthCategory.id == category_id)
-        cat_result = await db.execute(cat_query)
-        category = cat_result.scalar_one_or_none()
-        if category:
-            await db.delete(category)
-            logger.info(f"Deleted orphaned category: {category.name} (id={category_id})")
-            return True
+    if result.rowcount > 0:
+        logger.info(f"Deleted orphaned category: id={category_id}")
+        return True
     return False
 
 
@@ -224,21 +279,21 @@ async def create_health_event(
         db, pet.org_id, event_in.category_name, user_id
     )
 
-    # Create event
-    # Strip timezone info to avoid naive/aware datetime mixing
-    occurred_at = event_in.occurred_at
-    if occurred_at is not None and occurred_at.tzinfo is not None:
-        occurred_at = occurred_at.replace(tzinfo=None)
+    # Create event with UTC-normalized timestamp
+    occurred_at = to_utc_naive(event_in.occurred_at) or datetime.utcnow()
 
     event = PetHealthEvent(
         pet_id=pet_id,
         category_id=category.id,
-        occurred_at=occurred_at or datetime.utcnow(),
+        occurred_at=occurred_at,
         notes=event_in.notes if event_in.notes else None,
         created_by=UUID(user_id),
     )
     db.add(event)
     await db.commit()
+
+    # Invalidate cache
+    await invalidate_health_cache(pet_id, pet.org_id)
 
     # Reload event with photos for response
     event_query = (
@@ -283,12 +338,21 @@ async def list_health_events(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
+    # Only cache unfiltered requests (no category/time filters)
+    is_cacheable = category is None and since is None and until is None
+    if is_cacheable:
+        cache_key = key_health_events(str(pet_id), offset, limit)
+        cached = await cache_get(cache_key, HealthEventListResponse)
+        if cached:
+            return cached
+
     # Get categories for this family (categories are family-wide)
     cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
     if category:
-        # Fuzzy match: category name contains the search term
+        # Fuzzy match: category name contains the search term (escape LIKE special chars)
+        escaped_category = escape_like(category.lower().strip())
         cat_query = cat_query.where(
-            PetHealthCategory.name_normalized.ilike(f"%{category.lower().strip()}%")
+            PetHealthCategory.name_normalized.ilike(f"%{escaped_category}%", escape="\\")
         )
     cat_result = await db.execute(cat_query)
     categories = {c.id: c for c in cat_result.scalars().all()}
@@ -307,14 +371,11 @@ async def list_health_events(
         # Category filter specified but no matching categories exist
         return HealthEventListResponse(events=[])
 
-    # Filter by time range
+    # Filter by time range (convert to UTC for consistent comparison)
     if since:
-        # Strip timezone if present for comparison with naive datetimes in DB
-        since_naive = since.replace(tzinfo=None) if since.tzinfo else since
-        event_query = event_query.where(PetHealthEvent.occurred_at >= since_naive)
+        event_query = event_query.where(PetHealthEvent.occurred_at >= to_utc_naive(since))
     if until:
-        until_naive = until.replace(tzinfo=None) if until.tzinfo else until
-        event_query = event_query.where(PetHealthEvent.occurred_at <= until_naive)
+        event_query = event_query.where(PetHealthEvent.occurred_at <= to_utc_naive(until))
 
     event_query = (
         event_query
@@ -337,7 +398,13 @@ async def list_health_events(
                 )
             )
 
-    return HealthEventListResponse(events=events_with_category)
+    response = HealthEventListResponse(events=events_with_category)
+
+    # Cache unfiltered results
+    if is_cacheable:
+        await cache_set(cache_key, response, TTL_HEALTH_EVENTS)
+
+    return response
 
 
 @router.get("/pet/{pet_id}/search", response_model=HealthEventListResponse)
@@ -354,7 +421,9 @@ async def search_health_events(
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
-    search_term = f"%{q.lower().strip()}%"
+    # Escape LIKE special characters in search term
+    escaped_q = escape_like(q.lower().strip())
+    search_term = f"%{escaped_q}%"
 
     # Get categories for this family (categories are family-wide)
     cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
@@ -378,7 +447,7 @@ async def search_health_events(
         .where(PetHealthEvent.pet_id == pet_id)
         .where(
             or_(
-                func.lower(PetHealthEvent.notes).like(search_term),
+                func.lower(PetHealthEvent.notes).like(search_term, escape="\\"),
                 PetHealthEvent.category_id.in_(matching_category_ids) if matching_category_ids else False,
             )
         )
@@ -460,10 +529,7 @@ async def update_health_event(
 
     # Update other fields
     if event_in.occurred_at is not None:
-        occurred_at = event_in.occurred_at
-        if occurred_at.tzinfo is not None:
-            occurred_at = occurred_at.replace(tzinfo=None)
-        event.occurred_at = occurred_at
+        event.occurred_at = to_utc_naive(event_in.occurred_at)
 
     if event_in.notes is not None:
         event.notes = event_in.notes if event_in.notes else None
@@ -474,6 +540,9 @@ async def update_health_event(
     if old_category_id and old_category_id != event.category_id:
         await delete_orphaned_category(db, old_category_id)
         await db.commit()
+
+    # Invalidate cache
+    await invalidate_health_cache(event.pet_id, current_category.org_id)
 
     # Reload event with photos for response
     event_query = (
@@ -536,6 +605,9 @@ async def upload_health_event_photo(
     await db.commit()
     await db.refresh(photo)
 
+    # Invalidate cache (photos affect event list display)
+    await invalidate_health_cache(event.pet_id, pet.org_id)
+
     return HealthEventPhotoResponse.model_validate(photo)
 
 
@@ -548,7 +620,7 @@ async def delete_health_event_photo(
 ):
     """Delete a specific photo from a health event."""
     # Verify user has access to this event through family membership
-    await verify_health_event_access(db, user_id, event_id)
+    event = await verify_health_event_access(db, user_id, event_id)
 
     # Get the photo
     photo_query = select(PetHealthEventPhoto).where(
@@ -576,6 +648,12 @@ async def delete_health_event_photo(
     await db.delete(photo)
     await db.commit()
 
+    # Invalidate cache (get pet for org_id)
+    pet_query = select(Pet).where(Pet.id == event.pet_id)
+    pet_result = await db.execute(pet_query)
+    pet = pet_result.scalar_one()
+    await invalidate_health_cache(event.pet_id, pet.org_id)
+
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_health_event(
@@ -587,8 +665,14 @@ async def delete_health_event(
     # Verify user has access to this event through family membership
     event = await verify_health_event_access(db, user_id, event_id)
 
-    # Store category_id before deletion for orphan cleanup
+    # Store info before deletion for orphan cleanup and cache invalidation
     category_id = event.category_id
+    pet_id = event.pet_id
+
+    # Get pet for org_id (needed for cache invalidation)
+    pet_query = select(Pet).where(Pet.id == pet_id)
+    pet_result = await db.execute(pet_query)
+    pet = pet_result.scalar_one()
 
     # Get all photos for this event
     photos_query = select(PetHealthEventPhoto).where(PetHealthEventPhoto.event_id == event_id)
@@ -610,3 +694,6 @@ async def delete_health_event(
     # Clean up orphaned category if this was the last event using it
     await delete_orphaned_category(db, category_id)
     await db.commit()
+
+    # Invalidate cache
+    await invalidate_health_cache(pet_id, pet.org_id)

@@ -11,6 +11,8 @@ TTL_DOSE_COUNTS = 60        # 1 minute (changes frequently)
 TTL_LAST_DOSE = 60          # 1 minute
 TTL_FAMILY = 300            # 5 minutes (family details with members)
 TTL_PETS = 300              # 5 minutes (matches iOS petsCacheTTL)
+TTL_HEALTH_EVENTS = 300     # 5 minutes (matches iOS healthCacheTTL)
+TTL_HEALTH_CATEGORIES = 300 # 5 minutes (categories rarely change)
 
 
 def key_dashboard(pet_id: str, date: str) -> str:
@@ -75,3 +77,17 @@ def key_family_detail(family_id: str) -> str:
 def key_pets(org_id: str) -> str:
     """Cache key for organization pets list."""
     return f"pets:{org_id}"
+
+
+def key_health_events(pet_id: str, offset: int = 0, limit: int = 100) -> str:
+    """Cache key for paginated health events list.
+
+    Note: Only caches unfiltered requests (no category/date filters).
+    Filtered requests bypass cache.
+    """
+    return f"health_events:{pet_id}:{offset}:{limit}"
+
+
+def key_health_categories(org_id: str) -> str:
+    """Cache key for family-wide health categories."""
+    return f"health_categories:{org_id}"

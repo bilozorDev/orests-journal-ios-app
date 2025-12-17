@@ -77,3 +77,8 @@ class HealthEventWithCategory(BaseModel):
 
 class HealthEventListResponse(BaseModel):
     events: list[HealthEventWithCategory]
+
+
+class HealthCategoryListResponse(BaseModel):
+    """Wrapper for caching category list."""
+    categories: list[HealthCategoryResponse]
