@@ -132,6 +132,30 @@ async def list_categories(
     return [HealthCategoryResponse.model_validate(c) for c in categories]
 
 
+async def delete_orphaned_category(db: AsyncSession, category_id: UUID) -> bool:
+    """Delete a category if it has no events referencing it.
+
+    Returns True if category was deleted, False otherwise.
+    """
+    # Count events using this category
+    count_query = select(func.count(PetHealthEvent.id)).where(
+        PetHealthEvent.category_id == category_id
+    )
+    result = await db.execute(count_query)
+    event_count = result.scalar() or 0
+
+    if event_count == 0:
+        # Category is orphaned, delete it
+        cat_query = select(PetHealthCategory).where(PetHealthCategory.id == category_id)
+        cat_result = await db.execute(cat_query)
+        category = cat_result.scalar_one_or_none()
+        if category:
+            await db.delete(category)
+            logger.info(f"Deleted orphaned category: {category.name} (id={category_id})")
+            return True
+    return False
+
+
 async def get_or_create_category(
     db: AsyncSession,
     org_id: UUID,
@@ -243,18 +267,29 @@ async def list_health_events(
     pet_id: UUID,
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
-    category: Optional[str] = Query(default=None, description="Filter by category name"),
+    category: Optional[str] = Query(default=None, description="Filter by category name (fuzzy match)"),
+    since: Optional[datetime] = Query(default=None, description="Filter events after this datetime (ISO8601)"),
+    until: Optional[datetime] = Query(default=None, description="Filter events before this datetime (ISO8601)"),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List health events for a pet with their categories."""
+    """List health events for a pet with their categories.
+
+    Supports filtering by:
+    - category: Fuzzy match on category name (e.g., 'vomit' matches 'Vomit', 'vomiting')
+    - since: Only return events that occurred after this datetime
+    - until: Only return events that occurred before this datetime
+    """
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
     # Get categories for this family (categories are family-wide)
     cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
     if category:
-        cat_query = cat_query.where(PetHealthCategory.name_normalized == category.lower().strip())
+        # Fuzzy match: category name contains the search term
+        cat_query = cat_query.where(
+            PetHealthCategory.name_normalized.ilike(f"%{category.lower().strip()}%")
+        )
     cat_result = await db.execute(cat_query)
     categories = {c.id: c for c in cat_result.scalars().all()}
 
@@ -264,12 +299,22 @@ async def list_health_events(
         .options(selectinload(PetHealthEvent.photos))
         .where(PetHealthEvent.pet_id == pet_id)
     )
-    # Optionally filter by category
+
+    # Filter by category (fuzzy match)
     if category and categories:
         event_query = event_query.where(PetHealthEvent.category_id.in_(categories.keys()))
     elif category and not categories:
         # Category filter specified but no matching categories exist
         return HealthEventListResponse(events=[])
+
+    # Filter by time range
+    if since:
+        # Strip timezone if present for comparison with naive datetimes in DB
+        since_naive = since.replace(tzinfo=None) if since.tzinfo else since
+        event_query = event_query.where(PetHealthEvent.occurred_at >= since_naive)
+    if until:
+        until_naive = until.replace(tzinfo=None) if until.tzinfo else until
+        event_query = event_query.where(PetHealthEvent.occurred_at <= until_naive)
 
     event_query = (
         event_query
@@ -402,6 +447,9 @@ async def update_health_event(
     cat_result = await db.execute(cat_query)
     current_category = cat_result.scalar_one()
 
+    # Store old category_id in case we need to clean up orphaned category
+    old_category_id = event.category_id if event_in.category_name is not None else None
+
     # Handle category change if provided (categories are family-wide)
     if event_in.category_name is not None:
         new_category = await get_or_create_category(
@@ -421,6 +469,11 @@ async def update_health_event(
         event.notes = event_in.notes if event_in.notes else None
 
     await db.commit()
+
+    # Clean up orphaned category if category was changed
+    if old_category_id and old_category_id != event.category_id:
+        await delete_orphaned_category(db, old_category_id)
+        await db.commit()
 
     # Reload event with photos for response
     event_query = (
@@ -534,6 +587,9 @@ async def delete_health_event(
     # Verify user has access to this event through family membership
     event = await verify_health_event_access(db, user_id, event_id)
 
+    # Store category_id before deletion for orphan cleanup
+    category_id = event.category_id
+
     # Get all photos for this event
     photos_query = select(PetHealthEventPhoto).where(PetHealthEventPhoto.event_id == event_id)
     photos_result = await db.execute(photos_query)
@@ -549,4 +605,8 @@ async def delete_health_event(
             logger.error(f"Failed to delete health event photo on event deletion: {e}")
 
     await db.delete(event)
+    await db.commit()
+
+    # Clean up orphaned category if this was the last event using it
+    await delete_orphaned_category(db, category_id)
     await db.commit()

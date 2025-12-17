@@ -162,9 +162,18 @@ final class DataService {
     }
 
     private func refreshPetsInBackground() async throws {
+        let oldPets = getCachedPets() ?? []
         let pets = try await api.getPets()
         cachePets(pets)
         await persistentCache.save(pets, forKey: .pets)
+
+        // If pets changed, notify views to refresh
+        let oldIds = Set(oldPets.map { $0.id })
+        let newIds = Set(pets.map { $0.id })
+        if oldIds != newIds {
+            NavigationManager.shared.requestTabRefresh(.home)
+            NavigationManager.shared.requestTabRefresh(.health)
+        }
     }
 
     func createPet(name: String, kind: String, photoUrl: String?, currentWeight: Double? = nil, dateOfBirth: Date? = nil) async throws -> Pet {
@@ -404,6 +413,23 @@ final class DataService {
 
     func getHealthEvent(eventId: UUID) async throws -> HealthEventWithCategory {
         return try await api.getHealthEvent(eventId: eventId)
+    }
+
+    /// Search health events with filters (not cached - for smart search queries)
+    func searchHealthEvents(
+        for petId: UUID,
+        category: String? = nil,
+        since: Date? = nil,
+        until: Date? = nil,
+        limit: Int = 100
+    ) async throws -> [HealthEventWithCategory] {
+        return try await api.getHealthEvents(
+            petId: petId,
+            limit: limit,
+            category: category,
+            since: since,
+            until: until
+        )
     }
 
     func createHealthEvent(petId: UUID, categoryName: String, occurredAt: Date? = nil, notes: String? = nil, notifyFamily: Bool = false) async throws -> HealthEvent {

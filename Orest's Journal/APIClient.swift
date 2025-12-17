@@ -381,13 +381,26 @@ class APIClient: APIClientProtocol {
 
     // MARK: - Health Events
 
-    func getHealthEvents(petId: UUID, limit: Int = 100, offset: Int = 0, category: String? = nil) async throws -> [HealthEventWithCategory] {
+    func getHealthEvents(
+        petId: UUID,
+        limit: Int = 100,
+        offset: Int = 0,
+        category: String? = nil,
+        since: Date? = nil,
+        until: Date? = nil
+    ) async throws -> [HealthEventWithCategory] {
         var queryItems = [
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "offset", value: String(offset))
         ]
         if let category = category {
             queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        if let since = since {
+            queryItems.append(URLQueryItem(name: "since", value: ISO8601DateFormatter().string(from: since)))
+        }
+        if let until = until {
+            queryItems.append(URLQueryItem(name: "until", value: ISO8601DateFormatter().string(from: until)))
         }
         let response: HealthEventListResponse = try await get("/health/pet/\(petId.uuidString.lowercased())/events", queryItems: queryItems)
         return response.events

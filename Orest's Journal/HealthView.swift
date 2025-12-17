@@ -11,7 +11,6 @@ import SwiftUI
 
 enum HealthDestination: Hashable {
     case eventDetail(HealthEventWithCategory)
-    case search
 }
 
 // MARK: - Health View
@@ -23,14 +22,20 @@ struct HealthView: View {
     @State private var categories: [HealthCategory] = []
     @State private var selectedCategory: HealthCategory?
     @State private var isLoading = true
+    @State private var isLoadingEvents = false
     @State private var isRefreshing = false
     @State private var showAddEvent = false
     @State private var searchText = ""
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var navigationPath = NavigationPath()
+    @State private var showSmartSearch = false
+    @State private var eventPetMap: [UUID: UUID] = [:]  // Maps event ID to pet ID for "All" view
+
+    @AppStorage("health_selected_pet_id") private var savedPetId: String = ""
 
     private let dataService = DataService.shared
+    private let navigationManager = NavigationManager.shared
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -61,7 +66,7 @@ struct HealthView: View {
             .navigationDestination(for: HealthDestination.self) { destination in
                 switch destination {
                 case .eventDetail(let event):
-                    if let pet = selectedPet {
+                    if let pet = petForEvent(event) {
                         HealthEventDetailView(
                             event: event,
                             pet: pet,
@@ -72,10 +77,6 @@ struct HealthView: View {
                                 removeEventFromList(event.id)
                             }
                         )
-                    }
-                case .search:
-                    if let pet = selectedPet {
-                        SmartSearchView(pet: pet)
                     }
                 }
             }
@@ -88,11 +89,29 @@ struct HealthView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showSmartSearch) {
+                if !pets.isEmpty {
+                    SmartSearchView(
+                        pets: pets,
+                        onEventUpdated: { updatedEvent in
+                            updateEventInList(updatedEvent)
+                        },
+                        onEventDeleted: { eventId in
+                            removeEventFromList(eventId)
+                        }
+                    )
+                }
+            }
             .task {
                 await loadInitialData()
             }
-            .refreshable {
-                await loadEvents(forceRefresh: true)
+            .onChange(of: navigationManager.tabsNeedingRefresh) { _, newValue in
+                if newValue.contains(.health) {
+                    navigationManager.markTabRefreshed(.health)
+                    Task {
+                        await loadInitialData()
+                    }
+                }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
@@ -106,26 +125,38 @@ struct HealthView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            // Pet selector if multiple pets
-            if pets.count > 1 {
-                petSelector
-            }
+        ScrollView {
+            VStack(spacing: 0) {
+                // Pet selector if multiple pets
+                if pets.count > 1 {
+                    petSelector
+                }
 
-            // Search bar
-            searchBar
+                // Search bar
+                searchBar
 
-            // Category filter
-            if !categories.isEmpty {
-                categoryFilter
-            }
+                // Category filter
+                if !categories.isEmpty && !isLoadingEvents {
+                    categoryFilter
+                }
 
-            // Events list
-            if filteredEvents.isEmpty {
-                emptyEventsView
-            } else {
-                eventsList
+                // Events content
+                if isLoadingEvents {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 200)
+                } else if filteredEvents.isEmpty {
+                    emptyEventsView
+                } else {
+                    eventsContent
+                }
             }
+        }
+        .refreshable {
+            await loadEvents(forceRefresh: true)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .onTapGesture {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
     }
 
@@ -134,6 +165,33 @@ struct HealthView: View {
     private var petSelector: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
+                // "All" option - only show when multiple pets
+                if pets.count > 1 {
+                    Button {
+                        selectPet(nil)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pawprint.fill")
+                                .font(.system(size: 14))
+                                .frame(width: 28, height: 28)
+
+                            Text("All")
+                                .font(.subheadline)
+                                .fontWeight(selectedPet == nil ? .semibold : .regular)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            selectedPet == nil
+                                ? Color.accentColor.opacity(0.15)
+                                : Color(uiColor: .secondarySystemGroupedBackground)
+                        )
+                        .foregroundColor(selectedPet == nil ? .accentColor : .primary)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 ForEach(pets) { pet in
                     Button {
                         selectPet(pet)
@@ -211,7 +269,7 @@ struct HealthView: View {
 
             // Smart search button
             Button {
-                navigationPath.append(HealthDestination.search)
+                showSmartSearch = true
             } label: {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18))
@@ -273,36 +331,52 @@ struct HealthView: View {
         }
     }
 
-    // MARK: - Events List
+    // MARK: - Events Content
 
-    private var eventsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(groupedEvents.keys.sorted().reversed(), id: \.self) { section in
-                    Section {
-                        ForEach(groupedEvents[section] ?? []) { eventWithCategory in
-                            HealthEventRow(event: eventWithCategory)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    navigationPath.append(HealthDestination.eventDetail(eventWithCategory))
-                                }
+    private var eventsContent: some View {
+        LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(groupedEvents.keys.sorted().reversed(), id: \.self) { section in
+                Section {
+                    ForEach(groupedEvents[section] ?? []) { eventWithCategory in
+                        HealthEventRow(
+                            event: eventWithCategory,
+                            petName: selectedPet == nil ? petName(for: eventWithCategory) : nil
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            navigationPath.append(HealthDestination.eventDetail(eventWithCategory))
                         }
-                    } header: {
-                        HStack {
-                            Text(sectionTitle(for: section))
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color(uiColor: .systemGroupedBackground))
                     }
+                } header: {
+                    HStack {
+                        Text(sectionTitle(for: section))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color(uiColor: .systemGroupedBackground))
                 }
             }
-            .padding(.bottom, 20)
         }
+        .padding(.bottom, 20)
+    }
+
+    private func petName(for event: HealthEventWithCategory) -> String? {
+        guard let petId = event.event.petId else { return nil }
+        return pets.first { $0.id == petId }?.name
+    }
+
+    private func petForEvent(_ event: HealthEventWithCategory) -> Pet? {
+        // If a specific pet is selected, use that
+        if let pet = selectedPet {
+            return pet
+        }
+        // Otherwise look up pet from the event's petId
+        guard let petId = event.event.petId else { return nil }
+        return pets.first { $0.id == petId }
     }
 
     // MARK: - Empty Views
@@ -425,9 +499,23 @@ struct HealthView: View {
 
     private func loadInitialData() async {
         do {
-            pets = try await dataService.getPets()
-            if let firstPet = pets.first {
+            // Force refresh pets on initial load to avoid stale cache issues
+            pets = try await dataService.getPets(forceRefresh: true)
+
+            // Restore saved pet selection
+            if let savedId = UUID(uuidString: savedPetId),
+               let savedPet = pets.first(where: { $0.id == savedId }) {
+                // Restore previously selected pet
+                selectedPet = savedPet
+                await loadEventsAndCategories(for: savedPet)
+            } else if savedPetId.isEmpty && pets.count > 1 {
+                // Empty savedPetId with multiple pets means "All" was selected
+                selectedPet = nil
+                await loadAllPetsEventsAndCategories()
+            } else if let firstPet = pets.first {
+                // Default to first pet (single pet, or saved pet not found)
                 selectedPet = firstPet
+                savedPetId = firstPet.id.uuidString
                 await loadEventsAndCategories(for: firstPet)
             }
         } catch {
@@ -437,14 +525,22 @@ struct HealthView: View {
         isLoading = false
     }
 
-    private func selectPet(_ pet: Pet) {
-        guard pet.id != selectedPet?.id else { return }
+    private func selectPet(_ pet: Pet?) {
+        guard pet?.id != selectedPet?.id else { return }
         selectedPet = pet
+        savedPetId = pet?.id.uuidString ?? ""
         events = []
         categories = []
         selectedCategory = nil
+        isLoadingEvents = true
         Task {
-            await loadEventsAndCategories(for: pet)
+            if let pet = pet {
+                await loadEventsAndCategories(for: pet)
+            } else {
+                // "All" selected - load events for all pets
+                await loadAllPetsEventsAndCategories()
+            }
+            isLoadingEvents = false
         }
     }
 
@@ -462,12 +558,52 @@ struct HealthView: View {
         }
     }
 
+    private func loadAllPetsEventsAndCategories() async {
+        do {
+            var allEvents: [HealthEventWithCategory] = []
+            var allCategories: [HealthCategory] = []
+            var seenCategoryIds = Set<UUID>()
+            var newEventPetMap: [UUID: UUID] = [:]
+
+            for pet in pets {
+                let petEvents = try await dataService.getHealthEvents(for: pet.id)
+                let petCategories = try await dataService.getHealthCategories(for: pet.id)
+
+                // Track which pet each event belongs to
+                for event in petEvents {
+                    newEventPetMap[event.id] = pet.id
+                }
+                allEvents.append(contentsOf: petEvents)
+
+                // Deduplicate categories (they're family-wide but fetched per-pet)
+                for category in petCategories {
+                    if !seenCategoryIds.contains(category.id) {
+                        seenCategoryIds.insert(category.id)
+                        allCategories.append(category)
+                    }
+                }
+            }
+
+            // Sort all events by date descending
+            events = allEvents.sorted { $0.event.occurredAt > $1.event.occurredAt }
+            categories = allCategories.sorted { $0.name < $1.name }
+            eventPetMap = newEventPetMap
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
     private func loadEvents(forceRefresh: Bool = false) async {
-        guard let pet = selectedPet else { return }
         isRefreshing = true
         do {
-            events = try await dataService.getHealthEvents(for: pet.id, forceRefresh: forceRefresh)
-            categories = try await dataService.getHealthCategories(for: pet.id, forceRefresh: forceRefresh)
+            if let pet = selectedPet {
+                events = try await dataService.getHealthEvents(for: pet.id, forceRefresh: forceRefresh)
+                categories = try await dataService.getHealthCategories(for: pet.id, forceRefresh: forceRefresh)
+            } else {
+                // "All" selected - reload all pets' events
+                await loadAllPetsEventsAndCategories()
+            }
         } catch {
             errorMessage = error.localizedDescription
             showError = true
@@ -490,6 +626,7 @@ struct HealthView: View {
 
 struct HealthEventRow: View {
     let event: HealthEventWithCategory
+    var petName: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -504,6 +641,13 @@ struct HealthEventRow: View {
                 Text(event.category.name)
                     .font(.headline)
                     .lineLimit(1)
+
+                // Pet name when showing all pets
+                if let petName = petName {
+                    Text(petName)
+                        .font(.subheadline)
+                        .foregroundColor(.accentColor)
+                }
 
                 HStack(spacing: 4) {
                     Text(Formatters.shortDate.string(from: event.event.occurredAt))

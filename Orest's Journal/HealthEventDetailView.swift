@@ -407,6 +407,7 @@ struct FullScreenPhotoGalleryView: View {
             event: HealthEventWithCategory(
                 event: HealthEvent(
                     id: UUID(),
+                    petId: UUID(),
                     categoryId: UUID(),
                     occurredAt: Date(),
                     notes: "Annual checkup, all tests came back normal. Vet recommended continuing current diet.",

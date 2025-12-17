@@ -60,6 +60,7 @@ class HealthEventNested(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    pet_id: UUID
     category_id: UUID
     occurred_at: datetime
     notes: Optional[str] = None

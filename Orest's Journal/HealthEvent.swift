@@ -74,6 +74,7 @@ struct HealthEventPhoto: Codable, Identifiable, Hashable {
 
 struct HealthEvent: Codable, Identifiable, Hashable {
     let id: UUID
+    let petId: UUID?
     let categoryId: UUID
     let occurredAt: Date
     let notes: String?
@@ -81,10 +82,11 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     let createdAt: Date
     let createdBy: UUID?
 
-    // Custom decoder to handle backwards compatibility with cached data missing 'photos'
+    // Custom decoder to handle backwards compatibility with cached data missing 'photos' or 'petId'
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        petId = try container.decodeIfPresent(UUID.self, forKey: .petId)
         categoryId = try container.decode(UUID.self, forKey: .categoryId)
         occurredAt = try container.decode(Date.self, forKey: .occurredAt)
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
@@ -94,8 +96,9 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     }
 
     // Memberwise initializer for creating instances directly
-    init(id: UUID, categoryId: UUID, occurredAt: Date, notes: String?, photos: [HealthEventPhoto], createdAt: Date, createdBy: UUID?) {
+    init(id: UUID, petId: UUID?, categoryId: UUID, occurredAt: Date, notes: String?, photos: [HealthEventPhoto], createdAt: Date, createdBy: UUID?) {
         self.id = id
+        self.petId = petId
         self.categoryId = categoryId
         self.occurredAt = occurredAt
         self.notes = notes
