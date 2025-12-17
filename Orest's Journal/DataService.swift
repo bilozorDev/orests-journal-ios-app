@@ -27,12 +27,16 @@ final class DataService {
     private var petsCache: CacheEntry<[Pet]>?
     private var familyMembersCache: [String: CacheEntry<FamilyDetailResponse>] = [:]
     private var calorieGoalCache: [UUID: CacheEntry<CalorieGoal>] = [:]
+    private var healthEventsCache: [UUID: CacheEntry<[HealthEventWithCategory]>] = [:]
+    private var healthCategoriesCache: [UUID: CacheEntry<[HealthCategory]>] = [:]
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
+    private let healthCacheTTL: TimeInterval = 300  // 5 minutes
 
     // Cache stampede prevention flags
     private var petsRefreshInProgress = false
     private var familyRefreshInProgress: Set<String> = []
+    private var healthEventsRefreshInProgress: Set<UUID> = []
 
     private init() {
         // Listen for memory warnings to clear caches
@@ -52,6 +56,8 @@ final class DataService {
         petsCache = nil
         familyMembersCache.removeAll()
         calorieGoalCache.removeAll()
+        healthEventsCache.removeAll()
+        healthCategoriesCache.removeAll()
 
         Task {
             await persistentCache.clearAll()
@@ -113,6 +119,8 @@ final class DataService {
         petsCache = nil
         familyMembersCache.removeAll()
         calorieGoalCache.removeAll()
+        healthEventsCache.removeAll()
+        healthCategoriesCache.removeAll()
         Task {
             await persistentCache.clearAll()
         }
@@ -293,6 +301,149 @@ final class DataService {
         let result = try await api.updateFamilyName(familyId: familyId, name: name)
         await invalidateFamilyCache(for: familyId)
         return result
+    }
+
+    // MARK: - Health Events
+
+    private func getCachedHealthEvents(for petId: UUID) -> [HealthEventWithCategory]? {
+        guard let entry = healthEventsCache[petId],
+              Date().timeIntervalSince(entry.timestamp) < healthCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    private func cacheHealthEvents(_ data: [HealthEventWithCategory], for petId: UUID) {
+        healthEventsCache[petId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    private func getCachedHealthCategories(for petId: UUID) -> [HealthCategory]? {
+        guard let entry = healthCategoriesCache[petId],
+              Date().timeIntervalSince(entry.timestamp) < healthCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    private func cacheHealthCategories(_ data: [HealthCategory], for petId: UUID) {
+        healthCategoriesCache[petId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    func invalidateHealthCache(for petId: UUID) {
+        healthEventsCache.removeValue(forKey: petId)
+        healthCategoriesCache.removeValue(forKey: petId)
+        Task {
+            await persistentCache.delete(forKey: .healthEvents(petId: petId.uuidString))
+            await persistentCache.delete(forKey: .healthCategories(petId: petId.uuidString))
+        }
+    }
+
+    func getHealthEvents(for petId: UUID, forceRefresh: Bool = false) async throws -> [HealthEventWithCategory] {
+        // Check memory cache
+        if !forceRefresh, let cached = getCachedHealthEvents(for: petId) {
+            return cached
+        }
+
+        // Check disk cache
+        if !forceRefresh {
+            let diskCached: PersistentCacheManager.CachedData<[HealthEventWithCategory]>? = await persistentCache.load(forKey: .healthEvents(petId: petId.uuidString))
+            if let diskCached = diskCached {
+                cacheHealthEvents(diskCached.data, for: petId)
+                // If stale, refresh in background (with stampede prevention)
+                if Date().timeIntervalSince(diskCached.timestamp) > healthCacheTTL {
+                    if !healthEventsRefreshInProgress.contains(petId) {
+                        healthEventsRefreshInProgress.insert(petId)
+                        Task {
+                            defer { Task { @MainActor in self.healthEventsRefreshInProgress.remove(petId) } }
+                            do {
+                                try await refreshHealthEventsInBackground(petId: petId)
+                            } catch {
+                                print("Background health events refresh failed: \(error)")
+                            }
+                        }
+                    }
+                }
+                return diskCached.data
+            }
+        }
+
+        // Fetch from network
+        let events = try await api.getHealthEvents(petId: petId)
+        cacheHealthEvents(events, for: petId)
+        await persistentCache.save(events, forKey: .healthEvents(petId: petId.uuidString))
+        return events
+    }
+
+    private func refreshHealthEventsInBackground(petId: UUID) async throws {
+        let events = try await api.getHealthEvents(petId: petId)
+        cacheHealthEvents(events, for: petId)
+        await persistentCache.save(events, forKey: .healthEvents(petId: petId.uuidString))
+    }
+
+    func getHealthCategories(for petId: UUID, forceRefresh: Bool = false) async throws -> [HealthCategory] {
+        // Check memory cache
+        if !forceRefresh, let cached = getCachedHealthCategories(for: petId) {
+            return cached
+        }
+
+        // Check disk cache
+        if !forceRefresh {
+            let diskCached: PersistentCacheManager.CachedData<[HealthCategory]>? = await persistentCache.load(forKey: .healthCategories(petId: petId.uuidString))
+            if let diskCached = diskCached {
+                cacheHealthCategories(diskCached.data, for: petId)
+                return diskCached.data
+            }
+        }
+
+        // Fetch from network
+        let categories = try await api.getHealthCategories(petId: petId)
+        cacheHealthCategories(categories, for: petId)
+        await persistentCache.save(categories, forKey: .healthCategories(petId: petId.uuidString))
+        return categories
+    }
+
+    func getHealthEvent(eventId: UUID) async throws -> HealthEventWithCategory {
+        return try await api.getHealthEvent(eventId: eventId)
+    }
+
+    func createHealthEvent(petId: UUID, categoryName: String, occurredAt: Date? = nil, notes: String? = nil, notifyFamily: Bool = false) async throws -> HealthEvent {
+        let event = HealthEventCreate(categoryName: categoryName, occurredAt: occurredAt, notes: notes, notifyFamily: notifyFamily)
+        let result = try await api.createHealthEvent(petId: petId, event: event)
+        invalidateHealthCache(for: petId)
+        NavigationManager.shared.requestTabRefresh(.health)
+        return result
+    }
+
+    func updateHealthEvent(eventId: UUID, petId: UUID, categoryName: String? = nil, occurredAt: Date? = nil, notes: String? = nil) async throws -> HealthEventWithCategory {
+        let update = HealthEventUpdate(categoryName: categoryName, occurredAt: occurredAt, notes: notes)
+        let result = try await api.updateHealthEvent(eventId: eventId, update: update)
+        invalidateHealthCache(for: petId)
+        NavigationManager.shared.requestTabRefresh(.health)
+        return result
+    }
+
+    func deleteHealthEvent(eventId: UUID, petId: UUID) async throws {
+        try await api.deleteHealthEvent(eventId: eventId)
+        invalidateHealthCache(for: petId)
+        NavigationManager.shared.requestTabRefresh(.health)
+    }
+
+    func uploadHealthEventPhoto(eventId: UUID, petId: UUID, imageData: Data, mimeType: String = "image/jpeg") async throws -> HealthEventPhoto {
+        let result = try await api.uploadHealthEventPhoto(eventId: eventId, imageData: imageData, mimeType: mimeType)
+        invalidateHealthCache(for: petId)
+        NavigationManager.shared.requestTabRefresh(.health)
+        return result
+    }
+
+    func deleteHealthEventPhoto(eventId: UUID, photoId: UUID, petId: UUID) async throws {
+        try await api.deleteHealthEventPhoto(eventId: eventId, photoId: photoId)
+        invalidateHealthCache(for: petId)
+        NavigationManager.shared.requestTabRefresh(.health)
+    }
+
+    func searchHealthEvents(petId: UUID, query: String, category: String? = nil) async throws -> [HealthEventWithCategory] {
+        // Search is always fresh, no caching
+        return try await api.searchHealthEvents(petId: petId, query: query, category: category)
     }
 
     // MARK: - Background Refresh

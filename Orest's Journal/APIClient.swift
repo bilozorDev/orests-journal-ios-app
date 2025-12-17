@@ -378,6 +378,88 @@ class APIClient: APIClientProtocol {
     func updateNotificationPreferences(_ update: NotificationPreferencesUpdate) async throws -> NotificationPreferences {
         return try await patch("/notifications/preferences", body: update)
     }
+
+    // MARK: - Health Events
+
+    func getHealthEvents(petId: UUID, limit: Int = 100, offset: Int = 0, category: String? = nil) async throws -> [HealthEventWithCategory] {
+        var queryItems = [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+        if let category = category {
+            queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        let response: HealthEventListResponse = try await get("/health/pet/\(petId.uuidString.lowercased())/events", queryItems: queryItems)
+        return response.events
+    }
+
+    func getHealthEvent(eventId: UUID) async throws -> HealthEventWithCategory {
+        return try await get("/health/events/\(eventId.uuidString.lowercased())")
+    }
+
+    func createHealthEvent(petId: UUID, event: HealthEventCreate) async throws -> HealthEvent {
+        return try await post("/health/pet/\(petId.uuidString.lowercased())/events", body: event)
+    }
+
+    func updateHealthEvent(eventId: UUID, update: HealthEventUpdate) async throws -> HealthEventWithCategory {
+        return try await patch("/health/events/\(eventId.uuidString.lowercased())", body: update)
+    }
+
+    func deleteHealthEvent(eventId: UUID) async throws {
+        try await delete("/health/events/\(eventId.uuidString.lowercased())")
+    }
+
+    func searchHealthEvents(petId: UUID, query: String, category: String? = nil, limit: Int = 50) async throws -> [HealthEventWithCategory] {
+        var queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        if let category = category {
+            queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        let response: HealthEventListResponse = try await get("/health/pet/\(petId.uuidString.lowercased())/search", queryItems: queryItems)
+        return response.events
+    }
+
+    func getHealthCategories(petId: UUID) async throws -> [HealthCategory] {
+        return try await get("/health/pet/\(petId.uuidString.lowercased())/categories")
+    }
+
+    func uploadHealthEventPhoto(eventId: UUID, imageData: Data, mimeType: String = "image/jpeg") async throws -> HealthEventPhoto {
+        guard let url = URL(string: APIConfiguration.baseURL + "/health/events/\(eventId.uuidString.lowercased())/photo") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let fileExtension = mimeType == "image/png" ? "png" : "jpg"
+        let filename = "health_event.\(fileExtension)"
+
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(imageData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        request.httpBody = body
+
+        let (data, response) = try await session.data(for: request)
+        return try handleResponse(data, response)
+    }
+
+    func deleteHealthEventPhoto(eventId: UUID, photoId: UUID) async throws {
+        try await delete("/health/events/\(eventId.uuidString.lowercased())/photos/\(photoId.uuidString.lowercased())")
+    }
 }
 
 // MARK: - Request/Response Types

@@ -101,4 +101,19 @@ enum AccessibilityIdentifier {
     static let deletePetButton = "delete_pet_button"
     static let confirmDeletePetButton = "confirm_delete_pet_button"
     static let cancelDeletePetButton = "cancel_delete_pet_button"
+
+    // MARK: - Health
+    static let healthEventsList = "health_events_list"
+    static let healthSearchField = "health_search_field"
+    static let addHealthEventButton = "add_health_event_button"
+    static let smartSearchButton = "smart_search_button"
+    static let healthCategoryField = "health_category_field"
+    static let healthNotesField = "health_notes_field"
+    static let healthDatePicker = "health_date_picker"
+    static let healthNotifyFamilyToggle = "health_notify_family_toggle"
+    static let saveHealthEventButton = "save_health_event_button"
+    static let cancelHealthEventButton = "cancel_health_event_button"
+    static let healthPhotoPickerButton = "health_photo_picker_button"
+    static let deleteHealthEventButton = "delete_health_event_button"
+    static let confirmDeleteHealthEventButton = "confirm_delete_health_event_button"
 }

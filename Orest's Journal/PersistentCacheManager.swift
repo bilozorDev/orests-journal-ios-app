@@ -35,6 +35,8 @@ final class PersistentCacheManager {
         case familyMembers(familyId: String)
         case pets
         case calorieGoal(petId: String)
+        case healthEvents(petId: String)
+        case healthCategories(petId: String)
 
         var fileName: String {
             switch self {
@@ -44,6 +46,10 @@ final class PersistentCacheManager {
                 return "pets.json"
             case .calorieGoal(let petId):
                 return "calorie_goal_\(petId).json"
+            case .healthEvents(let petId):
+                return "health_events_\(petId).json"
+            case .healthCategories(let petId):
+                return "health_categories_\(petId).json"
             }
         }
     }

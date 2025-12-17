@@ -60,6 +60,7 @@ UPLOAD_FOLDERS = {
     "pet-photo": "pets",
     "food-photo": "foods",
     "medicine-photo": "medicines",
+    "health-event-photo": "health-events",
 }
 
 

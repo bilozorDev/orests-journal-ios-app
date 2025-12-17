@@ -20,6 +20,7 @@ class UploadType(str, Enum):
     PET_PHOTO = "pet-photo"
     FOOD_PHOTO = "food-photo"
     MEDICINE_PHOTO = "medicine-photo"
+    HEALTH_EVENT_PHOTO = "health-event-photo"
 
 
 async def get_user_org_id(db: AsyncSession, user_id: str) -> str:

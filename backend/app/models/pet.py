@@ -26,7 +26,6 @@ class Pet(Base):
     feedings = relationship("PetFeeding", back_populates="pet", cascade="all, delete-orphan")
     calorie_goals = relationship("PetCalorieGoal", back_populates="pet", cascade="all, delete-orphan")
     medications = relationship("PetMedication", back_populates="pet", cascade="all, delete-orphan")
-    health_categories = relationship("PetHealthCategory", back_populates="pet", cascade="all, delete-orphan")
 
 
 class HealthRecord(Base):

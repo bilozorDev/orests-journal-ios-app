@@ -356,8 +356,8 @@ async def verify_health_category_access(
             detail="Health category not found"
         )
 
-    # Get the pet to check family access
-    await verify_pet_access(db, user_id, category.pet_id)
+    # Verify user has access to this family
+    await verify_family_access(db, user_id, str(category.org_id))
 
     return category
 
@@ -392,7 +392,7 @@ async def verify_health_event_access(
             detail="Health event not found"
         )
 
-    # Get the category to check access (which will check pet -> family)
-    await verify_health_category_access(db, user_id, event.category_id)
+    # Verify access via the pet (events have pet_id directly)
+    await verify_pet_access(db, user_id, event.pet_id)
 
     return event

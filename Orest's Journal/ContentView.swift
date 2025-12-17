@@ -124,7 +124,7 @@ struct MainTabView: View {
                 .tag(Tab.medication)
                 .accessibilityIdentifier(AccessibilityIdentifier.medicationTab)
 
-            PlaceholderView(title: "Health", icon: "heart")
+            HealthView()
                 .tabItem { Label("Health", systemImage: "heart") }
                 .tag(Tab.health)
                 .accessibilityIdentifier(AccessibilityIdentifier.healthTab)

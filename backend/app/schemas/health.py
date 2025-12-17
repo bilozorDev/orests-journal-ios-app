@@ -13,7 +13,7 @@ class HealthCategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    pet_id: UUID
+    org_id: UUID
     name: str
     name_normalized: str
     created_at: datetime
@@ -25,6 +25,23 @@ class HealthEventCreate(BaseModel):
     category_name: str  # Will get or create category
     occurred_at: Optional[datetime] = None  # Defaults to now
     notes: Optional[str] = None
+    notify_family: bool = False  # Send push notification to family members
+
+
+class HealthEventUpdate(BaseModel):
+    category_name: Optional[str] = None
+    occurred_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+# Health Event Photo Schemas
+class HealthEventPhotoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    photo_url: str
+    sort_order: int
+    created_at: datetime
 
 
 class HealthEventResponse(BaseModel):
@@ -34,6 +51,7 @@ class HealthEventResponse(BaseModel):
     category_id: UUID
     occurred_at: datetime
     notes: Optional[str] = None
+    photos: list[HealthEventPhotoResponse] = []
     created_at: datetime
 
 
@@ -45,6 +63,7 @@ class HealthEventNested(BaseModel):
     category_id: UUID
     occurred_at: datetime
     notes: Optional[str] = None
+    photos: list[HealthEventPhotoResponse] = []
     created_at: datetime
     created_by: Optional[UUID] = None
 
