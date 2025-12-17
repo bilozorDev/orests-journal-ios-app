@@ -105,6 +105,13 @@ struct SmartSearchView: View {
                                 onEventDeleted?(event.id)
                             }
                         )
+                    } else {
+                        // Fallback view when pet is unexpectedly nil
+                        ContentUnavailableView(
+                            "Pet Not Found",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text("Unable to load pet information for this event.")
+                        )
                     }
                 }
             }
@@ -198,6 +205,8 @@ struct SmartSearchView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Select \(pet.name)")
+                    .accessibilityAddTraits(selectedPet?.id == pet.id ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
@@ -454,11 +463,14 @@ struct SmartSearchView: View {
 
                         VStack(spacing: 8) {
                             ForEach(searchResults) { event in
-                                SmartSearchResultRow(event: event, petName: petNameForEvent(event))
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        navigationPath.append(HealthDestination.eventDetail(event))
-                                    }
+                                Button {
+                                    navigationPath.append(HealthDestination.eventDetail(event))
+                                } label: {
+                                    SmartSearchResultRow(event: event, petName: petNameForEvent(event))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(event.category.name) on \(Formatters.shortDate.string(from: event.event.occurredAt))")
+                                .accessibilityHint("Double tap to view details")
                             }
                         }
                     }
@@ -488,11 +500,14 @@ struct SmartSearchView: View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(searchResults) { event in
-                    SmartSearchResultRow(event: event, petName: petNameForEvent(event))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            navigationPath.append(HealthDestination.eventDetail(event))
-                        }
+                    Button {
+                        navigationPath.append(HealthDestination.eventDetail(event))
+                    } label: {
+                        SmartSearchResultRow(event: event, petName: petNameForEvent(event))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(event.category.name) on \(Formatters.shortDate.string(from: event.event.occurredAt))")
+                    .accessibilityHint("Double tap to view details")
                 }
             }
             .padding()

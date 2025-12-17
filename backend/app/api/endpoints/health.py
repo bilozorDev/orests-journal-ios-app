@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy import select, or_, func, delete, exists
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -217,10 +218,31 @@ async def get_or_create_category(
     name: str,
     user_id: str,
 ) -> PetHealthCategory:
-    """Get an existing category or create a new one (categories are family-wide)."""
+    """Get an existing category or create a new one (categories are family-wide).
+
+    Uses INSERT ... ON CONFLICT DO NOTHING to prevent race conditions where
+    two concurrent requests might both try to create the same category.
+    """
     normalized = name.lower().strip()
 
-    # Try to find existing category in this family
+    # Use upsert pattern to handle concurrent inserts safely
+    # First, try to insert (will do nothing if exists due to unique constraint)
+    insert_stmt = (
+        pg_insert(PetHealthCategory)
+        .values(
+            org_id=org_id,
+            name=name.strip(),
+            name_normalized=normalized,
+            created_by=UUID(user_id),
+        )
+        .on_conflict_do_nothing(
+            index_elements=['org_id', 'name_normalized']
+        )
+    )
+    await db.execute(insert_stmt)
+    await db.flush()
+
+    # Now fetch the category (either newly created or existing)
     query = (
         select(PetHealthCategory)
         .where(
@@ -230,20 +252,7 @@ async def get_or_create_category(
         .limit(1)
     )
     result = await db.execute(query)
-    category = result.scalar_one_or_none()
-
-    if category:
-        return category
-
-    # Create new category for this family
-    category = PetHealthCategory(
-        org_id=org_id,
-        name=name.strip(),
-        name_normalized=normalized,
-        created_by=UUID(user_id),
-    )
-    db.add(category)
-    await db.flush()
+    category = result.scalar_one()
 
     return category
 
@@ -280,7 +289,7 @@ async def create_health_event(
     )
 
     # Create event with UTC-normalized timestamp
-    occurred_at = to_utc_naive(event_in.occurred_at) or datetime.utcnow()
+    occurred_at = to_utc_naive(event_in.occurred_at) or datetime.now(timezone.utc).replace(tzinfo=None)
 
     event = PetHealthEvent(
         pet_id=pet_id,

@@ -28,7 +28,7 @@ final class DataService {
     private var familyMembersCache: [String: CacheEntry<FamilyDetailResponse>] = [:]
     private var calorieGoalCache: [UUID: CacheEntry<CalorieGoal>] = [:]
     private var healthEventsCache: [UUID: CacheEntry<[HealthEventWithCategory]>] = [:]
-    private var healthCategoriesCache: [UUID: CacheEntry<[HealthCategory]>] = [:]
+    private var healthCategoriesCache: [String: CacheEntry<[HealthCategory]>] = [:]  // Keyed by orgId (family-wide)
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
     private let healthCacheTTL: TimeInterval = 300  // 5 minutes
@@ -37,6 +37,7 @@ final class DataService {
     private var petsRefreshInProgress = false
     private var familyRefreshInProgress: Set<String> = []
     private var healthEventsRefreshInProgress: Set<UUID> = []
+    private var healthCategoriesRefreshInProgress: Set<String> = []  // By orgId
 
     private init() {
         // Listen for memory warnings to clear caches
@@ -326,24 +327,38 @@ final class DataService {
         healthEventsCache[petId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    private func getCachedHealthCategories(for petId: UUID) -> [HealthCategory]? {
-        guard let entry = healthCategoriesCache[petId],
+    private func getCachedHealthCategories(for orgId: String) -> [HealthCategory]? {
+        guard let entry = healthCategoriesCache[orgId],
               Date().timeIntervalSince(entry.timestamp) < healthCacheTTL else {
             return nil
         }
         return entry.data
     }
 
-    private func cacheHealthCategories(_ data: [HealthCategory], for petId: UUID) {
-        healthCategoriesCache[petId] = CacheEntry(data: data, timestamp: Date())
+    private func cacheHealthCategories(_ data: [HealthCategory], for orgId: String) {
+        healthCategoriesCache[orgId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    func invalidateHealthCache(for petId: UUID) {
+    func invalidateHealthCache(for petId: UUID, orgId: String? = nil) {
         healthEventsCache.removeValue(forKey: petId)
-        healthCategoriesCache.removeValue(forKey: petId)
         Task {
             await persistentCache.delete(forKey: .healthEvents(petId: petId.uuidString))
-            await persistentCache.delete(forKey: .healthCategories(petId: petId.uuidString))
+        }
+        // Also invalidate categories if orgId provided
+        if let orgId = orgId {
+            healthCategoriesCache.removeValue(forKey: orgId)
+            Task {
+                await persistentCache.delete(forKey: .healthCategories(orgId: orgId))
+            }
+        }
+    }
+
+    /// Invalidate all health caches (used when forceRefresh needed after mutations in All view)
+    func invalidateAllHealthCaches() {
+        healthEventsCache.removeAll()
+        healthCategoriesCache.removeAll()
+        Task {
+            // Note: This clears memory caches. Disk caches will be stale but will refresh on next fetch.
         }
     }
 
@@ -384,31 +399,66 @@ final class DataService {
     }
 
     private func refreshHealthEventsInBackground(petId: UUID) async throws {
+        let oldEvents = getCachedHealthEvents(for: petId) ?? []
         let events = try await api.getHealthEvents(petId: petId)
         cacheHealthEvents(events, for: petId)
         await persistentCache.save(events, forKey: .healthEvents(petId: petId.uuidString))
+
+        // If events changed, notify views to refresh
+        let oldIds = Set(oldEvents.map { $0.id })
+        let newIds = Set(events.map { $0.id })
+        if oldIds != newIds {
+            NavigationManager.shared.requestTabRefresh(.health)
+        }
     }
 
     func getHealthCategories(for petId: UUID, forceRefresh: Bool = false) async throws -> [HealthCategory] {
-        // Check memory cache
-        if !forceRefresh, let cached = getCachedHealthCategories(for: petId) {
+        // Get orgId from pet (categories are family-wide)
+        guard let pet = petsCache?.data.first(where: { $0.id == petId }) ?? (try? await getPets()).first(where: { $0.id == petId }) else {
+            // Fallback to API call if pet not in cache
+            return try await api.getHealthCategories(petId: petId)
+        }
+        let orgId = pet.orgId
+
+        // Check memory cache (by orgId, not petId)
+        if !forceRefresh, let cached = getCachedHealthCategories(for: orgId) {
             return cached
         }
 
         // Check disk cache
         if !forceRefresh {
-            let diskCached: PersistentCacheManager.CachedData<[HealthCategory]>? = await persistentCache.load(forKey: .healthCategories(petId: petId.uuidString))
+            let diskCached: PersistentCacheManager.CachedData<[HealthCategory]>? = await persistentCache.load(forKey: .healthCategories(orgId: orgId))
             if let diskCached = diskCached {
-                cacheHealthCategories(diskCached.data, for: petId)
+                cacheHealthCategories(diskCached.data, for: orgId)
+                // If stale, refresh in background (with stampede prevention)
+                if Date().timeIntervalSince(diskCached.timestamp) > healthCacheTTL {
+                    if !healthCategoriesRefreshInProgress.contains(orgId) {
+                        healthCategoriesRefreshInProgress.insert(orgId)
+                        Task {
+                            defer { Task { @MainActor in self.healthCategoriesRefreshInProgress.remove(orgId) } }
+                            do {
+                                try await refreshHealthCategoriesInBackground(petId: petId, orgId: orgId)
+                            } catch {
+                                print("Background health categories refresh failed: \(error)")
+                            }
+                        }
+                    }
+                }
                 return diskCached.data
             }
         }
 
         // Fetch from network
         let categories = try await api.getHealthCategories(petId: petId)
-        cacheHealthCategories(categories, for: petId)
-        await persistentCache.save(categories, forKey: .healthCategories(petId: petId.uuidString))
+        cacheHealthCategories(categories, for: orgId)
+        await persistentCache.save(categories, forKey: .healthCategories(orgId: orgId))
         return categories
+    }
+
+    private func refreshHealthCategoriesInBackground(petId: UUID, orgId: String) async throws {
+        let categories = try await api.getHealthCategories(petId: petId)
+        cacheHealthCategories(categories, for: orgId)
+        await persistentCache.save(categories, forKey: .healthCategories(orgId: orgId))
     }
 
     func getHealthEvent(eventId: UUID) async throws -> HealthEventWithCategory {
@@ -435,7 +485,11 @@ final class DataService {
     func createHealthEvent(petId: UUID, categoryName: String, occurredAt: Date? = nil, notes: String? = nil, notifyFamily: Bool = false) async throws -> HealthEvent {
         let event = HealthEventCreate(categoryName: categoryName, occurredAt: occurredAt, notes: notes, notifyFamily: notifyFamily)
         let result = try await api.createHealthEvent(petId: petId, event: event)
-        invalidateHealthCache(for: petId)
+        // Get orgId for category cache invalidation
+        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
+        invalidateHealthCache(for: petId, orgId: orgId)
+        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
         return result
     }
@@ -443,14 +497,20 @@ final class DataService {
     func updateHealthEvent(eventId: UUID, petId: UUID, categoryName: String? = nil, occurredAt: Date? = nil, notes: String? = nil) async throws -> HealthEventWithCategory {
         let update = HealthEventUpdate(categoryName: categoryName, occurredAt: occurredAt, notes: notes)
         let result = try await api.updateHealthEvent(eventId: eventId, update: update)
-        invalidateHealthCache(for: petId)
+        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
+        invalidateHealthCache(for: petId, orgId: orgId)
+        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
         return result
     }
 
     func deleteHealthEvent(eventId: UUID, petId: UUID) async throws {
         try await api.deleteHealthEvent(eventId: eventId)
-        invalidateHealthCache(for: petId)
+        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
+        invalidateHealthCache(for: petId, orgId: orgId)
+        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
     }
 

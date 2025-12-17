@@ -99,6 +99,7 @@ struct AddHealthEventView: View {
                         Text("\(totalPhotoCount)/\(maxPhotos)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .accessibilityLabel("\(totalPhotoCount) of \(maxPhotos) photos")
                     }
                 }
 
@@ -262,6 +263,7 @@ struct AddHealthEventView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Take photo with camera")
     }
 
     private var addFromLibraryGridItem: some View {
@@ -282,6 +284,7 @@ struct AddHealthEventView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(AccessibilityIdentifier.healthPhotoPickerButton)
+        .accessibilityLabel("Add photo from library")
     }
 
     private func existingPhotoThumbnail(_ photo: HealthEventPhoto) -> some View {
@@ -334,6 +337,7 @@ struct AddHealthEventView: View {
                 .clipShape(Circle())
         }
         .padding(6)
+        .accessibilityLabel("Remove photo")
     }
 
     // MARK: - Data Loading

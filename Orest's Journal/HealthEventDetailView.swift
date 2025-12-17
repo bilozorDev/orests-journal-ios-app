@@ -69,6 +69,8 @@ struct HealthEventDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("More actions")
+                .accessibilityHint("Edit or delete this event")
             }
         }
         .sheet(isPresented: $showEditSheet) {
@@ -231,6 +233,8 @@ struct HealthEventDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Photo \(index + 1) of \(photos.count)")
+                .accessibilityHint("Double tap to view full screen")
             }
         }
     }
@@ -275,46 +279,15 @@ struct HealthEventDetailView: View {
     // MARK: - Helpers
 
     private var formattedDate: String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .full
-        dateFormatter.timeStyle = .short
-        return dateFormatter.string(from: event.event.occurredAt)
+        Formatters.fullDateTime.string(from: event.event.occurredAt)
     }
 
     private var categoryIcon: String {
-        let category = event.category.nameNormalized
-        switch category {
-        case "vet visit", "vet", "veterinary":
-            return "stethoscope"
-        case "vaccination", "vaccine", "shot":
-            return "syringe"
-        case "medication", "medicine":
-            return "pills"
-        case "surgery", "operation":
-            return "scissors"
-        case "blood work", "blood test", "lab work":
-            return "drop"
-        case "weight", "weigh-in":
-            return "scalemass"
-        case "dental", "teeth", "dental cleaning":
-            return "mouth"
-        case "grooming", "bath":
-            return "scissors.badge.ellipsis"
-        case "allergy", "allergic reaction":
-            return "exclamationmark.triangle"
-        case "injury", "wound", "hurt":
-            return "bandage"
-        case "vomiting", "sick", "illness":
-            return "facemask"
-        default:
-            return "heart.text.square"
-        }
+        event.category.icon
     }
 
     private var categoryColor: Color {
-        let hash = event.category.nameNormalized.hashValue
-        let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
-        return colors[abs(hash) % colors.count]
+        event.category.color
     }
 
     // MARK: - Actions
@@ -351,7 +324,13 @@ struct FullScreenPhotoGalleryView: View {
     let initialIndex: Int
 
     @Environment(\.dismiss) private var dismiss
-    @State private var currentIndex: Int = 0
+    @State private var currentIndex: Int
+
+    init(photos: [HealthEventPhoto], initialIndex: Int) {
+        self.photos = photos
+        self.initialIndex = initialIndex
+        self._currentIndex = State(initialValue: initialIndex)
+    }
 
     var body: some View {
         NavigationStack {
@@ -369,6 +348,7 @@ struct FullScreenPhotoGalleryView: View {
                                 .tint(.white)
                         }
                         .tag(index)
+                        .accessibilityLabel("Photo \(index + 1) of \(photos.count)")
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .automatic : .never))
@@ -379,6 +359,7 @@ struct FullScreenPhotoGalleryView: View {
                         Text("\(currentIndex + 1) / \(photos.count)")
                             .foregroundStyle(.white.opacity(0.7))
                             .font(.subheadline)
+                            .accessibilityLabel("Photo \(currentIndex + 1) of \(photos.count)")
                     }
                 }
 
@@ -390,11 +371,9 @@ struct FullScreenPhotoGalleryView: View {
                             .font(.title2)
                             .foregroundStyle(.white.opacity(0.7))
                     }
+                    .accessibilityLabel("Close")
                 }
             }
-        }
-        .onAppear {
-            currentIndex = initialIndex
         }
     }
 }

@@ -30,6 +30,7 @@ struct HealthView: View {
     @State private var errorMessage = ""
     @State private var navigationPath = NavigationPath()
     @State private var showSmartSearch = false
+    @State private var showPetPickerForAdd = false
     @State private var eventPetMap: [UUID: UUID] = [:]  // Maps event ID to pet ID for "All" view
 
     @AppStorage("health_selected_pet_id") private var savedPetId: String = ""
@@ -55,11 +56,17 @@ struct HealthView: View {
                 if !pets.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
-                            showAddEvent = true
+                            if selectedPet != nil {
+                                showAddEvent = true
+                            } else {
+                                // In "All" mode, default to first pet
+                                showPetPickerForAdd = true
+                            }
                         } label: {
                             Image(systemName: "plus")
                         }
                         .accessibilityIdentifier(AccessibilityIdentifier.addHealthEventButton)
+                        .accessibilityLabel("Add health event")
                     }
                 }
             }
@@ -108,6 +115,22 @@ struct HealthView: View {
                         }
                     )
                 }
+            }
+            .confirmationDialog(
+                "Select Pet",
+                isPresented: $showPetPickerForAdd,
+                titleVisibility: .visible
+            ) {
+                ForEach(pets) { pet in
+                    Button(pet.name) {
+                        selectedPet = pet
+                        savedPetId = pet.id.uuidString
+                        showAddEvent = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Which pet is this health event for?")
             }
             .task {
                 await loadInitialData()
@@ -197,6 +220,8 @@ struct HealthView: View {
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Show all pets")
+                    .accessibilityAddTraits(selectedPet == nil ? .isSelected : [])
                 }
 
                 ForEach(pets) { pet in
@@ -234,6 +259,8 @@ struct HealthView: View {
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Select \(pet.name)")
+                    .accessibilityAddTraits(selectedPet?.id == pet.id ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
@@ -286,6 +313,8 @@ struct HealthView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .accessibilityIdentifier(AccessibilityIdentifier.smartSearchButton)
+            .accessibilityLabel("Smart search")
+            .accessibilityHint("Search with natural language")
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
@@ -313,6 +342,8 @@ struct HealthView: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("All categories")
+                .accessibilityAddTraits(selectedCategory == nil ? .isSelected : [])
 
                 ForEach(categories) { category in
                     Button {
@@ -331,6 +362,8 @@ struct HealthView: View {
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Filter by \(category.name)")
+                    .accessibilityAddTraits(selectedCategory?.id == category.id ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
@@ -345,14 +378,17 @@ struct HealthView: View {
             ForEach(groupedEvents.keys.sorted().reversed(), id: \.self) { section in
                 Section {
                     ForEach(groupedEvents[section] ?? []) { eventWithCategory in
-                        HealthEventRow(
-                            event: eventWithCategory,
-                            petName: selectedPet == nil ? petName(for: eventWithCategory) : nil
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        Button {
                             navigationPath.append(HealthDestination.eventDetail(eventWithCategory))
+                        } label: {
+                            HealthEventRow(
+                                event: eventWithCategory,
+                                petName: selectedPet == nil ? petName(for: eventWithCategory) : nil
+                            )
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(eventWithCategory.category.name) on \(Formatters.shortDate.string(from: eventWithCategory.event.occurredAt))")
+                        .accessibilityHint("Double tap to view details")
                     }
                 } header: {
                     HStack {
@@ -692,7 +728,7 @@ struct HealthEventRow: View {
             // Category icon
             categoryIcon
                 .frame(width: 40, height: 40)
-                .background(categoryColor.opacity(0.15))
+                .background(event.category.color.opacity(0.15))
                 .clipShape(Circle())
 
             // Event details
@@ -752,6 +788,7 @@ struct HealthEventRow: View {
                             .offset(x: 2, y: 2)
                     }
                 }
+                .accessibilityLabel("\(event.event.photos.count) photo\(event.event.photos.count == 1 ? "" : "s")")
             }
 
             Image(systemName: "chevron.right")
@@ -764,48 +801,9 @@ struct HealthEventRow: View {
     }
 
     private var categoryIcon: some View {
-        Image(systemName: iconName(for: event.category.nameNormalized))
+        Image(systemName: event.category.icon)
             .font(.system(size: 18))
-            .foregroundColor(categoryColor)
-    }
-
-    private var categoryColor: Color {
-        // Hash category name to get consistent color
-        let hash = event.category.nameNormalized.hashValue
-        let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
-        return colors[abs(hash) % colors.count]
-    }
-
-    private func iconName(for category: String) -> String {
-        // Common health event types with appropriate icons
-        switch category {
-        case "vet visit", "vet", "veterinary":
-            return "stethoscope"
-        case "vaccination", "vaccine", "shot":
-            return "syringe"
-        case "medication", "medicine":
-            return "pills"
-        case "surgery", "operation":
-            return "scissors"
-        case "blood work", "blood test", "lab work":
-            return "drop"
-        case "weight", "weigh-in":
-            return "scalemass"
-        case "dental", "teeth", "dental cleaning":
-            return "mouth"
-        case "grooming", "bath":
-            return "scissors.badge.ellipsis"
-        case "allergy", "allergic reaction":
-            return "exclamationmark.triangle"
-        case "injury", "wound", "hurt":
-            return "bandage"
-        case "vomiting", "sick", "illness":
-            return "facemask"
-        case "diarrhea", "digestive":
-            return "stomach"
-        default:
-            return "heart.text.square"
-        }
+            .foregroundColor(event.category.color)
     }
 }
 

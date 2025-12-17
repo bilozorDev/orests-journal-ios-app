@@ -21,6 +21,14 @@ enum Formatters {
         return formatter
     }()
 
+    /// Full date with time (e.g., "Wednesday, December 17, 2025 at 3:30 PM")
+    static let fullDateTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     static func formatWeight(_ weight: Double) -> String {
         Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
