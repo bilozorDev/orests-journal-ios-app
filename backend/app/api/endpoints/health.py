@@ -645,17 +645,22 @@ async def delete_health_event_photo(
             detail="Photo not found"
         )
 
-    # Delete photo from R2
-    try:
-        deleted = await storage_service.delete_image(photo.photo_url)
-        if deleted:
-            logger.info(f"Deleted health event photo: {photo.photo_url}")
-    except Exception as e:
-        logger.error(f"Failed to delete health event photo from R2: {e}")
+    # Store URL before deleting record
+    photo_url = photo.photo_url
 
-    # Delete photo record
+    # Delete photo record from DB first
     await db.delete(photo)
     await db.commit()
+
+    # Delete photo from R2 AFTER DB commit succeeds
+    # This order ensures we don't lose the file if DB delete fails
+    try:
+        deleted = await storage_service.delete_image(photo_url)
+        if deleted:
+            logger.info(f"Deleted health event photo: {photo_url}")
+    except Exception as e:
+        # Log but don't fail - file is orphaned but can be cleaned up later
+        logger.error(f"Failed to delete health event photo from R2: {e}")
 
     # Invalidate cache (get pet for org_id)
     pet_query = select(Pet).where(Pet.id == event.pet_id)
@@ -683,22 +688,26 @@ async def delete_health_event(
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
 
-    # Get all photos for this event
+    # Get all photos for this event and store URLs before deletion
     photos_query = select(PetHealthEventPhoto).where(PetHealthEventPhoto.event_id == event_id)
     photos_result = await db.execute(photos_query)
     photos = photos_result.scalars().all()
+    photo_urls = [photo.photo_url for photo in photos]
 
-    # Delete all photos from R2
-    for photo in photos:
-        try:
-            deleted = await storage_service.delete_image(photo.photo_url)
-            if deleted:
-                logger.info(f"Deleted health event photo on event deletion: {photo.photo_url}")
-        except Exception as e:
-            logger.error(f"Failed to delete health event photo on event deletion: {e}")
-
+    # Delete event from DB first (cascade deletes photo records)
     await db.delete(event)
     await db.commit()
+
+    # Delete photos from R2 AFTER DB commit succeeds
+    # This order ensures we don't lose files if DB delete fails
+    for photo_url in photo_urls:
+        try:
+            deleted = await storage_service.delete_image(photo_url)
+            if deleted:
+                logger.info(f"Deleted health event photo on event deletion: {photo_url}")
+        except Exception as e:
+            # Log but don't fail - files are orphaned but can be cleaned up later
+            logger.error(f"Failed to delete health event photo on event deletion: {e}")
 
     # Clean up orphaned category if this was the last event using it
     await delete_orphaned_category(db, category_id)

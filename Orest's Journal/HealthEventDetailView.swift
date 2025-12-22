@@ -204,6 +204,8 @@ struct HealthEventDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Photo")
+        .accessibilityHint("Double tap to view full screen")
     }
 
     private var photoGrid: some View {
@@ -233,7 +235,7 @@ struct HealthEventDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Photo \(index + 1) of \(photos.count)")
+                .accessibilityLabel("Photo \(index + 1) of \(event.event.photos.count)")
                 .accessibilityHint("Double tap to view full screen")
             }
         }

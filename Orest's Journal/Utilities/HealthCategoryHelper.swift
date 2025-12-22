@@ -47,11 +47,22 @@ enum HealthCategoryHelper {
         }
     }
 
-    /// Get a consistent color for a category based on its normalized name hash.
+    /// Get a consistent color for a category based on its normalized name.
+    /// Uses djb2 hash algorithm for deterministic, stable colors across app launches.
     static func color(for categoryNormalized: String) -> Color {
-        let hash = categoryNormalized.hashValue
+        let hash = djb2Hash(categoryNormalized)
         let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
-        return colors[abs(hash) % colors.count]
+        return colors[Int(hash) % colors.count]
+    }
+
+    /// djb2 hash algorithm - deterministic and stable across app launches
+    /// Unlike String.hashValue, this produces the same result every time
+    private static func djb2Hash(_ string: String) -> UInt {
+        var hash: UInt = 5381
+        for char in string.utf8 {
+            hash = ((hash << 5) &+ hash) &+ UInt(char)  // hash * 33 + char
+        }
+        return hash
     }
 }
 

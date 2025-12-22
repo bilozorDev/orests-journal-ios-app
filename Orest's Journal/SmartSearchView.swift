@@ -302,6 +302,7 @@ struct SmartSearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(12)

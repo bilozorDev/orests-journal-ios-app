@@ -192,6 +192,42 @@ final class PersistentCacheManager {
         }
     }
 
+    /// Delete all cache entries matching a key prefix
+    /// Pass a key with empty string ID to match all entries of that type
+    /// e.g., `.healthEvents(petId: "")` deletes all health event caches
+    func deleteAll(matching key: CacheKey) async {
+        let prefix: String
+        switch key {
+        case .healthEvents:
+            prefix = "health_events_"
+        case .healthCategories:
+            prefix = "health_categories_"
+        case .familyMembers:
+            prefix = "family_members_"
+        case .calorieGoal:
+            prefix = "calorie_goal_"
+        case .pets:
+            // Single file, use regular delete
+            await delete(forKey: key)
+            return
+        }
+
+        do {
+            try await Task.detached(priority: .utility) {
+                let fileManager = FileManager.default
+                guard fileManager.fileExists(atPath: self.cacheDirectory.path) else { return }
+
+                let files = try fileManager.contentsOfDirectory(atPath: self.cacheDirectory.path)
+                for file in files where file.hasPrefix(prefix) {
+                    let fileURL = self.cacheDirectory.appendingPathComponent(file)
+                    try fileManager.removeItem(at: fileURL)
+                }
+            }.value
+        } catch {
+            print("PersistentCache: Failed to delete files matching \(prefix): \(error)")
+        }
+    }
+
     /// Get the timestamp of cached data without loading the full data
     func getCacheTimestamp(forKey key: CacheKey) async -> Date? {
         // For efficiency, load minimal wrapper to check timestamp

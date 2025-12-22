@@ -358,7 +358,8 @@ final class DataService {
         healthEventsCache.removeAll()
         healthCategoriesCache.removeAll()
         Task {
-            // Note: This clears memory caches. Disk caches will be stale but will refresh on next fetch.
+            await persistentCache.deleteAll(matching: .healthEvents(petId: ""))
+            await persistentCache.deleteAll(matching: .healthCategories(orgId: ""))
         }
     }
 
@@ -485,10 +486,7 @@ final class DataService {
     func createHealthEvent(petId: UUID, categoryName: String, occurredAt: Date? = nil, notes: String? = nil, notifyFamily: Bool = false) async throws -> HealthEvent {
         let event = HealthEventCreate(categoryName: categoryName, occurredAt: occurredAt, notes: notes, notifyFamily: notifyFamily)
         let result = try await api.createHealthEvent(petId: petId, event: event)
-        // Get orgId for category cache invalidation
-        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
-        invalidateHealthCache(for: petId, orgId: orgId)
-        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        // Invalidate all health caches to ensure both single-pet and "All" views are fresh
         invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
         return result
@@ -497,9 +495,7 @@ final class DataService {
     func updateHealthEvent(eventId: UUID, petId: UUID, categoryName: String? = nil, occurredAt: Date? = nil, notes: String? = nil) async throws -> HealthEventWithCategory {
         let update = HealthEventUpdate(categoryName: categoryName, occurredAt: occurredAt, notes: notes)
         let result = try await api.updateHealthEvent(eventId: eventId, update: update)
-        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
-        invalidateHealthCache(for: petId, orgId: orgId)
-        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        // Invalidate all health caches to ensure both single-pet and "All" views are fresh
         invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
         return result
@@ -507,23 +503,23 @@ final class DataService {
 
     func deleteHealthEvent(eventId: UUID, petId: UUID) async throws {
         try await api.deleteHealthEvent(eventId: eventId)
-        let orgId = petsCache?.data.first(where: { $0.id == petId })?.orgId
-        invalidateHealthCache(for: petId, orgId: orgId)
-        // Also invalidate all other pets' event caches to ensure "All" view is fresh
+        // Invalidate all health caches to ensure both single-pet and "All" views are fresh
         invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
     }
 
     func uploadHealthEventPhoto(eventId: UUID, petId: UUID, imageData: Data, mimeType: String = "image/jpeg") async throws -> HealthEventPhoto {
         let result = try await api.uploadHealthEventPhoto(eventId: eventId, imageData: imageData, mimeType: mimeType)
-        invalidateHealthCache(for: petId)
+        // Invalidate all health caches to ensure "All" view is fresh
+        invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
         return result
     }
 
     func deleteHealthEventPhoto(eventId: UUID, photoId: UUID, petId: UUID) async throws {
         try await api.deleteHealthEventPhoto(eventId: eventId, photoId: photoId)
-        invalidateHealthCache(for: petId)
+        // Invalidate all health caches to ensure "All" view is fresh
+        invalidateAllHealthCaches()
         NavigationManager.shared.requestTabRefresh(.health)
     }
 

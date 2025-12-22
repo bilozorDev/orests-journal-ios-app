@@ -31,7 +31,7 @@ struct HealthView: View {
     @State private var navigationPath = NavigationPath()
     @State private var showSmartSearch = false
     @State private var showPetPickerForAdd = false
-    @State private var eventPetMap: [UUID: UUID] = [:]  // Maps event ID to pet ID for "All" view
+    @State private var loadEventsTask: Task<Void, Never>?  // Track current loading task for cancellation
 
     @AppStorage("health_selected_pet_id") private var savedPetId: String = ""
 
@@ -295,6 +295,7 @@ struct HealthView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(10)
@@ -489,7 +490,12 @@ struct HealthView: View {
                     .multilineTextAlignment(.center)
 
                 Button {
-                    showAddEvent = true
+                    if selectedPet != nil {
+                        showAddEvent = true
+                    } else {
+                        // In "All" mode, show pet picker first
+                        showPetPickerForAdd = true
+                    }
                 } label: {
                     Label("Add Health Event", systemImage: "plus")
                         .font(.headline)
@@ -580,6 +586,9 @@ struct HealthView: View {
             // Force refresh pets on initial load to avoid stale cache issues
             pets = try await dataService.getPets(forceRefresh: true)
 
+            // Check for cancellation before updating state
+            guard !Task.isCancelled else { return }
+
             // Restore saved pet selection
             if let savedId = UUID(uuidString: savedPetId),
                let savedPet = pets.first(where: { $0.id == savedId }) {
@@ -597,28 +606,43 @@ struct HealthView: View {
                 await loadEventsAndCategories(for: firstPet)
             }
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
             showError = true
         }
+
+        guard !Task.isCancelled else { return }
         isLoading = false
     }
 
     private func selectPet(_ pet: Pet?) {
         guard pet?.id != selectedPet?.id else { return }
+
+        // Cancel any in-flight loading task to prevent race conditions
+        loadEventsTask?.cancel()
+
         selectedPet = pet
         savedPetId = pet?.id.uuidString ?? ""
         events = []
         categories = []
         selectedCategory = nil
         isLoadingEvents = true
-        Task {
+
+        // Capture the selected pet ID to verify it hasn't changed when results arrive
+        let expectedPetId = pet?.id
+
+        loadEventsTask = Task {
             if let pet = pet {
                 await loadEventsAndCategories(for: pet)
             } else {
                 // "All" selected - load events for all pets
                 await loadAllPetsEventsAndCategories()
             }
-            isLoadingEvents = false
+
+            // Only update loading state if this is still the active request
+            if !Task.isCancelled && selectedPet?.id == expectedPetId {
+                isLoadingEvents = false
+            }
         }
     }
 
@@ -628,9 +652,14 @@ struct HealthView: View {
             async let categoriesTask = dataService.getHealthCategories(for: pet.id)
 
             let (loadedEvents, loadedCategories) = try await (eventsTask, categoriesTask)
+
+            // Only update state if task wasn't cancelled
+            guard !Task.isCancelled else { return }
+
             events = loadedEvents
             categories = loadedCategories
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
             showError = true
         }
@@ -638,52 +667,47 @@ struct HealthView: View {
 
     private func loadAllPetsEventsAndCategories() async {
         do {
+            // Fetch categories once (they're family-wide) using any pet's ID
+            let categoriesTask = Task {
+                guard let firstPet = pets.first else { return [HealthCategory]() }
+                return try await dataService.getHealthCategories(for: firstPet.id)
+            }
+
             // Parallel fetch events for all pets using TaskGroup
-            let results = try await withThrowingTaskGroup(
-                of: (petId: UUID, events: [HealthEventWithCategory], categories: [HealthCategory]).self
+            let eventsResults = try await withThrowingTaskGroup(
+                of: (petId: UUID, events: [HealthEventWithCategory]).self
             ) { group in
                 for pet in pets {
                     group.addTask {
                         let petEvents = try await self.dataService.getHealthEvents(for: pet.id)
-                        let petCategories = try await self.dataService.getHealthCategories(for: pet.id)
-                        return (petId: pet.id, events: petEvents, categories: petCategories)
+                        return (petId: pet.id, events: petEvents)
                     }
                 }
 
-                var allResults: [(petId: UUID, events: [HealthEventWithCategory], categories: [HealthCategory])] = []
+                var allResults: [(petId: UUID, events: [HealthEventWithCategory])] = []
                 for try await result in group {
                     allResults.append(result)
                 }
                 return allResults
             }
 
-            // Aggregate results
+            // Aggregate events from all pets
             var allEvents: [HealthEventWithCategory] = []
-            var allCategories: [HealthCategory] = []
-            var seenCategoryIds = Set<UUID>()
-            var newEventPetMap: [UUID: UUID] = [:]
-
-            for result in results {
-                // Track which pet each event belongs to
-                for event in result.events {
-                    newEventPetMap[event.id] = result.petId
-                }
+            for result in eventsResults {
                 allEvents.append(contentsOf: result.events)
-
-                // Deduplicate categories (they're family-wide but fetched per-pet)
-                for category in result.categories {
-                    if !seenCategoryIds.contains(category.id) {
-                        seenCategoryIds.insert(category.id)
-                        allCategories.append(category)
-                    }
-                }
             }
+
+            // Get categories result (already deduplicated since fetched once)
+            let loadedCategories = try await categoriesTask.value
+
+            // Only update state if task wasn't cancelled
+            guard !Task.isCancelled else { return }
 
             // Sort all events by date descending
             events = allEvents.sorted { $0.event.occurredAt > $1.event.occurredAt }
-            categories = allCategories.sorted { $0.name < $1.name }
-            eventPetMap = newEventPetMap
+            categories = loadedCategories.sorted { $0.name < $1.name }
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
             showError = true
         }

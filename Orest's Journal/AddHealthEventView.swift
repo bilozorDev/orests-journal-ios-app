@@ -202,9 +202,11 @@ struct AddHealthEventView: View {
                                     .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Use category \(category.name)")
                         }
                     }
                 }
+                .accessibilityLabel("Category suggestions")
             }
         }
     }
@@ -413,22 +415,32 @@ struct AddHealthEventView: View {
     }
 
     private func compressAndAddPhoto(_ data: Data) {
-        guard let image = UIImage(data: data) else {
-            newPhotos.append(NewPhoto(data: data, mimeType: "image/jpeg"))
-            return
-        }
+        // Run compression on background thread to avoid blocking UI
+        Task.detached(priority: .userInitiated) {
+            guard let image = UIImage(data: data) else {
+                await MainActor.run {
+                    newPhotos.append(NewPhoto(data: data, mimeType: "image/jpeg"))
+                }
+                return
+            }
 
-        // Determine if image has transparency (PNG vs JPEG)
-        let hasTransparency = data.starts(with: [0x89, 0x50, 0x4E, 0x47]) // PNG magic bytes
+            // Determine if image has transparency (PNG vs JPEG)
+            let hasTransparency = data.starts(with: [0x89, 0x50, 0x4E, 0x47]) // PNG magic bytes
 
-        do {
-            let compressed = try imageCompressor.compressForUpload(image, hasTransparency: hasTransparency)
-            newPhotos.append(NewPhoto(data: compressed.data, mimeType: compressed.mimeType))
-        } catch {
-            // If compression fails, use original with reasonable quality
-            let fallbackData = hasTransparency ? (image.pngData() ?? data) : (image.jpegData(compressionQuality: 0.8) ?? data)
-            let mimeType = hasTransparency ? "image/png" : "image/jpeg"
-            newPhotos.append(NewPhoto(data: fallbackData, mimeType: mimeType))
+            let result: (data: Data, mimeType: String)
+            do {
+                let compressed = try imageCompressor.compressForUpload(image, hasTransparency: hasTransparency)
+                result = (compressed.data, compressed.mimeType)
+            } catch {
+                // If compression fails, use original with reasonable quality
+                let fallbackData = hasTransparency ? (image.pngData() ?? data) : (image.jpegData(compressionQuality: 0.8) ?? data)
+                let mimeType = hasTransparency ? "image/png" : "image/jpeg"
+                result = (fallbackData, mimeType)
+            }
+
+            await MainActor.run {
+                newPhotos.append(NewPhoto(data: result.data, mimeType: result.mimeType))
+            }
         }
     }
 
