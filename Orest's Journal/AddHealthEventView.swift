@@ -496,18 +496,25 @@ struct AddHealthEventView: View {
         let trimmedCategory = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCategory.isEmpty else { return }
 
+        // Normalize notes: convert whitespace-only to nil
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedNotes: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
+
         isSaving = true
         defer { isSaving = false }
 
         do {
             if let existing = existingEvent {
-                // Update existing event
+                // Update existing event - only send notes if changed
+                let existingNotes = existing.event.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let notesChanged = normalizedNotes != existingNotes
+
                 let updatedEvent = try await dataService.updateHealthEvent(
                     eventId: existing.id,
                     petId: pet.id,
                     categoryName: trimmedCategory != existing.category.name ? trimmedCategory : nil,
                     occurredAt: occurredAt != existing.event.occurredAt ? occurredAt : nil,
-                    notes: notes != (existing.event.notes ?? "") ? notes : nil
+                    notes: notesChanged ? (normalizedNotes ?? "") : nil
                 )
 
                 // Delete photos marked for removal
@@ -536,7 +543,7 @@ struct AddHealthEventView: View {
                     petId: pet.id,
                     categoryName: trimmedCategory,
                     occurredAt: occurredAt,
-                    notes: notes.isEmpty ? nil : notes,
+                    notes: normalizedNotes,
                     notifyFamily: notifyFamily
                 )
 
