@@ -422,13 +422,26 @@ class APIClient: APIClientProtocol {
         try await delete("/health/events/\(eventId.uuidString.lowercased())")
     }
 
-    func searchHealthEvents(petId: UUID, query: String, category: String? = nil, limit: Int = 50) async throws -> [HealthEventWithCategory] {
+    func searchHealthEvents(
+        petId: UUID,
+        query: String,
+        category: String? = nil,
+        since: Date? = nil,
+        until: Date? = nil,
+        limit: Int = 50
+    ) async throws -> [HealthEventWithCategory] {
         var queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(limit))
         ]
         if let category = category {
             queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        if let since = since {
+            queryItems.append(URLQueryItem(name: "since", value: ISO8601DateFormatter().string(from: since)))
+        }
+        if let until = until {
+            queryItems.append(URLQueryItem(name: "until", value: ISO8601DateFormatter().string(from: until)))
         }
         let response: HealthEventListResponse = try await get("/health/pet/\(petId.uuidString.lowercased())/search", queryItems: queryItems)
         return response.events
