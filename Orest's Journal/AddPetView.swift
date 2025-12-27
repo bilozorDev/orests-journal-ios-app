@@ -21,7 +21,7 @@ struct AddPetView: View {
     let petKinds = ["Dog", "Cat", "Bird", "Rabbit", "Hamster", "Guinea Pig", "Other"]
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Form {
                     Section(header: Text("Pet Information")) {
