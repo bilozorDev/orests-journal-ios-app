@@ -131,7 +131,7 @@ struct DeleteAccountSheet: View {
                     .padding()
                     .background(Color.red)
                     .foregroundStyle(.white)
-                    .cornerRadius(12)
+                    .clipShape(.rect(cornerRadius: 12))
                 }
                 .disabled(isDeleting)
                 .accessibilityIdentifier(AccessibilityIdentifier.confirmDeleteAccountButton)
@@ -237,7 +237,7 @@ struct DeleteAccountSheet: View {
                     .padding()
                     .background(Color.blue)
                     .foregroundStyle(.white)
-                    .cornerRadius(12)
+                    .clipShape(.rect(cornerRadius: 12))
             }
             .accessibilityIdentifier(AccessibilityIdentifier.backToLoginButton)
             .padding(.horizontal, 40)

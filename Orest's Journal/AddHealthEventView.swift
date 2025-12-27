@@ -98,7 +98,7 @@ struct AddHealthEventView: View {
                         Spacer()
                         Text("\(totalPhotoCount)/\(maxPhotos)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .accessibilityLabel("\(totalPhotoCount) of \(maxPhotos) photos")
                     }
                 }
@@ -168,7 +168,7 @@ struct AddHealthEventView: View {
                     ProgressView("Saving...")
                         .padding()
                         .background(Color(uiColor: .systemBackground))
-                        .cornerRadius(10)
+                        .clipShape(.rect(cornerRadius: 10))
                 }
             }
         }
@@ -198,7 +198,7 @@ struct AddHealthEventView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(Color.accentColor.opacity(0.15))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundStyle(.accentColor)
                                     .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
@@ -261,7 +261,7 @@ struct AddHealthEventView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 100)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .foregroundColor(.accentColor)
+            .foregroundStyle(.accentColor)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -281,7 +281,7 @@ struct AddHealthEventView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 100)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .foregroundColor(.accentColor)
+            .foregroundStyle(.accentColor)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -333,7 +333,7 @@ struct AddHealthEventView: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.caption.weight(.bold))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.6))
                 .clipShape(Circle())

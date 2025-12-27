@@ -242,7 +242,7 @@ struct FamilyManagementView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Household")
                 .font(.headline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             if let family = authManager.currentFamily {
                 VStack(spacing: 0) {
@@ -250,7 +250,7 @@ struct FamilyManagementView: View {
                     HStack {
                         Image(systemName: "house.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
 
                         Text(family.name)
                             .font(.body)
@@ -263,7 +263,7 @@ struct FamilyManagementView: View {
                                 showEditFamilyName = true
                             }) {
                                 Image(systemName: "pencil")
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                             }
                         }
                     }
@@ -293,7 +293,7 @@ struct FamilyManagementView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Invite Code")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         HStack {
                             Text(family.inviteCode)
@@ -306,7 +306,7 @@ struct FamilyManagementView: View {
                                 UIPasteboard.general.string = family.inviteCode
                             }) {
                                 Image(systemName: "doc.on.doc")
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                             }
                             .accessibilityIdentifier(AccessibilityIdentifier.copyInviteCodeButton)
                             .accessibilityLabel("Copy invite code to clipboard")
@@ -315,20 +315,20 @@ struct FamilyManagementView: View {
                                 showInviteSheet = true
                             }) {
                                 Image(systemName: "square.and.arrow.up")
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                             }
                             .accessibilityIdentifier(AccessibilityIdentifier.shareInviteCodeButton)
                             .accessibilityLabel("Share invite code")
                         }
                         .padding()
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
+                        .clipShape(.rect(cornerRadius: 8))
                     }
                     .padding(.top, 12)
 
                     Text("Share this code to invite family members")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -350,8 +350,8 @@ struct FamilyManagementView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(Color.orange)
-            .foregroundColor(.white)
-            .cornerRadius(12)
+            .foregroundStyle(.white)
+            .clipShape(.rect(cornerRadius: 12))
         }
         .disabled(isLeavingFamily)
         .accessibilityIdentifier(AccessibilityIdentifier.leaveFamilyButton)
@@ -378,7 +378,7 @@ struct FamilyManagementView: View {
         return HStack(spacing: 12) {
             Image(systemName: "person.circle.fill")
                 .font(.title3)
-                .foregroundColor(member.role == "admin" ? .orange : .blue)
+                .foregroundStyle(member.role == "admin" ? .orange : .blue)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -390,7 +390,7 @@ struct FamilyManagementView: View {
                     if isCurrentUser {
                         Text("(You)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -400,14 +400,14 @@ struct FamilyManagementView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(member.role == "admin" ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
-                        .foregroundColor(member.role == "admin" ? .orange : .blue)
-                        .cornerRadius(4)
+                        .foregroundStyle(member.role == "admin" ? .orange : .blue)
+                        .clipShape(.rect(cornerRadius: 4))
                         .accessibilityLabel("Role: \(member.role.capitalized)")
 
                     if let joinedAt = member.joinedAt {
                         Text("Joined \(formatDate(joinedAt))")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -435,7 +435,7 @@ struct FamilyManagementView: View {
                     .accessibilityIdentifier(AccessibilityIdentifier.removeMemberButton)
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .foregroundColor(.gray)
+                        .foregroundStyle(.gray)
                         .accessibilityLabel("Member options for \(member.displayName)")
                 }
                 .accessibilityIdentifier("\(AccessibilityIdentifier.memberOptionsMenu)_\(member.userId)")
@@ -453,7 +453,7 @@ struct FamilyManagementView: View {
             HStack {
                 Text("Pets")
                     .font(.headline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Spacer()
 
@@ -462,7 +462,7 @@ struct FamilyManagementView: View {
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                 }
                 .accessibilityIdentifier(AccessibilityIdentifier.addPetButton)
                 .accessibilityLabel("Add new pet")
@@ -472,10 +472,10 @@ struct FamilyManagementView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "pawprint.circle")
                         .font(.system(size: 40))
-                        .foregroundColor(.gray)
+                        .foregroundStyle(.gray)
                     Text("No pets in family")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Button("Add Pet") {
                         showAddPet = true
                     }
@@ -484,7 +484,7 @@ struct FamilyManagementView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
                 .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
+                .clipShape(.rect(cornerRadius: 12))
             } else {
                 VStack(spacing: 12) {
                     ForEach(activePets) { pet in
@@ -516,7 +516,7 @@ struct FamilyManagementView: View {
                     .frame(width: 60, height: 60)
                     .overlay(
                         Image(systemName: "pawprint.fill")
-                            .foregroundColor(.gray)
+                            .foregroundStyle(.gray)
                     )
                     .accessibilityLabel("Pet photo placeholder for \(pet.name)")
             }
@@ -529,18 +529,18 @@ struct FamilyManagementView: View {
 
                 Text(pet.kind)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 if let weight = pet.currentWeight {
                     Text("\(Formatters.formatWeight(weight)) lbs")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 if let dob = pet.dateOfBirth {
                     Text(formatAge(from: dob))
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -563,14 +563,14 @@ struct FamilyManagementView: View {
                 .accessibilityIdentifier(AccessibilityIdentifier.deletePetButton)
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(.gray)
                     .accessibilityLabel("Pet options for \(pet.name)")
             }
             .accessibilityIdentifier("\(AccessibilityIdentifier.petOptionsMenu)_\(pet.id.uuidString)")
         }
         .padding()
         .background(Color.gray.opacity(0.1))
-        .cornerRadius(12)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     // MARK: - Archived Pets Section
@@ -585,12 +585,12 @@ struct FamilyManagementView: View {
                 HStack {
                     Text("Archived Pets (\(archivedPets.count))")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Spacer()
 
                     Image(systemName: showArchivedPets ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)

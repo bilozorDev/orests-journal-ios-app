@@ -181,7 +181,7 @@ struct SmartSearchView: View {
                                         .scaledToFill()
                                 } placeholder: {
                                     Image(systemName: "pawprint.fill")
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .frame(width: 28, height: 28)
                                 .clipShape(Circle())
@@ -197,7 +197,7 @@ struct SmartSearchView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(selectedPet?.id == pet.id ? Color.accentColor.opacity(0.15) : Color(uiColor: .secondarySystemGroupedBackground))
-                        .foregroundColor(selectedPet?.id == pet.id ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet?.id == pet.id ? .accentColor : .primary)
                         .clipShape(Capsule())
                         .overlay {
                             Capsule()
@@ -233,7 +233,7 @@ struct SmartSearchView: View {
 
             Image(systemName: "sparkles.slash")
                 .font(.system(size: 56))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
                 Text("AI Search Unavailable")
@@ -242,7 +242,7 @@ struct SmartSearchView: View {
 
                 Text("Smart Search is only available with Apple Intelligence (iPhone 15 Pro or newer, iOS 18.1+).")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
@@ -259,16 +259,16 @@ struct SmartSearchView: View {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
                     .font(.title3)
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.accentColor)
 
                 Text("Ask questions in natural language, like \"how many vet visits this year?\"")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Text("AI can make mistakes. Verify important information.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,7 +281,7 @@ struct SmartSearchView: View {
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "sparkles")
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.accentColor)
 
                 TextField("Ask about \(searchPlaceholderText)...", text: $query)
                     .textFieldStyle(.plain)
@@ -300,7 +300,7 @@ struct SmartSearchView: View {
                         hasSearched = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .accessibilityLabel("Clear search")
                 }
@@ -328,7 +328,7 @@ struct SmartSearchView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recent Searches")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -345,7 +345,7 @@ struct SmartSearchView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                                 .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -359,7 +359,7 @@ struct SmartSearchView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Try asking:")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -375,7 +375,7 @@ struct SmartSearchView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(Color.accentColor.opacity(0.1))
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(.accentColor)
                                 .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -403,7 +403,7 @@ struct SmartSearchView: View {
                     ProgressView()
                     Text("Searching...")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !hasSearched {
@@ -422,14 +422,14 @@ struct SmartSearchView: View {
         VStack(spacing: 16) {
             Image(systemName: "sparkles")
                 .font(.system(size: 48))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text("Ask anything about \(searchPlaceholderText)")
                 .font(.headline)
 
             Text("Use natural language to search and get insights")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding()
@@ -443,7 +443,7 @@ struct SmartSearchView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "sparkles")
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(.accentColor)
                         Text("Answer")
                             .font(.headline)
                         Spacer()
@@ -485,14 +485,14 @@ struct SmartSearchView: View {
         VStack(spacing: 16) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 48))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text("No Results")
                 .font(.headline)
 
             Text("Try a different search term")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -563,20 +563,20 @@ struct SmartSearchResultRow: View {
                 if let petName = petName {
                     Text(petName)
                         .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(.accentColor)
                 }
 
                 HStack(spacing: 4) {
                     Text(Formatters.shortDate.string(from: event.event.occurredAt))
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     if let notes = event.event.notes, !notes.isEmpty {
                         Text("·")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(notes)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -587,18 +587,18 @@ struct SmartSearchResultRow: View {
             if !event.event.photos.isEmpty {
                 HStack(spacing: 2) {
                     Image(systemName: "photo")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     if event.event.photos.count > 1 {
                         Text("\(event.event.photos.count)")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color(uiColor: .tertiaryLabel))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
         }
         .padding()
         .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -818,7 +818,8 @@ class SmartSearchManager {
             case "today":
                 return calendar.startOfDay(for: now)
             case "yesterday":
-                return calendar.startOfDay(for: calendar.date(byAdding: .day, value: -1, to: now)!)
+                guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else { return nil }
+                return calendar.startOfDay(for: yesterday)
             case "this_week":
                 return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))
             case "this_month":
@@ -1153,7 +1154,7 @@ class SmartSearchManager {
         if query.contains("today") {
             return calendar.startOfDay(for: now)
         } else if query.contains("yesterday") {
-            let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else { return nil }
             return calendar.startOfDay(for: yesterday)
         } else if query.contains("this week") {
             return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))

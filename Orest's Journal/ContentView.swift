@@ -148,10 +148,10 @@ struct PlaceholderView: View {
             VStack(spacing: 20) {
                 Image(systemName: icon)
                     .font(.system(size: 60))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("Coming Soon")
                     .font(.title2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(uiColor: .systemGroupedBackground))
@@ -273,20 +273,20 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .frame(width: 29, height: 29)
                 .background(iconColor)
-                .cornerRadius(6)
+                .clipShape(.rect(cornerRadius: 6))
 
             Text(title)
                 .font(.body)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
 
             Spacer()
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color(uiColor: .tertiaryLabel))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
@@ -302,8 +302,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(Color.red)
-            .foregroundColor(.white)
-            .cornerRadius(12)
+            .foregroundStyle(.white)
+            .clipShape(.rect(cornerRadius: 12))
         }
         .padding(.top, 20)
         .accessibilityIdentifier(AccessibilityIdentifier.signOutButton)
@@ -318,8 +318,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(Color.red.opacity(0.1))
-            .foregroundColor(.red)
-            .cornerRadius(12)
+            .foregroundStyle(.red)
+            .clipShape(.rect(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.red, lineWidth: 1)

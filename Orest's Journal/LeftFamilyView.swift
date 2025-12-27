@@ -45,7 +45,7 @@ struct LeftFamilyView: View {
                     .padding()
                     .background(Color.blue)
                     .foregroundStyle(.white)
-                    .cornerRadius(12)
+                    .clipShape(.rect(cornerRadius: 12))
             }
             .accessibilityIdentifier(AccessibilityIdentifier.startOverButton)
             .padding(.horizontal, 40)

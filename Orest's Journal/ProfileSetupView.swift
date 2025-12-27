@@ -21,7 +21,7 @@ struct ProfileSetupView: View {
                         VStack(spacing: 16) {
                             Image(systemName: "person.crop.circle.fill")
                                 .font(.system(size: 80))
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
 
                             Text("Complete Your Profile")
                                 .font(.largeTitle)
@@ -29,7 +29,7 @@ struct ProfileSetupView: View {
 
                             Text("Let us know what to call you")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
@@ -49,7 +49,7 @@ struct ProfileSetupView: View {
                     if let error = errorMessage {
                         Section {
                             Text(error)
-                                .foregroundColor(.red)
+                                .foregroundStyle(.red)
                                 .font(.caption)
                         }
                     }
@@ -67,8 +67,8 @@ struct ProfileSetupView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(firstName.isEmpty || isLoading ? Color.gray.opacity(0.3) : Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
+                            .foregroundStyle(.white)
+                            .clipShape(.rect(cornerRadius: 12))
                         }
                         .disabled(firstName.isEmpty || isLoading)
                         .listRowInsets(EdgeInsets())

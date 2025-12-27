@@ -33,6 +33,13 @@ enum Formatters {
         Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
 
+    /// ISO8601 formatter for API date encoding
+    static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     /// Formats a display name from first/last name components.
     /// Returns "FirstName L." format if both names provided, just firstName if no lastName,
     /// or the fallback value if no firstName.

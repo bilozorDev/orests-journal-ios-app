@@ -229,7 +229,7 @@ struct HealthView: View {
                                 ? Color.accentColor.opacity(0.15)
                                 : Color(uiColor: .secondarySystemGroupedBackground)
                         )
-                        .foregroundColor(selectedPet == nil ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet == nil ? .accentColor : .primary)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -268,7 +268,7 @@ struct HealthView: View {
                                 ? Color.accentColor.opacity(0.15)
                                 : Color(uiColor: .secondarySystemGroupedBackground)
                         )
-                        .foregroundColor(selectedPet?.id == pet.id ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet?.id == pet.id ? .accentColor : .primary)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -285,7 +285,7 @@ struct HealthView: View {
     private func petPlaceholder(for pet: Pet) -> some View {
         Image(systemName: pet.kind == "cat" ? "cat.fill" : "dog.fill")
             .font(.system(size: 14))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .frame(width: 28, height: 28)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
             .clipShape(Circle())
@@ -297,7 +297,7 @@ struct HealthView: View {
         HStack(spacing: 12) {
             HStack {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 TextField("Search health events", text: $searchText)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier(AccessibilityIdentifier.healthSearchField)
@@ -306,7 +306,7 @@ struct HealthView: View {
                         searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .accessibilityLabel("Clear search")
                 }
@@ -321,7 +321,7 @@ struct HealthView: View {
             } label: {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18))
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.accentColor)
                     .frame(width: 40, height: 40)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -352,7 +352,7 @@ struct HealthView: View {
                                 ? Color.accentColor
                                 : Color(uiColor: .secondarySystemGroupedBackground)
                         )
-                        .foregroundColor(selectedCategory == nil ? .white : .primary)
+                        .foregroundStyle(selectedCategory == nil ? .white : .primary)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -372,7 +372,7 @@ struct HealthView: View {
                                     ? Color.accentColor
                                     : Color(uiColor: .secondarySystemGroupedBackground)
                             )
-                            .foregroundColor(selectedCategory?.id == category.id ? .white : .primary)
+                            .foregroundStyle(selectedCategory?.id == category.id ? .white : .primary)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -409,7 +409,7 @@ struct HealthView: View {
                         Text(sectionTitle(for: section))
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal)
@@ -442,13 +442,13 @@ struct HealthView: View {
         VStack(spacing: 16) {
             Image(systemName: "pawprint")
                 .font(.system(size: 48))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Text("No Pets")
                 .font(.title2)
                 .fontWeight(.semibold)
             Text("Add a pet to start tracking health events")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding()
@@ -466,13 +466,13 @@ struct HealthView: View {
                 // No results matching filter/search criteria
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 48))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("No Matching Events")
                     .font(.title2)
                     .fontWeight(.semibold)
                 Text("No events match your search criteria")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
                 Button {
@@ -485,7 +485,7 @@ struct HealthView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .background(Color.accentColor)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }
                 .padding(.top, 8)
@@ -493,13 +493,13 @@ struct HealthView: View {
                 // Truly no events
                 Image(systemName: "heart.text.square")
                     .font(.system(size: 48))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("No Health Events")
                     .font(.title2)
                     .fontWeight(.semibold)
                 Text("Tap + to record a health event")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
                 Button {
@@ -515,7 +515,7 @@ struct HealthView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .background(Color.accentColor)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }
                 .padding(.top, 8)
@@ -784,20 +784,20 @@ struct HealthEventRow: View {
                 if let petName = petName {
                     Text(petName)
                         .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(.accentColor)
                 }
 
                 HStack(spacing: 4) {
                     Text(Formatters.shortDate.string(from: event.event.occurredAt))
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     if let notes = event.event.notes, !notes.isEmpty {
                         Text("·")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(notes)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -823,7 +823,7 @@ struct HealthEventRow: View {
                     if event.event.photos.count > 1 {
                         Text("\(event.event.photos.count)")
                             .font(.caption2.weight(.semibold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
                             .background(Color.black.opacity(0.6))
@@ -836,7 +836,7 @@ struct HealthEventRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color(uiColor: .tertiaryLabel))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
@@ -846,7 +846,7 @@ struct HealthEventRow: View {
     private var categoryIcon: some View {
         Image(systemName: event.category.icon)
             .font(.system(size: 18))
-            .foregroundColor(event.category.color)
+            .foregroundStyle(event.category.color)
     }
 }
 

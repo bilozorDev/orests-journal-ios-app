@@ -22,7 +22,7 @@ struct InviteShareSheet: View {
                 // Icon
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 60))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
 
                 // Title
                 Text("Invite Family Members")
@@ -32,7 +32,7 @@ struct InviteShareSheet: View {
                 // Description
                 Text("Share this code with family members so they can join your family and help track your pets.")
                     .font(.body)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
@@ -40,14 +40,14 @@ struct InviteShareSheet: View {
                 VStack(spacing: 8) {
                     Text("Invite Code")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text(inviteCode)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
                         .padding(.horizontal, 24)
                         .padding(.vertical, 16)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
+                        .clipShape(.rect(cornerRadius: 12))
                 }
                 .padding(.vertical)
 
@@ -62,8 +62,8 @@ struct InviteShareSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.gray.opacity(0.1))
-                        .foregroundColor(showCopied ? .green : .primary)
-                        .cornerRadius(12)
+                        .foregroundStyle(showCopied ? .green : .primary)
+                        .clipShape(.rect(cornerRadius: 12))
                     }
                     .accessibilityIdentifier(AccessibilityIdentifier.copyInviteCodeButton)
                     .accessibilityLabel(showCopied ? "Invite code copied" : "Copy invite code \(inviteCode)")
@@ -77,8 +77,8 @@ struct InviteShareSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .foregroundStyle(.white)
+                        .clipShape(.rect(cornerRadius: 12))
                     }
                     .accessibilityIdentifier(AccessibilityIdentifier.shareInviteCodeButton)
                     .accessibilityLabel("Share invite code \(inviteCode)")
