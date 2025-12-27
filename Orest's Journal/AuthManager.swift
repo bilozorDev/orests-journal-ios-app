@@ -238,7 +238,9 @@ final class AuthManager {
 
         } catch {
             // Token invalid, clear it
+            #if DEBUG
             print("Session invalid: \(error)")
+            #endif
             clearSession()
         }
 

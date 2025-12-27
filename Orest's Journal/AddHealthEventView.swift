@@ -355,7 +355,9 @@ struct AddHealthEventView: View {
     private func loadFamilyMemberCount() async {
         guard let familyId = authManager.currentFamily?.id else {
             // User is not in a family, keep default familyMemberCount of 1
+            #if DEBUG
             print("[Health] No family ID available, skipping family member count")
+            #endif
             return
         }
         do {
@@ -364,7 +366,9 @@ struct AddHealthEventView: View {
         } catch {
             // On error, default to showing the toggle (assume multi-member family)
             // This is a better UX than hiding the toggle when we can't determine
+            #if DEBUG
             print("[Health] Failed to load family members: \(error), defaulting to show toggle")
+            #endif
             familyMemberCount = 2
         }
     }

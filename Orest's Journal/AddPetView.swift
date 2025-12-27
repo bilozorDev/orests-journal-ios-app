@@ -101,7 +101,9 @@ struct AddPetView: View {
                             NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
                         }
                     } catch {
+                        #if DEBUG
                         print("Error checking pet status: \(error)")
+                        #endif
                     }
                 }
 

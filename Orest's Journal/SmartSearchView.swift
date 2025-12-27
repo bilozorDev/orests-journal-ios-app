@@ -669,7 +669,9 @@ class SmartSearchManager {
             let history = try JSONDecoder().decode([SmartSearchHistory].self, from: data)
             return history
         } catch {
+            #if DEBUG
             print("Failed to decode search history: \(error)")
+            #endif
             return []
         }
     }
@@ -698,7 +700,9 @@ class SmartSearchManager {
             let data = try JSONEncoder().encode(history)
             UserDefaults.standard.set(data, forKey: key)
         } catch {
+            #if DEBUG
             print("Failed to encode search history: \(error)")
+            #endif
         }
     }
 
@@ -856,7 +860,9 @@ class SmartSearchManager {
         if #available(iOS 26.0, *), availability == .available {
             do {
                 let parsed = try await parseQueryWithLLM(query, petName: petName)
+                #if DEBUG
                 print("✅ LLM parsed query: category=\(parsed.category ?? "nil"), timeAmount=\(parsed.timeAmount.map(String.init) ?? "nil"), timeUnit=\(parsed.timeUnit ?? "nil"), specialTimeRange=\(parsed.specialTimeRange ?? "nil"), intent=\(parsed.intent)")
+                #endif
                 return await searchWithParsedQuery(
                     parsed,
                     petId: petId,
@@ -864,11 +870,15 @@ class SmartSearchManager {
                     dataService: dataService
                 )
             } catch {
+                #if DEBUG
                 print("❌ LLM parsing failed, falling back to regex: \(error)")
+                #endif
                 // Fall through to regex fallback
             }
         } else {
+            #if DEBUG
             print("⚠️ LLM not available (iOS 26 required or not enabled), using regex fallback")
+            #endif
         }
 
         // Fallback: Load all events and filter locally with regex
@@ -876,7 +886,9 @@ class SmartSearchManager {
             let allEvents = try await dataService.getHealthEvents(for: petId)
             return await searchWithRegex(query: query, events: allEvents, petName: petName)
         } catch {
+            #if DEBUG
             print("Failed to load events for search: \(error)")
+            #endif
             return (response: "Failed to search events.", relevantEvents: [])
         }
     }
@@ -898,7 +910,9 @@ class SmartSearchManager {
         )
 
         // Fetch filtered events from backend
+        #if DEBUG
         print("🔍 Calling backend with: category=\(parsed.category ?? "nil"), since=\(since?.description ?? "nil")")
+        #endif
         do {
             let events = try await dataService.searchHealthEvents(
                 for: petId,
@@ -906,7 +920,9 @@ class SmartSearchManager {
                 since: since,
                 limit: 100
             )
+            #if DEBUG
             print("📦 Backend returned \(events.count) events")
+            #endif
 
             // Generate response based on intent
             let response = generateResponse(
@@ -927,7 +943,9 @@ class SmartSearchManager {
 
             return (response, resultEvents)
         } catch {
+            #if DEBUG
             print("Backend search failed: \(error)")
+            #endif
             return (response: "Failed to search events.", relevantEvents: [])
         }
     }

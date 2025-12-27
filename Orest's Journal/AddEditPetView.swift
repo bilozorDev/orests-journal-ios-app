@@ -320,7 +320,9 @@ struct AddEditPetView: View {
             }
         } catch {
             // Silently fail - calorie goal is optional
+            #if DEBUG
             print("Failed to load calorie goal: \(error)")
+            #endif
         }
         isLoadingCalorieGoal = false
     }

@@ -33,6 +33,10 @@ struct HealthView: View {
     @State private var showPetPickerForAdd = false
     @State private var loadEventsTask: Task<Void, Never>?  // Track current loading task for cancellation
 
+    // Cached computed results for performance
+    @State private var cachedFilteredEvents: [HealthEventWithCategory] = []
+    @State private var cachedGroupedEvents: [DateSection: [HealthEventWithCategory]] = [:]
+
     @AppStorage("health_selected_pet_id") private var savedPetId: String = ""
 
     private let dataService = DataService.shared
@@ -147,6 +151,15 @@ struct HealthView: View {
                 Button("OK") {}
             } message: {
                 Text(errorMessage)
+            }
+            .onChange(of: events) { _, _ in
+                updateCachedEvents()
+            }
+            .onChange(of: selectedCategory) { _, _ in
+                updateCachedEvents()
+            }
+            .onChange(of: searchText) { _, _ in
+                updateCachedEvents()
             }
         }
         .accessibilityIdentifier(AccessibilityIdentifier.healthEventsList)
@@ -512,9 +525,18 @@ struct HealthView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Computed Properties
+    // MARK: - Computed Properties (cached for performance)
 
     private var filteredEvents: [HealthEventWithCategory] {
+        cachedFilteredEvents
+    }
+
+    private var groupedEvents: [DateSection: [HealthEventWithCategory]] {
+        cachedGroupedEvents
+    }
+
+    /// Updates cached filtered and grouped events when dependencies change
+    private func updateCachedEvents() {
         var result = events
 
         // Filter by category
@@ -531,11 +553,8 @@ struct HealthView: View {
             }
         }
 
-        return result
-    }
-
-    private var groupedEvents: [DateSection: [HealthEventWithCategory]] {
-        Dictionary(grouping: filteredEvents) { event in
+        cachedFilteredEvents = result
+        cachedGroupedEvents = Dictionary(grouping: result) { event in
             dateSection(for: event.event.occurredAt)
         }
     }

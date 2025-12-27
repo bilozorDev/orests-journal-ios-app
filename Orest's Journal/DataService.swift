@@ -147,7 +147,9 @@ final class DataService {
                             do {
                                 try await refreshPetsInBackground()
                             } catch {
+                                #if DEBUG
                                 print("Background pets refresh failed: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -274,7 +276,9 @@ final class DataService {
                             do {
                                 try await refreshFamilyMembersInBackground(familyId: familyId)
                             } catch {
+                                #if DEBUG
                                 print("Background family refresh failed: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -383,7 +387,9 @@ final class DataService {
                             do {
                                 try await refreshHealthEventsInBackground(petId: petId)
                             } catch {
+                                #if DEBUG
                                 print("Background health events refresh failed: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -440,7 +446,9 @@ final class DataService {
                             do {
                                 try await refreshHealthCategoriesInBackground(petId: petId, orgId: orgId)
                             } catch {
+                                #if DEBUG
                                 print("Background health categories refresh failed: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -534,7 +542,9 @@ final class DataService {
         do {
             _ = try await getPets(forceRefresh: true)
         } catch {
+            #if DEBUG
             print("Background refresh failed: \(error)")
+            #endif
         }
     }
 
