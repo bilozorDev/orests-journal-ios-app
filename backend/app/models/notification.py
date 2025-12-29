@@ -68,6 +68,11 @@ class NotificationPreference(Base):
     pet_updated = Column(Boolean, default=True, nullable=False)
     pet_deleted = Column(Boolean, default=True, nullable=False)
 
+    # Medication Updates
+    medication_created = Column(Boolean, default=True, nullable=False)
+    medication_updated = Column(Boolean, default=True, nullable=False)
+    medication_archived = Column(Boolean, default=True, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

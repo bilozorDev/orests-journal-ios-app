@@ -1,23 +1,31 @@
+import logging
 from datetime import datetime, timezone as dt_timezone
 from typing import Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, File, UploadFile
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.core.security import get_current_user_id
 from app.core.authorization import verify_family_access, verify_pet_access, verify_medication_access
 from app.models.pet import Pet
-from app.models.medication import PetMedication, PetMedicationDose
+from app.models.medication import PetMedication, PetMedicationDose, PetMedicationPhoto
 from app.models.notification import MedicationSchedule
 from app.schemas.medication import (
     MedicationCreate, MedicationUpdate, MedicationResponse, MedicationListResponse,
     MedicationWithSchedulesResponse, ScheduledTimeResponse, MedicationDeleteResponse,
+    MedicationPhotoResponse,
 )
 from app.cache.helpers import cache_get, cache_set, cache_delete_pattern
 from app.cache.keys import key_medications, TTL_ACTIVE_MEDS
+from app.services.storage import storage_service
+from app.services.apns import apns_service
+from app.services.family_notifications import get_filtered_family_member_tokens
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -27,6 +35,100 @@ async def invalidate_medication_caches(pet_id: UUID, org_id: str = None) -> None
     await cache_delete_pattern(f"dashboard:{pet_id}:*")
     if org_id:
         await cache_delete_pattern(f"medications:{org_id}:*")
+
+
+async def notify_family_medication_change(
+    db: AsyncSession,
+    org_id: UUID,
+    exclude_user_id: UUID,
+    pet_name: str,
+    medication_name: str,
+    notification_type: str,
+) -> None:
+    """Send push notification to family members about medication changes.
+
+    Args:
+        db: Database session
+        org_id: The family/organization ID
+        exclude_user_id: User ID to exclude (the user who made the change)
+        pet_name: Name of the pet
+        medication_name: Name of the medication
+        notification_type: One of 'medication_created', 'medication_updated', 'medication_archived'
+    """
+    try:
+        tokens = await get_filtered_family_member_tokens(
+            db, org_id, exclude_user_id, notification_type
+        )
+        if not tokens:
+            return
+
+        # Build notification message
+        if notification_type == "medication_created":
+            title = f"New Medication: {pet_name}"
+            body = f"{medication_name} was added"
+        elif notification_type == "medication_updated":
+            title = f"Medication Updated: {pet_name}"
+            body = f"{medication_name} was updated"
+        elif notification_type == "medication_archived":
+            title = f"Medication Removed: {pet_name}"
+            body = f"{medication_name} was archived"
+        else:
+            return
+
+        await apns_service.send_to_multiple(
+            device_tokens=tokens,
+            title=title,
+            body=body,
+            data={
+                "type": notification_type,
+                "pet_name": pet_name,
+                "medication_name": medication_name,
+            },
+        )
+        logger.info(f"Sent {notification_type} notification to {len(tokens)} devices")
+    except Exception as e:
+        # Log but don't fail the main operation
+        logger.error(f"Failed to send medication notification: {e}")
+
+
+def validate_medication_input(med_in: MedicationCreate | MedicationUpdate, is_create: bool = True) -> None:
+    """Validate medication input fields.
+
+    Raises HTTPException for validation errors.
+    """
+    # Validate interval_days (1-30 for scheduled, None for PRN)
+    if hasattr(med_in, 'interval_days') and med_in.interval_days is not None:
+        if med_in.interval_days < 1 or med_in.interval_days > 30:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="interval_days must be between 1 and 30"
+            )
+
+    # Validate times_per_day (1-8)
+    if hasattr(med_in, 'times_per_day') and med_in.times_per_day is not None:
+        if med_in.times_per_day < 1 or med_in.times_per_day > 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="times_per_day must be between 1 and 8"
+            )
+
+    # Validate end_date >= start_date
+    if is_create:
+        if hasattr(med_in, 'end_date') and med_in.end_date is not None:
+            if hasattr(med_in, 'start_date') and med_in.start_date is not None:
+                if med_in.end_date < med_in.start_date:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="end_date must be on or after start_date"
+                    )
+
+    # Validate as-needed medications don't have reminders or interval
+    if hasattr(med_in, 'is_as_needed') and med_in.is_as_needed:
+        if hasattr(med_in, 'reminders_enabled') and med_in.reminders_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="As-needed (PRN) medications cannot have reminders enabled"
+            )
 
 
 @router.get("", response_model=MedicationListResponse)
@@ -105,16 +207,16 @@ async def list_medications(
     result = await db.execute(query)
     medications = result.scalars().all()
 
-    response = MedicationListResponse(
+    response_data = MedicationListResponse(
         medications=[MedicationResponse.model_validate(m) for m in medications]
     )
 
     # Cache the response (only for non-active queries)
     if not active_only:
         cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only, include_archived)
-        await cache_set(cache_key, response, TTL_ACTIVE_MEDS)
+        await cache_set(cache_key, response_data, TTL_ACTIVE_MEDS)
 
-    return response
+    return response_data
 
 
 @router.post("", response_model=MedicationWithSchedulesResponse, status_code=status.HTTP_201_CREATED)
@@ -124,6 +226,9 @@ async def create_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new medication prescription."""
+    # Validate input
+    validate_medication_input(med_in, is_create=True)
+
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, med_in.pet_id)
 
@@ -131,15 +236,23 @@ async def create_medication(
     start_date = med_in.start_date.replace(tzinfo=None) if med_in.start_date.tzinfo else med_in.start_date
     end_date = med_in.end_date.replace(tzinfo=None) if med_in.end_date and med_in.end_date.tzinfo else med_in.end_date
 
+    # Set interval_days default for scheduled medications
+    interval_days = med_in.interval_days
+    if not med_in.is_as_needed and interval_days is None:
+        interval_days = 1  # Default to daily for scheduled medications
+
     medication = PetMedication(
         pet_id=med_in.pet_id,
         name=med_in.name,
         medication_type=med_in.medication_type,
+        dosage=med_in.dosage,
+        interval_days=interval_days if not med_in.is_as_needed else None,
+        is_as_needed=med_in.is_as_needed,
         start_date=start_date,
-        end_date=end_date,
-        times_per_day=med_in.times_per_day,
+        end_date=end_date if not med_in.is_as_needed else None,  # PRN meds don't have end date
+        times_per_day=med_in.times_per_day if not med_in.is_as_needed else 1,
         notes=med_in.notes,
-        reminders_enabled=med_in.reminders_enabled,
+        reminders_enabled=med_in.reminders_enabled if not med_in.is_as_needed else False,
         timezone=med_in.timezone,
         created_by=UUID(user_id),
     )
@@ -147,9 +260,9 @@ async def create_medication(
     await db.commit()
     await db.refresh(medication)
 
-    # Create scheduled times if provided
+    # Create scheduled times if provided (only for scheduled medications with reminders)
     scheduled_times = []
-    if med_in.scheduled_times:
+    if med_in.scheduled_times and not med_in.is_as_needed and med_in.reminders_enabled:
         for schedule in med_in.scheduled_times:
             sched = MedicationSchedule(
                 medication_id=medication.id,
@@ -164,6 +277,25 @@ async def create_medication(
 
     # Invalidate caches
     await invalidate_medication_caches(med_in.pet_id, str(pet.org_id))
+
+    # Send notification to family members
+    await notify_family_medication_change(
+        db=db,
+        org_id=pet.org_id,
+        exclude_user_id=UUID(user_id),
+        pet_name=pet.name,
+        medication_name=medication.name,
+        notification_type="medication_created",
+    )
+
+    # Re-fetch with photos loaded to avoid lazy loading issues
+    med_query = (
+        select(PetMedication)
+        .options(selectinload(PetMedication.photos))
+        .where(PetMedication.id == medication.id)
+    )
+    med_result = await db.execute(med_query)
+    medication = med_result.scalar_one()
 
     response = MedicationWithSchedulesResponse.model_validate(medication)
     response.scheduled_times = [ScheduledTimeResponse.model_validate(s) for s in scheduled_times]
@@ -180,6 +312,15 @@ async def get_medication(
     # Verify user has access to this medication through family membership
     medication = await verify_medication_access(db, user_id, medication_id)
 
+    # Fetch medication with photos
+    med_query = (
+        select(PetMedication)
+        .options(selectinload(PetMedication.photos))
+        .where(PetMedication.id == medication_id)
+    )
+    med_result = await db.execute(med_query)
+    medication = med_result.scalar_one()
+
     # Fetch scheduled times
     schedules_result = await db.execute(
         select(MedicationSchedule).where(MedicationSchedule.medication_id == medication_id)
@@ -188,6 +329,7 @@ async def get_medication(
 
     response = MedicationWithSchedulesResponse.model_validate(medication)
     response.scheduled_times = [ScheduledTimeResponse.model_validate(s) for s in scheduled_times]
+    response.photos = [MedicationPhotoResponse.model_validate(p) for p in medication.photos]
     return response
 
 
@@ -199,17 +341,29 @@ async def update_medication(
     user_id: str = Depends(get_current_user_id),
 ):
     """Update a medication."""
+    # Validate input
+    validate_medication_input(med_in, is_create=False)
+
     # Verify user has access to this medication through family membership
     medication = await verify_medication_access(db, user_id, medication_id)
 
-    # Get org_id from pet for cache invalidation
-    pet_result = await db.execute(select(Pet.org_id).where(Pet.id == medication.pet_id))
-    org_id = str(pet_result.scalar_one())
+    # Get pet for cache invalidation and notifications
+    pet_result = await db.execute(select(Pet).where(Pet.id == medication.pet_id))
+    pet = pet_result.scalar_one()
+    org_id = str(pet.org_id)
 
     update_data = med_in.model_dump(exclude_unset=True)
 
     # Handle scheduled_times separately
     scheduled_times_data = update_data.pop('scheduled_times', None)
+
+    # If switching to as-needed, clear reminders and related fields
+    if update_data.get('is_as_needed') is True:
+        update_data['reminders_enabled'] = False
+        update_data['interval_days'] = None
+        update_data['end_date'] = None
+        # Clear scheduled times
+        scheduled_times_data = []
 
     # Strip timezone info from dates (database uses naive UTC)
     if 'start_date' in update_data and update_data['start_date'] is not None:
@@ -238,15 +392,16 @@ async def update_medication(
         for sched in existing.scalars().all():
             await db.delete(sched)
 
-        # Create new schedules
-        for schedule in scheduled_times_data:
-            sched = MedicationSchedule(
-                medication_id=medication_id,
-                scheduled_hour=schedule['hour'],
-                scheduled_minute=schedule.get('minute', 0),
-            )
-            db.add(sched)
-            scheduled_times.append(sched)
+        # Create new schedules (only if not as-needed and reminders enabled)
+        if not medication.is_as_needed and medication.reminders_enabled:
+            for schedule in scheduled_times_data:
+                sched = MedicationSchedule(
+                    medication_id=medication_id,
+                    scheduled_hour=schedule['hour'],
+                    scheduled_minute=schedule.get('minute', 0),
+                )
+                db.add(sched)
+                scheduled_times.append(sched)
         await db.commit()
         for sched in scheduled_times:
             await db.refresh(sched)
@@ -259,6 +414,25 @@ async def update_medication(
 
     # Invalidate caches
     await invalidate_medication_caches(medication.pet_id, org_id)
+
+    # Send notification to family members
+    await notify_family_medication_change(
+        db=db,
+        org_id=pet.org_id,
+        exclude_user_id=UUID(user_id),
+        pet_name=pet.name,
+        medication_name=medication.name,
+        notification_type="medication_updated",
+    )
+
+    # Re-fetch with photos loaded to avoid lazy loading issues
+    med_query = (
+        select(PetMedication)
+        .options(selectinload(PetMedication.photos))
+        .where(PetMedication.id == medication_id)
+    )
+    med_result = await db.execute(med_query)
+    medication = med_result.scalar_one()
 
     response = MedicationWithSchedulesResponse.model_validate(medication)
     response.scheduled_times = [ScheduledTimeResponse.model_validate(s) for s in scheduled_times]
@@ -279,10 +453,12 @@ async def delete_medication(
     # Verify user has access to this medication through family membership
     medication = await verify_medication_access(db, user_id, medication_id)
     pet_id = medication.pet_id
+    medication_name = medication.name
 
-    # Get org_id from pet for cache invalidation
-    pet_result = await db.execute(select(Pet.org_id).where(Pet.id == pet_id))
-    org_id = str(pet_result.scalar_one())
+    # Get pet for cache invalidation and notifications
+    pet_result = await db.execute(select(Pet).where(Pet.id == pet_id))
+    pet = pet_result.scalar_one()
+    org_id = str(pet.org_id)
 
     # Check if medication has any doses
     dose_count_query = select(func.count()).select_from(PetMedicationDose).where(
@@ -291,11 +467,30 @@ async def delete_medication(
     dose_count_result = await db.execute(dose_count_query)
     dose_count = dose_count_result.scalar() or 0
 
+    # Get photo URLs for cleanup if hard deleting
+    photo_urls = []
+    if dose_count == 0:
+        photos_query = select(PetMedicationPhoto).where(PetMedicationPhoto.medication_id == medication_id)
+        photos_result = await db.execute(photos_query)
+        photos = photos_result.scalars().all()
+        photo_urls = [photo.photo_url for photo in photos]
+
     if dose_count > 0:
         # Archive instead of delete to preserve history
         medication.is_archived = True
         await db.commit()
         await invalidate_medication_caches(pet_id, org_id)
+
+        # Send notification
+        await notify_family_medication_change(
+            db=db,
+            org_id=pet.org_id,
+            exclude_user_id=UUID(user_id),
+            pet_name=pet.name,
+            medication_name=medication_name,
+            notification_type="medication_archived",
+        )
+
         return MedicationDeleteResponse(
             deleted=False,
             archived=True,
@@ -306,6 +501,26 @@ async def delete_medication(
         await db.delete(medication)
         await db.commit()
         await invalidate_medication_caches(pet_id, org_id)
+
+        # Delete photos from R2 AFTER DB commit succeeds
+        for photo_url in photo_urls:
+            try:
+                deleted = await storage_service.delete_image(photo_url)
+                if deleted:
+                    logger.info(f"Deleted medication photo on delete: {photo_url}")
+            except Exception as e:
+                logger.error(f"Failed to delete medication photo: {e}")
+
+        # Send notification
+        await notify_family_medication_change(
+            db=db,
+            org_id=pet.org_id,
+            exclude_user_id=UUID(user_id),
+            pet_name=pet.name,
+            medication_name=medication_name,
+            notification_type="medication_archived",
+        )
+
         return MedicationDeleteResponse(
             deleted=True,
             archived=False,
@@ -361,3 +576,104 @@ async def get_active_medications_for_pet(
     return MedicationListResponse(
         medications=[MedicationResponse.model_validate(m) for m in medications]
     )
+
+
+# ============== Photo Endpoints ==============
+
+@router.post("/{medication_id}/photos", response_model=MedicationPhotoResponse)
+async def upload_medication_photo(
+    medication_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Upload a photo for a medication (appends to existing photos)."""
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
+
+    # Check photo limit (max 3 photos per medication)
+    photo_count_query = select(func.count(PetMedicationPhoto.id)).where(
+        PetMedicationPhoto.medication_id == medication_id
+    )
+    photo_count_result = await db.execute(photo_count_query)
+    current_count = photo_count_result.scalar() or 0
+
+    if current_count >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 3 photos per medication"
+        )
+
+    # Get pet for org_id
+    pet_query = select(Pet).where(Pet.id == medication.pet_id)
+    pet_result = await db.execute(pet_query)
+    pet = pet_result.scalar_one()
+
+    # Upload photo to R2
+    photo_url = await storage_service.upload_image(
+        file=file,
+        upload_type="medication-photo",
+        org_id=str(pet.org_id),
+    )
+
+    # Create photo record
+    photo = PetMedicationPhoto(
+        medication_id=medication_id,
+        photo_url=photo_url,
+        sort_order=current_count,  # Append at end
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+
+    # Invalidate cache
+    await invalidate_medication_caches(medication.pet_id, str(pet.org_id))
+
+    return MedicationPhotoResponse.model_validate(photo)
+
+
+@router.delete("/{medication_id}/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_medication_photo(
+    medication_id: UUID,
+    photo_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Delete a specific photo from a medication."""
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
+
+    # Get the photo
+    photo_query = select(PetMedicationPhoto).where(
+        PetMedicationPhoto.id == photo_id,
+        PetMedicationPhoto.medication_id == medication_id,
+    )
+    photo_result = await db.execute(photo_query)
+    photo = photo_result.scalar_one_or_none()
+
+    if not photo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found"
+        )
+
+    # Store URL before deleting record
+    photo_url = photo.photo_url
+
+    # Delete photo record from DB first
+    await db.delete(photo)
+    await db.commit()
+
+    # Delete photo from R2 AFTER DB commit succeeds
+    try:
+        deleted = await storage_service.delete_image(photo_url)
+        if deleted:
+            logger.info(f"Deleted medication photo: {photo_url}")
+    except Exception as e:
+        logger.error(f"Failed to delete medication photo from R2: {e}")
+
+    # Invalidate cache
+    pet_query = select(Pet).where(Pet.id == medication.pet_id)
+    pet_result = await db.execute(pet_query)
+    pet = pet_result.scalar_one()
+    await invalidate_medication_caches(medication.pet_id, str(pet.org_id))

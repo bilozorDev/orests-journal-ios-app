@@ -44,6 +44,18 @@ struct NotificationPreferencesView: View {
                             set: { setAllPetPreferences($0) }
                         )
                     )
+
+                    // Medication Updates Toggle
+                    preferenceCard(
+                        title: "Medication Updates",
+                        subtitle: "Medications added, updated, or archived",
+                        icon: "pills.fill",
+                        iconColor: .green,
+                        isOn: Binding(
+                            get: { preferences.allMedicationUpdatesEnabled },
+                            set: { setAllMedicationPreferences($0) }
+                        )
+                    )
                 }
             }
             .padding()
@@ -154,6 +166,31 @@ struct NotificationPreferencesView: View {
                     petAdded: enabled,
                     petUpdated: enabled,
                     petDeleted: enabled
+                )
+                preferences = try await APIClient.shared.updateNotificationPreferences(update)
+            } catch {
+                errorMessage = "Failed to save preferences: \(error.localizedDescription)"
+                showError = true
+                await loadPreferences()
+            }
+        }
+    }
+
+    private func setAllMedicationPreferences(_ enabled: Bool) {
+        Task {
+            isSaving = true
+            defer { isSaving = false }
+
+            // Update local state immediately for responsiveness
+            preferences.medicationCreated = enabled
+            preferences.medicationUpdated = enabled
+            preferences.medicationArchived = enabled
+
+            do {
+                let update = NotificationPreferencesUpdate(
+                    medicationCreated: enabled,
+                    medicationUpdated: enabled,
+                    medicationArchived: enabled
                 )
                 preferences = try await APIClient.shared.updateNotificationPreferences(update)
             } catch {

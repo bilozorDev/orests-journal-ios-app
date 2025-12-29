@@ -37,6 +37,7 @@ final class PersistentCacheManager {
         case calorieGoal(petId: String)
         case healthEvents(petId: String)
         case healthCategories(orgId: String)  // Categories are family-wide, keyed by org_id
+        case medications(orgId: String)  // Medications are family-wide, keyed by org_id
 
         var fileName: String {
             switch self {
@@ -50,6 +51,8 @@ final class PersistentCacheManager {
                 return "health_events_\(petId).json"
             case .healthCategories(let orgId):
                 return "health_categories_\(orgId).json"
+            case .medications(let orgId):
+                return "medications_\(orgId).json"
             }
         }
     }
@@ -206,6 +209,8 @@ final class PersistentCacheManager {
             prefix = "family_members_"
         case .calorieGoal:
             prefix = "calorie_goal_"
+        case .medications:
+            prefix = "medications_"
         case .pets:
             // Single file, use regular delete
             await delete(forKey: key)

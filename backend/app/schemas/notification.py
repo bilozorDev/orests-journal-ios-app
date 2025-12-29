@@ -67,6 +67,11 @@ class NotificationPreferencesUpdate(BaseModel):
     pet_updated: Optional[bool] = None
     pet_deleted: Optional[bool] = None
 
+    # Medication Updates
+    medication_created: Optional[bool] = None
+    medication_updated: Optional[bool] = None
+    medication_archived: Optional[bool] = None
+
 
 class NotificationPreferencesResponse(BaseModel):
     """Response with all notification preferences."""
@@ -84,3 +89,8 @@ class NotificationPreferencesResponse(BaseModel):
     pet_added: bool
     pet_updated: bool
     pet_deleted: bool
+
+    # Medication Updates
+    medication_created: bool
+    medication_updated: bool
+    medication_archived: bool

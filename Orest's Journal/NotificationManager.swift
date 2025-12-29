@@ -213,6 +213,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             // Pet changes from other family members - refresh pets list
             DataService.shared.invalidatePetsCache()
             NavigationManager.shared.requestFamilyRefresh()
+        case "medication_created", "medication_updated", "medication_archived":
+            // Medication changes from other family members - refresh medications list
+            DataService.shared.invalidateAllMedicationsCaches()
+            NavigationManager.shared.requestTabRefresh(.medication)
         default:
             break
         }
@@ -256,9 +260,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private func handleNotificationTap(type: String, userInfo: [AnyHashable: Any]) {
         switch type {
         case "medication_reminder", "missed_dose":
-            // Could navigate to medication detail or record dose screen
-            // TODO: Implement medication navigation
-            break
+            // Navigate to medication tab for reminders
+            Task { @MainActor in
+                NavigationManager.shared.selectedTab = .medication
+            }
+        case "medication_created", "medication_updated", "medication_archived":
+            // Navigate to medication tab for CRUD notifications
+            Task { @MainActor in
+                NavigationManager.shared.selectedTab = .medication
+                NavigationManager.shared.requestTabRefresh(.medication)
+            }
         case "member_joined", "role_changed", "member_left", "member_left_promoted", "account_deleted", "account_deleted_promoted":
             // Use deep link URL - onOpenURL fires after app is fully ready
             if let url = URL(string: "orestsjournal://family?refresh=true") {

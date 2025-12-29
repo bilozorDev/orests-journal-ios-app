@@ -119,8 +119,8 @@ struct MainTabView: View {
                 .tag(Tab.food)
                 .accessibilityIdentifier(AccessibilityIdentifier.foodTab)
 
-            PlaceholderView(title: "Medication", icon: "syringe")
-                .tabItem { Label("Medication", systemImage: "syringe") }
+            MedicationsView()
+                .tabItem { Label("Medication", systemImage: "pills") }
                 .tag(Tab.medication)
                 .accessibilityIdentifier(AccessibilityIdentifier.medicationTab)
 

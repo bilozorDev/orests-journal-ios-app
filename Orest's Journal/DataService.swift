@@ -29,15 +29,18 @@ final class DataService {
     private var calorieGoalCache: [UUID: CacheEntry<CalorieGoal>] = [:]
     private var healthEventsCache: [UUID: CacheEntry<[HealthEventWithCategory]>] = [:]
     private var healthCategoriesCache: [String: CacheEntry<[HealthCategory]>] = [:]  // Keyed by orgId (family-wide)
+    private var medicationsCache: [String: CacheEntry<[Medication]>] = [:]  // Keyed by orgId
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
     private let healthCacheTTL: TimeInterval = 300  // 5 minutes
+    private let medicationsCacheTTL: TimeInterval = 300  // 5 minutes
 
     // Cache stampede prevention flags
     private var petsRefreshInProgress = false
     private var familyRefreshInProgress: Set<String> = []
     private var healthEventsRefreshInProgress: Set<UUID> = []
     private var healthCategoriesRefreshInProgress: Set<String> = []  // By orgId
+    private var medicationsRefreshInProgress: Set<String> = []  // By orgId
 
     private init() {
         // Listen for memory warnings to clear caches
@@ -59,6 +62,7 @@ final class DataService {
         calorieGoalCache.removeAll()
         healthEventsCache.removeAll()
         healthCategoriesCache.removeAll()
+        medicationsCache.removeAll()
 
         Task {
             await persistentCache.clearAll()
@@ -122,6 +126,7 @@ final class DataService {
         calorieGoalCache.removeAll()
         healthEventsCache.removeAll()
         healthCategoriesCache.removeAll()
+        medicationsCache.removeAll()
         Task {
             await persistentCache.clearAll()
         }
@@ -415,7 +420,11 @@ final class DataService {
 
     func getHealthCategories(for petId: UUID, forceRefresh: Bool = false) async throws -> [HealthCategory] {
         // Get orgId from pet (categories are family-wide)
-        guard let pet = petsCache?.data.first(where: { $0.id == petId }) ?? (try? await getPets()).first(where: { $0.id == petId }) else {
+        var pet = petsCache?.data.first(where: { $0.id == petId })
+        if pet == nil {
+            pet = (try? await getPets())?.first(where: { $0.id == petId })
+        }
+        guard let pet = pet else {
             // Fallback to API call if pet not in cache
             return try await api.getHealthCategories(petId: petId)
         }
@@ -526,6 +535,142 @@ final class DataService {
     func searchHealthEvents(petId: UUID, query: String, category: String? = nil) async throws -> [HealthEventWithCategory] {
         // Search is always fresh, no caching
         return try await api.searchHealthEvents(petId: petId, query: query, category: category)
+    }
+
+    // MARK: - Medications Cache
+
+    private func getCachedMedications(for orgId: String) -> [Medication]? {
+        guard let entry = medicationsCache[orgId],
+              Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
+            return nil
+        }
+        return entry.data
+    }
+
+    private func cacheMedications(_ data: [Medication], for orgId: String) {
+        medicationsCache[orgId] = CacheEntry(data: data, timestamp: Date())
+    }
+
+    func invalidateMedicationsCache(for orgId: String) {
+        medicationsCache.removeValue(forKey: orgId)
+        Task {
+            await persistentCache.delete(forKey: .medications(orgId: orgId))
+        }
+    }
+
+    /// Invalidate all medication caches (used when mutations affect multiple orgs)
+    func invalidateAllMedicationsCaches() {
+        medicationsCache.removeAll()
+        Task {
+            await persistentCache.deleteAll(matching: .medications(orgId: ""))
+        }
+    }
+
+    // MARK: - Medications
+
+    func getMedications(for orgId: String, petId: UUID? = nil, includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [Medication] {
+        let orgIdStr = orgId.lowercased()
+        guard let orgUUID = UUID(uuidString: orgIdStr) else {
+            throw NSError(domain: "DataService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid org ID"])
+        }
+
+        // Check memory cache
+        if !forceRefresh, petId == nil, let cached = getCachedMedications(for: orgIdStr) {
+            return cached
+        }
+
+        // Check disk cache (only for full org list, not filtered by pet)
+        if !forceRefresh, petId == nil {
+            let diskCached: PersistentCacheManager.CachedData<[Medication]>? = await persistentCache.load(forKey: .medications(orgId: orgIdStr))
+            if let diskCached = diskCached {
+                cacheMedications(diskCached.data, for: orgIdStr)
+                // If stale, refresh in background (with stampede prevention)
+                if Date().timeIntervalSince(diskCached.timestamp) > medicationsCacheTTL {
+                    if !medicationsRefreshInProgress.contains(orgIdStr) {
+                        medicationsRefreshInProgress.insert(orgIdStr)
+                        Task {
+                            defer { Task { @MainActor in self.medicationsRefreshInProgress.remove(orgIdStr) } }
+                            do {
+                                try await self.refreshMedicationsInBackground(orgId: orgIdStr)
+                            } catch {
+                                print("Background medications refresh failed: \(error)")
+                            }
+                        }
+                    }
+                }
+                return diskCached.data
+            }
+        }
+
+        // Fetch from network
+        let response = try await api.getMedications(orgId: orgUUID, petId: petId, includeArchived: includeArchived)
+        let medications = response.medications
+
+        // Only cache full org list
+        if petId == nil {
+            cacheMedications(medications, for: orgIdStr)
+            await persistentCache.save(medications, forKey: .medications(orgId: orgIdStr))
+        }
+
+        return medications
+    }
+
+    private func refreshMedicationsInBackground(orgId: String) async throws {
+        let orgIdStr = orgId.lowercased()
+        guard let orgUUID = UUID(uuidString: orgIdStr) else { return }
+        let oldMeds = getCachedMedications(for: orgIdStr) ?? []
+        let response = try await api.getMedications(orgId: orgUUID)
+        let medications = response.medications
+        cacheMedications(medications, for: orgIdStr)
+        await persistentCache.save(medications, forKey: .medications(orgId: orgIdStr))
+
+        // If medications changed, notify views to refresh
+        let oldIds = Set(oldMeds.map { $0.id })
+        let newIds = Set(medications.map { $0.id })
+        if oldIds != newIds {
+            NavigationManager.shared.requestTabRefresh(.medication)
+        }
+    }
+
+    func getMedication(id: UUID) async throws -> Medication {
+        return try await api.getMedication(id: id)
+    }
+
+    func getActiveMedications(for petId: UUID) async throws -> [Medication] {
+        let response = try await api.getActiveMedicationsForPet(petId: petId)
+        return response.medications
+    }
+
+    func createMedication(_ medication: MedicationCreate, orgId: String) async throws -> Medication {
+        let result = try await api.createMedication(medication)
+        invalidateMedicationsCache(for: orgId.lowercased())
+        NavigationManager.shared.requestTabRefresh(.medication)
+        return result
+    }
+
+    func updateMedication(id: UUID, _ update: MedicationUpdate, orgId: String) async throws -> Medication {
+        let result = try await api.updateMedication(id: id, update)
+        invalidateMedicationsCache(for: orgId.lowercased())
+        NavigationManager.shared.requestTabRefresh(.medication)
+        return result
+    }
+
+    func deleteMedication(id: UUID, orgId: String) async throws -> MedicationDeleteResponse {
+        let result = try await api.deleteMedication(id: id)
+        invalidateMedicationsCache(for: orgId.lowercased())
+        NavigationManager.shared.requestTabRefresh(.medication)
+        return result
+    }
+
+    func uploadMedicationPhoto(medicationId: UUID, imageData: Data, mimeType: String = "image/jpeg", orgId: String) async throws -> MedicationPhoto {
+        let result = try await api.uploadMedicationPhoto(medicationId: medicationId, imageData: imageData, mimeType: mimeType)
+        invalidateMedicationsCache(for: orgId.lowercased())
+        return result
+    }
+
+    func deleteMedicationPhoto(medicationId: UUID, photoId: UUID, orgId: String) async throws {
+        try await api.deleteMedicationPhoto(medicationId: medicationId, photoId: photoId)
+        invalidateMedicationsCache(for: orgId.lowercased())
     }
 
     // MARK: - Background Refresh

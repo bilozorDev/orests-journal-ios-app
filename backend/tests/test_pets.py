@@ -157,14 +157,39 @@ class TestUpdatePet:
         )
 
         # Mock database queries
+        # The endpoint flow is:
+        # 1. set_rls_user (RLS setup) - no result needed
+        # 2. Query for Pet
+        # 3. set_rls_user (RLS setup in verify_family_access) - no result needed
+        # 4. Query for FamilyMember (in verify_family_access)
+        # 5. Query for FamilyMembers (in get_filtered_family_member_tokens)
+        # 6. Query for NotificationPreferences
+        # 7. Query for DeviceTokens
+        rls_result1 = MagicMock()
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+        rls_result2 = MagicMock()
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = mock_membership
 
-        pet_result = MagicMock()
-        pet_result.scalar_one_or_none.return_value = mock_pet
+        # Notification-related queries (return empty lists)
+        family_members_result = MagicMock()
+        family_members_result.scalars.return_value.all.return_value = []
+        prefs_result = MagicMock()
+        prefs_result.scalars.return_value.all.return_value = []
+        tokens_result = MagicMock()
+        tokens_result.scalars.return_value.all.return_value = []
 
         mock_db_session.execute = AsyncMock(
-            side_effect=[membership_result, pet_result]
+            side_effect=[
+                rls_result1,
+                pet_result,
+                rls_result2,
+                membership_result,
+                family_members_result,
+                prefs_result,
+                tokens_result,
+            ]
         )
 
         # Make request to update date_of_birth
@@ -206,14 +231,39 @@ class TestUpdatePet:
         )
 
         # Mock database queries
+        # The endpoint flow is:
+        # 1. set_rls_user (RLS setup) - no result needed
+        # 2. Query for Pet
+        # 3. set_rls_user (RLS setup in verify_family_access) - no result needed
+        # 4. Query for FamilyMember (in verify_family_access)
+        # 5. Query for FamilyMembers (in get_filtered_family_member_tokens)
+        # 6. Query for NotificationPreferences
+        # 7. Query for DeviceTokens
+        rls_result1 = MagicMock()
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+        rls_result2 = MagicMock()
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = mock_membership
 
-        pet_result = MagicMock()
-        pet_result.scalar_one_or_none.return_value = mock_pet
+        # Notification-related queries (return empty lists)
+        family_members_result = MagicMock()
+        family_members_result.scalars.return_value.all.return_value = []
+        prefs_result = MagicMock()
+        prefs_result.scalars.return_value.all.return_value = []
+        tokens_result = MagicMock()
+        tokens_result.scalars.return_value.all.return_value = []
 
         mock_db_session.execute = AsyncMock(
-            side_effect=[membership_result, pet_result]
+            side_effect=[
+                rls_result1,
+                pet_result,
+                rls_result2,
+                membership_result,
+                family_members_result,
+                prefs_result,
+                tokens_result,
+            ]
         )
 
         # Make request to clear date_of_birth
@@ -260,14 +310,20 @@ class TestGetPet:
         )
 
         # Mock database queries
+        # The endpoint flow is:
+        # 1. set_rls_user (RLS setup) - no result needed
+        # 2. Query for Pet
+        # 3. set_rls_user (RLS setup in verify_family_access) - no result needed
+        # 4. Query for FamilyMember
+        rls_result1 = MagicMock()
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+        rls_result2 = MagicMock()
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = mock_membership
 
-        pet_result = MagicMock()
-        pet_result.scalar_one_or_none.return_value = mock_pet
-
         mock_db_session.execute = AsyncMock(
-            side_effect=[membership_result, pet_result]
+            side_effect=[rls_result1, pet_result, rls_result2, membership_result]
         )
 
         # Make request
@@ -309,14 +365,20 @@ class TestGetPet:
         )
 
         # Mock database queries
+        # The endpoint flow is:
+        # 1. set_rls_user (RLS setup) - no result needed
+        # 2. Query for Pet
+        # 3. set_rls_user (RLS setup in verify_family_access) - no result needed
+        # 4. Query for FamilyMember
+        rls_result1 = MagicMock()
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+        rls_result2 = MagicMock()
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = mock_membership
 
-        pet_result = MagicMock()
-        pet_result.scalar_one_or_none.return_value = mock_pet
-
         mock_db_session.execute = AsyncMock(
-            side_effect=[membership_result, pet_result]
+            side_effect=[rls_result1, pet_result, rls_result2, membership_result]
         )
 
         # Make request

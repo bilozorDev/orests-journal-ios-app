@@ -21,11 +21,25 @@ class ScheduledTimeResponse(BaseModel):
     scheduled_minute: int
 
 
+# Photo Schemas
+class MedicationPhotoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    medication_id: UUID
+    photo_url: str
+    sort_order: int
+    created_at: datetime
+
+
 # Medication Schemas
 class MedicationCreate(BaseModel):
     pet_id: UUID
     name: str
     medication_type: MedicationType
+    dosage: Optional[str] = None
+    interval_days: Optional[int] = None  # 1-30 for scheduled, None for PRN
+    is_as_needed: bool = False
     start_date: datetime
     end_date: Optional[datetime] = None
     times_per_day: int = 1
@@ -38,6 +52,9 @@ class MedicationCreate(BaseModel):
 class MedicationUpdate(BaseModel):
     name: Optional[str] = None
     medication_type: Optional[MedicationType] = None
+    dosage: Optional[str] = None
+    interval_days: Optional[int] = None
+    is_as_needed: Optional[bool] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     times_per_day: Optional[int] = None
@@ -54,6 +71,9 @@ class MedicationResponse(BaseModel):
     pet_id: UUID
     name: str
     medication_type: MedicationType
+    dosage: Optional[str] = None
+    interval_days: Optional[int] = None
+    is_as_needed: bool = False
     start_date: datetime
     end_date: Optional[datetime] = None
     times_per_day: int
@@ -61,6 +81,7 @@ class MedicationResponse(BaseModel):
     reminders_enabled: bool = False
     timezone: str = "UTC"
     is_archived: bool = False
+    created_by: Optional[UUID] = None
     created_at: datetime
 
     @property
@@ -76,8 +97,9 @@ class MedicationResponse(BaseModel):
 
 
 class MedicationWithSchedulesResponse(MedicationResponse):
-    """Medication response including scheduled reminder times."""
+    """Medication response including scheduled reminder times and photos."""
     scheduled_times: list[ScheduledTimeResponse] = []
+    photos: list[MedicationPhotoResponse] = []
 
 
 class MedicationListResponse(BaseModel):

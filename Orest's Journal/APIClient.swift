@@ -127,7 +127,10 @@ class APIClient: APIClientProtocol {
         body: Encodable? = nil
     ) throws -> URLRequest {
         var components = URLComponents(string: APIConfiguration.baseURL + path)
-        components?.queryItems = queryItems
+        // Only override query items if explicitly provided
+        if let queryItems = queryItems {
+            components?.queryItems = queryItems
+        }
 
         guard let url = components?.url else {
             throw APIError.invalidURL
@@ -473,6 +476,84 @@ class APIClient: APIClientProtocol {
     func deleteHealthEventPhoto(eventId: UUID, photoId: UUID) async throws {
         try await delete("/health/events/\(eventId.uuidString.lowercased())/photos/\(photoId.uuidString.lowercased())")
     }
+
+    // MARK: - Medications
+
+    func getMedications(
+        orgId: UUID,
+        petId: UUID? = nil,
+        activeOnly: Bool = false,
+        includeArchived: Bool = false,
+        timezone: String = TimeZone.current.identifier
+    ) async throws -> MedicationListResponse {
+        var path = "/medications?org_id=\(orgId.uuidString.lowercased())&timezone=\(timezone)"
+        if let petId = petId {
+            path += "&pet_id=\(petId.uuidString.lowercased())"
+        }
+        if activeOnly {
+            path += "&active_only=true"
+        }
+        if includeArchived {
+            path += "&include_archived=true"
+        }
+        return try await get(path)
+    }
+
+    func getMedication(id: UUID) async throws -> Medication {
+        return try await get("/medications/\(id.uuidString.lowercased())")
+    }
+
+    func createMedication(_ medication: MedicationCreate) async throws -> Medication {
+        return try await post("/medications", body: medication)
+    }
+
+    func updateMedication(id: UUID, _ update: MedicationUpdate) async throws -> Medication {
+        return try await patch("/medications/\(id.uuidString.lowercased())", body: update)
+    }
+
+    func deleteMedication(id: UUID) async throws -> MedicationDeleteResponse {
+        return try await deleteWithResponse("/medications/\(id.uuidString.lowercased())")
+    }
+
+    func getActiveMedicationsForPet(petId: UUID, timezone: String = TimeZone.current.identifier) async throws -> MedicationListResponse {
+        return try await get("/medications/pet/\(petId.uuidString.lowercased())/active?timezone=\(timezone)")
+    }
+
+    func uploadMedicationPhoto(medicationId: UUID, imageData: Data, mimeType: String = "image/jpeg") async throws -> MedicationPhoto {
+        guard let url = URL(string: APIConfiguration.baseURL + "/medications/\(medicationId.uuidString.lowercased())/photos") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let fileExtension = mimeType == "image/png" ? "png" : "jpg"
+        let filename = "medication.\(fileExtension)"
+
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(imageData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        request.httpBody = body
+
+        let (data, response) = try await session.data(for: request)
+        return try handleResponse(data, response)
+    }
+
+    func deleteMedicationPhoto(medicationId: UUID, photoId: UUID) async throws {
+        try await delete("/medications/\(medicationId.uuidString.lowercased())/photos/\(photoId.uuidString.lowercased())")
+    }
 }
 
 // MARK: - Request/Response Types
@@ -569,6 +650,11 @@ struct NotificationPreferences: Codable {
     var petUpdated: Bool
     var petDeleted: Bool
 
+    // Medication Updates
+    var medicationCreated: Bool
+    var medicationUpdated: Bool
+    var medicationArchived: Bool
+
     /// All family-related preferences enabled
     var allFamilyUpdatesEnabled: Bool {
         familyMemberJoined && familyRoleChanged && familyMemberLeft &&
@@ -578,6 +664,11 @@ struct NotificationPreferences: Codable {
     /// All pet-related preferences enabled
     var allPetUpdatesEnabled: Bool {
         petAdded && petUpdated && petDeleted
+    }
+
+    /// All medication-related preferences enabled
+    var allMedicationUpdatesEnabled: Bool {
+        medicationCreated && medicationUpdated && medicationArchived
     }
 
     /// Default preferences (all enabled)
@@ -591,8 +682,58 @@ struct NotificationPreferences: Codable {
             familyAccountDeletedPromoted: true,
             petAdded: true,
             petUpdated: true,
-            petDeleted: true
+            petDeleted: true,
+            medicationCreated: true,
+            medicationUpdated: true,
+            medicationArchived: true
         )
+    }
+
+    // Custom decoder to handle backwards compatibility with cached data missing medication fields
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        familyMemberJoined = try container.decode(Bool.self, forKey: .familyMemberJoined)
+        familyRoleChanged = try container.decode(Bool.self, forKey: .familyRoleChanged)
+        familyMemberLeft = try container.decode(Bool.self, forKey: .familyMemberLeft)
+        familyMemberLeftPromoted = try container.decode(Bool.self, forKey: .familyMemberLeftPromoted)
+        familyAccountDeleted = try container.decode(Bool.self, forKey: .familyAccountDeleted)
+        familyAccountDeletedPromoted = try container.decode(Bool.self, forKey: .familyAccountDeletedPromoted)
+        petAdded = try container.decode(Bool.self, forKey: .petAdded)
+        petUpdated = try container.decode(Bool.self, forKey: .petUpdated)
+        petDeleted = try container.decode(Bool.self, forKey: .petDeleted)
+        // Medication fields with defaults for backwards compatibility
+        medicationCreated = try container.decodeIfPresent(Bool.self, forKey: .medicationCreated) ?? true
+        medicationUpdated = try container.decodeIfPresent(Bool.self, forKey: .medicationUpdated) ?? true
+        medicationArchived = try container.decodeIfPresent(Bool.self, forKey: .medicationArchived) ?? true
+    }
+
+    // Memberwise initializer
+    init(
+        familyMemberJoined: Bool,
+        familyRoleChanged: Bool,
+        familyMemberLeft: Bool,
+        familyMemberLeftPromoted: Bool,
+        familyAccountDeleted: Bool,
+        familyAccountDeletedPromoted: Bool,
+        petAdded: Bool,
+        petUpdated: Bool,
+        petDeleted: Bool,
+        medicationCreated: Bool,
+        medicationUpdated: Bool,
+        medicationArchived: Bool
+    ) {
+        self.familyMemberJoined = familyMemberJoined
+        self.familyRoleChanged = familyRoleChanged
+        self.familyMemberLeft = familyMemberLeft
+        self.familyMemberLeftPromoted = familyMemberLeftPromoted
+        self.familyAccountDeleted = familyAccountDeleted
+        self.familyAccountDeletedPromoted = familyAccountDeletedPromoted
+        self.petAdded = petAdded
+        self.petUpdated = petUpdated
+        self.petDeleted = petDeleted
+        self.medicationCreated = medicationCreated
+        self.medicationUpdated = medicationUpdated
+        self.medicationArchived = medicationArchived
     }
 }
 
@@ -606,4 +747,7 @@ struct NotificationPreferencesUpdate: Encodable {
     var petAdded: Bool?
     var petUpdated: Bool?
     var petDeleted: Bool?
+    var medicationCreated: Bool?
+    var medicationUpdated: Bool?
+    var medicationArchived: Bool?
 }

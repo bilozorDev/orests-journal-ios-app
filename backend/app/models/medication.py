@@ -26,6 +26,9 @@ class PetMedication(Base):
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     medication_type = Column(String(50), nullable=False)
+    dosage = Column(String(255), nullable=True)
+    interval_days = Column(Integer, nullable=True)  # 1-30 for scheduled, null for PRN
+    is_as_needed = Column(Boolean, default=False, nullable=False)  # PRN medication
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
     times_per_day = Column(Integer, default=1, nullable=False)
@@ -41,6 +44,20 @@ class PetMedication(Base):
     doses = relationship("PetMedicationDose", back_populates="medication", cascade="all, delete-orphan")
     schedules = relationship("MedicationSchedule", back_populates="medication", cascade="all, delete-orphan")
     notification_logs = relationship("NotificationLog", back_populates="medication", cascade="all, delete-orphan")
+    photos = relationship("PetMedicationPhoto", back_populates="medication", cascade="all, delete-orphan", order_by="PetMedicationPhoto.sort_order")
+
+
+class PetMedicationPhoto(Base):
+    __tablename__ = "pet_medication_photos"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
+    photo_url = Column(String(512), nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    medication = relationship("PetMedication", back_populates="photos")
 
 
 class PetMedicationDose(Base):

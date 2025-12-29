@@ -23,6 +23,10 @@ NOTIFICATION_TYPE_TO_PREF = {
     "pet_added": "pet_added",
     "pet_updated": "pet_updated",
     "pet_deleted": "pet_deleted",
+    # Medication Updates
+    "medication_created": "medication_created",
+    "medication_updated": "medication_updated",
+    "medication_archived": "medication_archived",
 }
 
 
