@@ -1,7 +1,7 @@
 """
 Tests for Pet Pydantic schemas.
 """
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
@@ -127,18 +127,18 @@ class TestPetResponse:
     def test_response_includes_date_of_birth(self):
         """Should include date_of_birth in response."""
         pet_id = uuid4()
-        org_id = uuid4()
+        family_id = uuid4()
         dob = date(2022, 1, 1)
 
         response = PetResponse(
             id=pet_id,
-            org_id=org_id,
+            family_id=family_id,
             name="Whiskers",
             kind="cat",
             photo_url=None,
             current_weight=8.0,
             date_of_birth=dob,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=None,
         )
 
@@ -148,17 +148,17 @@ class TestPetResponse:
     def test_response_with_null_date_of_birth(self):
         """Should handle None date_of_birth in response."""
         pet_id = uuid4()
-        org_id = uuid4()
+        family_id = uuid4()
 
         response = PetResponse(
             id=pet_id,
-            org_id=org_id,
+            family_id=family_id,
             name="Buddy",
             kind="dog",
             photo_url=None,
             current_weight=None,
             date_of_birth=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=None,
         )
 

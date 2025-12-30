@@ -21,7 +21,7 @@ Test scenarios:
 - Pagination
 - Cache invalidation
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
 
@@ -148,7 +148,7 @@ class TestCreateFeeding:
         food_id = str(uuid4())
 
         # Mock pet access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -160,14 +160,14 @@ class TestCreateFeeding:
         # Mock refresh to set created attributes
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
         # Mock cache invalidation
         with patch("app.api.endpoints.feedings.invalidate_feeding_caches") as mock_invalidate:
             # Make request
-            fed_at = datetime.utcnow().isoformat()
+            fed_at = datetime.now(UTC).isoformat()
             response = await client.post(
                 "/api/v1/feedings",
                 json={
@@ -210,7 +210,7 @@ class TestCreateFeeding:
         food_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -221,8 +221,8 @@ class TestCreateFeeding:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
-            obj.fed_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
+            obj.fed_at = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -245,7 +245,7 @@ class TestCreateFeeding:
             assert "fed_at" in data
             # Verify fed_at is recent (within last 5 seconds)
             fed_at = datetime.fromisoformat(data["fed_at"].replace("Z", "+00:00"))
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             assert (now - fed_at).total_seconds() < 5
 
     @pytest.mark.asyncio
@@ -261,7 +261,7 @@ class TestCreateFeeding:
         pet_id = str(uuid4())
         food_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -272,7 +272,7 @@ class TestCreateFeeding:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
             obj.notes = None
 
         mock_db_session.refresh = mock_refresh
@@ -362,7 +362,7 @@ class TestCreateFeeding:
         other_family_id = str(uuid4())
 
         # Pet exists but belongs to different family
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query
         rls_result1 = MagicMock()
@@ -413,7 +413,7 @@ class TestCreateFeeding:
         # This documents current behavior - consider adding Field(gt=0) validation
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -424,7 +424,7 @@ class TestCreateFeeding:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -524,19 +524,19 @@ class TestListPetFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Create mock feedings
         mock_feeding1 = create_mock_feeding(
             pet_id=pet_id,
             calories=200.0,
-            fed_at=datetime.utcnow() - timedelta(hours=2),
+            fed_at=datetime.now(UTC) - timedelta(hours=2),
         )
         mock_feeding2 = create_mock_feeding(
             pet_id=pet_id,
             calories=150.0,
-            fed_at=datetime.utcnow() - timedelta(hours=1),
+            fed_at=datetime.now(UTC) - timedelta(hours=1),
         )
 
         # Mock count query
@@ -590,7 +590,7 @@ class TestListPetFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -606,12 +606,12 @@ class TestListPetFeedings:
                 "pet_id": pet_id,
                 "food_id": str(uuid4()),
                 "fed_by": test_user_id,
-                "fed_at": datetime.utcnow().isoformat(),
+                "fed_at": datetime.now(UTC).isoformat(),
                 "amount": 100.0,
                 "amount_unit": "g",
                 "calories": 350.0,
                 "notes": "Cached feeding",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }],
             "total_calories": 350.0,
             "total": 1,
@@ -642,7 +642,7 @@ class TestListPetFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty count and results
@@ -687,7 +687,7 @@ class TestListPetFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Create mock feeding for second page
@@ -733,7 +733,7 @@ class TestListPetFeedings:
         """Should use default limit of 50 when not specified."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         count_result = MagicMock()
@@ -804,7 +804,7 @@ class TestListPetFeedings:
         other_family_id = str(uuid4())
 
         # Pet exists but user has no access
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query
         rls_result1 = MagicMock()
@@ -864,11 +864,11 @@ class TestGetTodayFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Create today's feedings
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         mock_feeding1 = create_mock_feeding(pet_id=pet_id, calories=200.0, fed_at=now)
         mock_feeding2 = create_mock_feeding(
             pet_id=pet_id,
@@ -911,14 +911,14 @@ class TestGetTodayFeedings:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Only today's feeding is returned (yesterday's filtered by query)
         mock_feeding_today = create_mock_feeding(
             pet_id=pet_id,
             calories=100.0,
-            fed_at=datetime.utcnow()
+            fed_at=datetime.now(UTC)
         )
 
         feedings_result = MagicMock()
@@ -954,7 +954,7 @@ class TestGetTodayFeedings:
         """Should return empty list when no feedings today."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         feedings_result = MagicMock()
@@ -988,7 +988,7 @@ class TestGetTodayFeedings:
         pet_id = str(uuid4())
         other_family_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query
         rls_result1 = MagicMock()
@@ -1042,7 +1042,7 @@ class TestUpdateFeeding:
             calories=350.0,
             notes="Original note"
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(
@@ -1094,7 +1094,7 @@ class TestUpdateFeeding:
             amount=100.0,
             calories=350.0,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(
@@ -1135,7 +1135,7 @@ class TestUpdateFeeding:
             pet_id=pet_id,
             amount_unit="g"
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(
@@ -1194,7 +1194,7 @@ class TestUpdateFeeding:
         other_family_id = str(uuid4())
 
         mock_feeding = create_mock_feeding(feeding_id=feeding_id, pet_id=pet_id)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # Feeding query
         feeding_result = MagicMock()
@@ -1296,7 +1296,7 @@ class TestDeleteFeeding:
 
         # Mock feeding access verification
         mock_feeding = create_mock_feeding(feeding_id=feeding_id, pet_id=pet_id)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(
@@ -1357,7 +1357,7 @@ class TestDeleteFeeding:
         other_family_id = str(uuid4())
 
         mock_feeding = create_mock_feeding(feeding_id=feeding_id, pet_id=pet_id)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # Feeding query
         feeding_result = MagicMock()
@@ -1421,7 +1421,7 @@ class TestGetCalorieGoal:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock active calorie goal
@@ -1467,7 +1467,7 @@ class TestGetCalorieGoal:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # No goal found
@@ -1504,14 +1504,14 @@ class TestGetCalorieGoal:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock expired goal
         mock_goal = create_mock_calorie_goal(
             pet_id=pet_id,
             daily_calories=450.0,
-            effective_until=datetime.utcnow() - timedelta(days=1)  # Expired yesterday
+            effective_until=datetime.now(UTC) - timedelta(days=1)  # Expired yesterday
         )
 
         goal_result = MagicMock()
@@ -1545,7 +1545,7 @@ class TestGetCalorieGoal:
         pet_id = str(uuid4())
         other_family_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query
         rls_result1 = MagicMock()
@@ -1591,7 +1591,7 @@ class TestSetCalorieGoal:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # No previous goal exists
@@ -1608,8 +1608,8 @@ class TestSetCalorieGoal:
         # Mock refresh to set created attributes
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
-            obj.effective_from = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
+            obj.effective_from = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -1646,7 +1646,7 @@ class TestSetCalorieGoal:
         """Should create calorie goal without optional notes field."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         prev_goal_result = MagicMock()
@@ -1661,8 +1661,8 @@ class TestSetCalorieGoal:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
-            obj.effective_from = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
+            obj.effective_from = datetime.now(UTC)
             obj.notes = None
 
         mock_db_session.refresh = mock_refresh
@@ -1691,7 +1691,7 @@ class TestSetCalorieGoal:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Previous goal exists
@@ -1713,8 +1713,8 @@ class TestSetCalorieGoal:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
-            obj.effective_from = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
+            obj.effective_from = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -1746,7 +1746,7 @@ class TestSetCalorieGoal:
         # This documents current behavior - consider adding Field(gt=0) validation
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         prev_goal_result = MagicMock()
@@ -1761,8 +1761,8 @@ class TestSetCalorieGoal:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
-            obj.effective_from = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
+            obj.effective_from = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -1807,7 +1807,7 @@ class TestSetCalorieGoal:
         other_family_id = str(uuid4())
 
         # Pet exists but user has no access
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query
         rls_result1 = MagicMock()
@@ -1868,7 +1868,7 @@ class TestCacheInvalidation:
         """Should invalidate feeding caches after creating a feeding."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_rls_and_access_verification(
@@ -1879,7 +1879,7 @@ class TestCacheInvalidation:
 
         async def mock_refresh(obj):
             obj.id = UUID(str(uuid4()))
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -1913,7 +1913,7 @@ class TestCacheInvalidation:
         pet_id = str(uuid4())
 
         mock_feeding = create_mock_feeding(feeding_id=feeding_id, pet_id=pet_id)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(
@@ -1946,7 +1946,7 @@ class TestCacheInvalidation:
         pet_id = str(uuid4())
 
         mock_feeding = create_mock_feeding(feeding_id=feeding_id, pet_id=pet_id)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         setup_feeding_access_verification(

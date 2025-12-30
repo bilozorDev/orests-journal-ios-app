@@ -83,7 +83,7 @@ class TestListFoods:
 
             # Make request
             response = await client.get(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -134,7 +134,7 @@ class TestListFoods:
         cached_response = {
             "foods": [{
                 "id": str(mock_food.id),
-                "org_id": str(mock_food.org_id),
+                "family_id": str(mock_food.family_id),
                 "name": mock_food.name,
                 "category": mock_food.category,
                 "calories_per_kg": mock_food.calories_per_kg,
@@ -148,7 +148,7 @@ class TestListFoods:
 
         with patch("app.api.endpoints.foods.cache_get", return_value=cached_response):
             response = await client.get(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -195,7 +195,7 @@ class TestListFoods:
 
         # Note: Cache is NOT used when include_archived=true
         response = await client.get(
-            f"/api/v1/foods?org_id={test_family_id}&include_archived=true",
+            f"/api/v1/foods?family_id={test_family_id}&include_archived=true",
             headers=auth_headers,
         )
 
@@ -237,7 +237,7 @@ class TestListFoods:
         with patch("app.api.endpoints.foods.cache_get", return_value=None), \
              patch("app.api.endpoints.foods.cache_set"):
             response = await client.get(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -253,7 +253,7 @@ class TestListFoods:
     ):
         """Should return 401 when no auth token provided."""
         response = await client.get(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
         )
 
         assert response.status_code == 401
@@ -280,7 +280,7 @@ class TestListFoods:
         )
 
         response = await client.get(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             headers=auth_headers,
         )
 
@@ -288,12 +288,12 @@ class TestListFoods:
         assert "not a member" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_list_foods_missing_org_id(
+    async def test_list_foods_missing_family_id(
         self,
         client: AsyncClient,
         auth_headers: dict,
     ):
-        """Should return 422 when org_id is missing."""
+        """Should return 422 when family_id is missing."""
         response = await client.get(
             "/api/v1/foods",
             headers=auth_headers,
@@ -351,7 +351,7 @@ class TestCreateFood:
         with patch("app.api.endpoints.foods.invalidate_food_caches") as mock_invalidate:
             # Make request
             response = await client.post(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 json={
                     "name": "New Food",
                     "category": "dry",
@@ -414,7 +414,7 @@ class TestCreateFood:
 
         with patch("app.api.endpoints.foods.invalidate_food_caches"):
             response = await client.post(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 json={
                     "name": "Food with Image",
                     "category": "wet",
@@ -440,7 +440,7 @@ class TestCreateFood:
     ):
         """Should return 422 when name is missing."""
         response = await client.post(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             json={
                 "category": "dry",
                 "calories_per_kg": 3500.0,
@@ -461,7 +461,7 @@ class TestCreateFood:
     ):
         """Should return 422 when category is invalid."""
         response = await client.post(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             json={
                 "name": "Test Food",
                 "category": "invalid_category",
@@ -511,7 +511,7 @@ class TestCreateFood:
 
         with patch("app.api.endpoints.foods.invalidate_food_caches"):
             response = await client.post(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 json={
                     "name": "Test Food",
                     "category": "dry",
@@ -535,7 +535,7 @@ class TestCreateFood:
     ):
         """Should return 422 when container_size_unit is invalid."""
         response = await client.post(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             json={
                 "name": "Test Food",
                 "category": "dry",
@@ -556,7 +556,7 @@ class TestCreateFood:
     ):
         """Should return 401 when no auth token provided."""
         response = await client.post(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             json={
                 "name": "Test Food",
                 "category": "dry",
@@ -589,7 +589,7 @@ class TestCreateFood:
         )
 
         response = await client.post(
-            f"/api/v1/foods?org_id={test_family_id}",
+            f"/api/v1/foods?family_id={test_family_id}",
             json={
                 "name": "Test Food",
                 "category": "dry",
@@ -624,7 +624,7 @@ class TestGetFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Specific Food",
             category="snack",
         )
@@ -704,7 +704,7 @@ class TestGetFood:
         # Setup mocks - food exists but user not in family
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=other_family_id,  # Different family
+            family_id=other_family_id,  # Different family
         )
 
         # Mock database queries - set_rls_user, get food, set_rls_user again, get membership
@@ -784,7 +784,7 @@ class TestUpdateFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Old Name",
         )
 
@@ -838,7 +838,7 @@ class TestUpdateFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             category="dry",
         )
 
@@ -887,7 +887,7 @@ class TestUpdateFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Old Food",
             calories_per_kg=3000.0,
             container_size=1000.0,
@@ -944,7 +944,7 @@ class TestUpdateFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Original Name",
             category="dry",
             calories_per_kg=3500.0,
@@ -1026,7 +1026,7 @@ class TestUpdateFood:
 
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=other_family_id,
+            family_id=other_family_id,
         )
 
         # Mock database queries - set_rls_user, get food, set_rls_user again, get membership
@@ -1112,7 +1112,7 @@ class TestDeleteFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
 
         # Mock database queries - set_rls_user, get food, set_rls_user again, get membership, get count
@@ -1175,7 +1175,7 @@ class TestDeleteFood:
         )
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             is_archived=False,
         )
 
@@ -1265,7 +1265,7 @@ class TestDeleteFood:
 
         mock_food = create_mock_food(
             food_id=food_id,
-            org_id=other_family_id,
+            family_id=other_family_id,
         )
 
         # Mock database queries - set_rls_user, get food, set_rls_user again, get membership
@@ -1358,7 +1358,7 @@ class TestArchiveBehavior:
         with patch("app.api.endpoints.foods.cache_get", return_value=None), \
              patch("app.api.endpoints.foods.cache_set"):
             response = await client.get(
-                f"/api/v1/foods?org_id={test_family_id}",
+                f"/api/v1/foods?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -1385,7 +1385,7 @@ class TestArchiveBehavior:
         )
         mock_archived_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Archived Food",
             is_archived=True,
         )
@@ -1435,7 +1435,7 @@ class TestArchiveBehavior:
         )
         mock_archived_food = create_mock_food(
             food_id=food_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             is_archived=True,
         )
 

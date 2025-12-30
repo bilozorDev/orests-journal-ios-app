@@ -3,7 +3,7 @@ Tests for Health Event Pydantic schemas.
 
 Validates health event schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -74,14 +74,14 @@ class TestHealthCategoryResponse:
         """Response should require all non-nullable fields."""
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vaccination",
             name_normalized="vaccination",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert category.id is not None
-        assert category.org_id is not None
+        assert category.family_id is not None
         assert category.name == "Vaccination"
         assert category.name_normalized == "vaccination"
         assert category.created_at is not None
@@ -92,10 +92,10 @@ class TestHealthCategoryResponse:
         user_id = uuid4()
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vaccination",
             name_normalized="vaccination",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=user_id,
         )
 
@@ -110,10 +110,10 @@ class TestHealthCategoryResponse:
         """Name normalized should typically be lowercase version."""
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Weight Check",
             name_normalized="weight check",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert category.name == "Weight Check"
@@ -134,7 +134,7 @@ class TestHealthEventCreate:
 
     def test_health_event_create_with_all_fields(self):
         """Should create event with all optional fields."""
-        occurred_time = datetime.utcnow() - timedelta(hours=2)
+        occurred_time = datetime.now(UTC) - timedelta(hours=2)
 
         event = HealthEventCreate(
             category_name="Vaccination",
@@ -156,7 +156,7 @@ class TestHealthEventCreate:
 
     def test_health_event_create_with_custom_timestamp(self):
         """Should accept custom occurred_at timestamp for backdating events."""
-        past_time = datetime.utcnow() - timedelta(days=7)
+        past_time = datetime.now(UTC) - timedelta(days=7)
 
         event = HealthEventCreate(
             category_name="Vet Visit",
@@ -167,7 +167,7 @@ class TestHealthEventCreate:
 
     def test_health_event_create_future_timestamp(self):
         """Should accept future timestamps (e.g., scheduled appointments)."""
-        future_time = datetime.utcnow() + timedelta(days=30)
+        future_time = datetime.now(UTC) + timedelta(days=30)
 
         event = HealthEventCreate(
             category_name="Scheduled Checkup",
@@ -237,7 +237,7 @@ class TestHealthEventUpdate:
 
     def test_health_event_update_multiple_fields(self):
         """Should allow updating multiple fields."""
-        new_time = datetime.utcnow() - timedelta(hours=1)
+        new_time = datetime.now(UTC) - timedelta(hours=1)
 
         update = HealthEventUpdate(
             category_name="Corrected Category",
@@ -257,7 +257,7 @@ class TestHealthEventUpdate:
 
     def test_health_event_update_change_timestamp(self):
         """Should allow changing occurred_at timestamp."""
-        corrected_time = datetime.utcnow() - timedelta(days=1)
+        corrected_time = datetime.now(UTC) - timedelta(days=1)
 
         update = HealthEventUpdate(occurred_at=corrected_time)
 
@@ -273,7 +273,7 @@ class TestHealthEventPhotoResponse:
             id=uuid4(),
             photo_url="https://cdn.example.com/photos/abc123.jpg",
             sort_order=0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert photo.id is not None
@@ -288,7 +288,7 @@ class TestHealthEventPhotoResponse:
                 id=uuid4(),
                 photo_url="https://example.com/photo.jpg",
                 sort_order=sort_order,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             assert photo.sort_order == sort_order
 
@@ -309,7 +309,7 @@ class TestHealthEventPhotoResponse:
                 id=uuid4(),
                 photo_url=url,
                 sort_order=0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             assert photo.photo_url == url
 
@@ -322,8 +322,8 @@ class TestHealthEventResponse:
         event = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         assert event.id is not None
@@ -338,9 +338,9 @@ class TestHealthEventResponse:
         event = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes="Test notes",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert event.notes == "Test notes"
@@ -352,21 +352,21 @@ class TestHealthEventResponse:
                 id=uuid4(),
                 photo_url="https://example.com/1.jpg",
                 sort_order=0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             HealthEventPhotoResponse(
                 id=uuid4(),
                 photo_url="https://example.com/2.jpg",
                 sort_order=1,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
         event = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
             photos=photos,
         )
 
@@ -379,8 +379,8 @@ class TestHealthEventResponse:
         event = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
             photos=[],
         )
 
@@ -401,8 +401,8 @@ class TestHealthEventNested:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         assert event.id is not None
@@ -421,8 +421,8 @@ class TestHealthEventNested:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
             created_by=user_id,
         )
 
@@ -436,7 +436,7 @@ class TestHealthEventNested:
                 id=uuid4(),
                 photo_url="https://example.com/photo.jpg",
                 sort_order=0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -444,10 +444,10 @@ class TestHealthEventNested:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes="Detailed notes",
             photos=photos,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=user_id,
         )
 
@@ -469,16 +469,16 @@ class TestHealthEventWithCategory:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vaccination",
             name_normalized="vaccination",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         combined = HealthEventWithCategory(
@@ -496,7 +496,7 @@ class TestHealthEventWithCategory:
                 id=uuid4(),
                 photo_url="https://example.com/vax.jpg",
                 sort_order=0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -504,19 +504,19 @@ class TestHealthEventWithCategory:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes="Annual vaccination complete",
             photos=photos,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=uuid4(),
         )
 
         category = HealthCategoryResponse(
             id=event.category_id,
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vaccination",
             name_normalized="vaccination",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=event.created_by,
         )
 
@@ -547,16 +547,16 @@ class TestHealthEventListResponse:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         category = HealthCategoryResponse(
             id=event.category_id,
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Weight Check",
             name_normalized="weight check",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         response = HealthEventListResponse(
@@ -582,16 +582,16 @@ class TestHealthEventListResponse:
                 id=uuid4(),
                 pet_id=uuid4(),
                 category_id=uuid4(),
-                occurred_at=datetime.utcnow(),
-                created_at=datetime.utcnow(),
+                occurred_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
 
             category = HealthCategoryResponse(
                 id=event.category_id,
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name=name,
                 name_normalized=normalized,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
 
             events.append(HealthEventWithCategory(event=event, category=category))
@@ -610,13 +610,13 @@ class TestHealthEventListResponse:
                 id=uuid4(),
                 photo_url="https://example.com/1.jpg",
                 sort_order=0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             HealthEventPhotoResponse(
                 id=uuid4(),
                 photo_url="https://example.com/2.jpg",
                 sort_order=1,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -624,17 +624,17 @@ class TestHealthEventListResponse:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             photos=photos,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         category = HealthCategoryResponse(
             id=event.category_id,
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Surgery",
             name_normalized="surgery",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         response = HealthEventListResponse(
@@ -658,10 +658,10 @@ class TestHealthCategoryListResponse:
         """Should handle single category."""
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vaccination",
             name_normalized="vaccination",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         response = HealthCategoryListResponse(categories=[category])
@@ -674,10 +674,10 @@ class TestHealthCategoryListResponse:
         categories = [
             HealthCategoryResponse(
                 id=uuid4(),
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name=name,
                 name_normalized=name.lower(),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             for name in ["Vaccination", "Weight Check", "Dental", "Surgery", "Lab Work"]
         ]
@@ -693,12 +693,12 @@ class TestHealthCategoryListResponse:
     def test_health_category_list_response_preserves_metadata(self):
         """Should preserve all category metadata."""
         user_id = uuid4()
-        org_id = uuid4()
-        created_time = datetime.utcnow()
+        family_id = uuid4()
+        created_time = datetime.now(UTC)
 
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=org_id,
+            family_id=family_id,
             name="Custom Category",
             name_normalized="custom category",
             created_at=created_time,
@@ -707,7 +707,7 @@ class TestHealthCategoryListResponse:
 
         response = HealthCategoryListResponse(categories=[category])
 
-        assert response.categories[0].org_id == org_id
+        assert response.categories[0].family_id == family_id
         assert response.categories[0].created_by == user_id
         assert response.categories[0].created_at == created_time
 
@@ -748,8 +748,8 @@ class TestSchemaValidation:
             HealthEventResponse(
                 id="not-a-uuid",  # Invalid UUID format
                 category_id=uuid4(),
-                occurred_at=datetime.utcnow(),
-                created_at=datetime.utcnow(),
+                occurred_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
 
     def test_invalid_datetime_format(self):

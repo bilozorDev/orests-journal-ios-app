@@ -23,7 +23,7 @@ Test scenarios:
 - Cache invalidation
 - Push notifications
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
 
@@ -78,7 +78,7 @@ class TestCreateFamily:
         async def mock_refresh(obj):
             obj.id = UUID(TEST_FAMILY_ID)
             obj.invite_code = "ABC12345"
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
 
         mock_db_session.refresh = mock_refresh
 
@@ -163,7 +163,7 @@ class TestGetFamily:
             id=test_family_id,
             name="Test Family",
             invite_code="ABC12345",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             members=[
                 FamilyMemberResponse(
                     id=str(uuid4()),
@@ -172,7 +172,7 @@ class TestGetFamily:
                     first_name="Test",
                     last_name="User",
                     role="admin",
-                    joined_at=datetime.utcnow(),
+                    joined_at=datetime.now(UTC),
                 )
             ],
         )
@@ -562,7 +562,7 @@ class TestJoinFamily:
         # Mock locked out user
         mock_user = create_mock_user(user_id=test_user_id)
         mock_user.is_locked_out = True
-        mock_user.lockout_expires_at = datetime.utcnow() + timedelta(minutes=30)
+        mock_user.lockout_expires_at = datetime.now(UTC) + timedelta(minutes=30)
 
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = mock_user
@@ -594,7 +594,7 @@ class TestJoinFamily:
         # Mock user with failed attempts
         mock_user = create_mock_user(user_id=test_user_id)
         mock_user.failed_invite_attempts = 3
-        mock_user.last_failed_invite_at = datetime.utcnow() - timedelta(seconds=30)
+        mock_user.last_failed_invite_at = datetime.now(UTC) - timedelta(seconds=30)
 
         user_result2 = MagicMock()
         user_result2.scalar_one_or_none.return_value = mock_user

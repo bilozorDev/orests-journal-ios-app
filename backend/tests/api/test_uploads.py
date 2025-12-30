@@ -11,7 +11,7 @@ Tests cover:
 - Storage service mocking
 - Upload type validation
 - URL path validation for delete
-- Org ID security checks
+- Family ID security checks
 
 NOTE: These tests mock the storage_service to avoid actual S3/R2 uploads.
 The storage service is imported as a singleton, so we patch it at the module level.
@@ -128,7 +128,7 @@ class TestUploadImage:
             mock_storage.upload_image.assert_called_once()
             call_args = mock_storage.upload_image.call_args
             assert call_args.kwargs["upload_type"] == "pet-photo"
-            assert call_args.kwargs["org_id"] == test_family_id
+            assert call_args.kwargs["family_id"] == test_family_id
 
     @pytest.mark.asyncio
     async def test_upload_food_photo_success(
@@ -483,7 +483,7 @@ class TestDeleteImage:
             mock_storage.settings.s3_public_url = "https://r2.example.com"
             mock_storage.delete_image = AsyncMock(return_value=True)
 
-            # URL format: {public_url}/{folder}/{org_id}/{file_id}.{extension}
+            # URL format: {public_url}/{folder}/{family_id}/{file_id}.{extension}
             image_url = f"https://r2.example.com/pets/{test_family_id}/12345.jpg"
 
             response = await client.delete(
@@ -499,7 +499,7 @@ class TestDeleteImage:
             mock_storage.delete_image.assert_called_once_with(image_url)
 
     @pytest.mark.asyncio
-    async def test_delete_image_wrong_org_id(
+    async def test_delete_image_wrong_family_id(
         self,
         client: AsyncClient,
         mock_db_session: AsyncMock,
@@ -507,7 +507,7 @@ class TestDeleteImage:
         test_user_id: str,
         test_family_id: str,
     ):
-        """Should return 403 when trying to delete image from different org."""
+        """Should return 403 when trying to delete image from different family."""
         from uuid import UUID
 
         membership_result = MagicMock()
@@ -518,9 +518,9 @@ class TestDeleteImage:
             mock_storage.is_configured = True
             mock_storage.settings.s3_public_url = "https://r2.example.com"
 
-            # Try to delete image from different org
-            other_org_id = str(uuid4())
-            image_url = f"https://r2.example.com/pets/{other_org_id}/12345.jpg"
+            # Try to delete image from different family
+            other_family_id = str(uuid4())
+            image_url = f"https://r2.example.com/pets/{other_family_id}/12345.jpg"
 
             response = await client.delete(
                 f"/api/v1/uploads?url={image_url}",
@@ -583,7 +583,7 @@ class TestDeleteImage:
             mock_storage.is_configured = True
             mock_storage.settings.s3_public_url = "https://r2.example.com"
 
-            # Invalid path format (missing org_id level)
+            # Invalid path format (missing family_id level)
             image_url = "https://r2.example.com/pets/12345.jpg"
 
             response = await client.delete(

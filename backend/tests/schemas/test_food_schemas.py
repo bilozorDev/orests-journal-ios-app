@@ -3,7 +3,7 @@ Tests for Food Pydantic schemas.
 
 Validates food schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -245,17 +245,17 @@ class TestFoodResponse:
         """Response should require all non-nullable fields."""
         response = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Test Food",
             category=FoodCategory.DRY,
             calories_per_kg=3500.0,
             container_size=15.0,
             container_size_unit=ContainerUnit.GRAMS,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.id is not None
-        assert response.org_id is not None
+        assert response.family_id is not None
         assert response.name == "Test Food"
         assert response.category == FoodCategory.DRY
         assert response.calories_per_kg == 3500.0
@@ -267,13 +267,13 @@ class TestFoodResponse:
         """Response should include default values."""
         response = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Test Food",
             category=FoodCategory.DRY,
             calories_per_kg=3500.0,
             container_size=15.0,
             container_size_unit=ContainerUnit.GRAMS,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_archived is False
@@ -283,14 +283,14 @@ class TestFoodResponse:
         """Response should include image URL when provided."""
         response = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Test Food",
             category=FoodCategory.DRY,
             calories_per_kg=3500.0,
             container_size=15.0,
             container_size_unit=ContainerUnit.GRAMS,
             image_url="https://example.com/food.jpg",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.image_url == "https://example.com/food.jpg"
@@ -299,14 +299,14 @@ class TestFoodResponse:
         """Response should handle archived foods."""
         response = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Archived Food",
             category=FoodCategory.DRY,
             calories_per_kg=3500.0,
             container_size=15.0,
             container_size_unit=ContainerUnit.GRAMS,
             is_archived=True,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_archived is True
@@ -315,13 +315,13 @@ class TestFoodResponse:
         """Response should handle all unit and category combinations."""
         response = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Test Food",
             category=FoodCategory.WET,
             calories_per_kg=850.0,
             container_size=3.0,
             container_size_unit=ContainerUnit.OUNCES,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.category == FoodCategory.WET
@@ -343,23 +343,23 @@ class TestFoodListResponse:
         foods = [
             FoodResponse(
                 id=uuid4(),
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name="Food 1",
                 category=FoodCategory.DRY,
                 calories_per_kg=3500.0,
                 container_size=15.0,
                 container_size_unit=ContainerUnit.GRAMS,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FoodResponse(
                 id=uuid4(),
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name="Food 2",
                 category=FoodCategory.WET,
                 calories_per_kg=850.0,
                 container_size=3.0,
                 container_size_unit=ContainerUnit.OUNCES,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -456,8 +456,8 @@ class TestCalorieGoalResponse:
             id=uuid4(),
             pet_id=uuid4(),
             daily_calories=450.0,
-            effective_from=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            effective_from=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         assert response.id is not None
@@ -472,8 +472,8 @@ class TestCalorieGoalResponse:
             id=uuid4(),
             pet_id=uuid4(),
             daily_calories=450.0,
-            effective_from=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            effective_from=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
 
         assert response.effective_until is None
@@ -481,8 +481,8 @@ class TestCalorieGoalResponse:
 
     def test_calorie_goal_response_with_effective_until(self):
         """Response should handle effective_until date."""
-        effective_from = datetime.utcnow()
-        effective_until = datetime.utcnow()
+        effective_from = datetime.now(UTC)
+        effective_until = datetime.now(UTC)
 
         response = CalorieGoalResponse(
             id=uuid4(),
@@ -490,7 +490,7 @@ class TestCalorieGoalResponse:
             daily_calories=450.0,
             effective_from=effective_from,
             effective_until=effective_until,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.effective_from == effective_from
@@ -502,9 +502,9 @@ class TestCalorieGoalResponse:
             id=uuid4(),
             pet_id=uuid4(),
             daily_calories=450.0,
-            effective_from=datetime.utcnow(),
+            effective_from=datetime.now(UTC),
             notes="Weight loss plan",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.notes == "Weight loss plan"
@@ -516,7 +516,7 @@ class TestCalorieGoalResponse:
                 id=uuid4(),
                 pet_id=uuid4(),
                 daily_calories=calories,
-                effective_from=datetime.utcnow(),
-                created_at=datetime.utcnow(),
+                effective_from=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
             assert response.daily_calories == calories

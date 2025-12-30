@@ -9,7 +9,7 @@ import Foundation
 import UIKit
 
 /// Data service providing high-level methods for pet management.
-/// Wraps APIClient and provides organization-scoped data access with caching.
+/// Wraps APIClient and provides family-scoped data access with caching.
 @MainActor
 final class DataService {
     static let shared = DataService()
@@ -28,8 +28,8 @@ final class DataService {
     private var familyMembersCache: [String: CacheEntry<FamilyDetailResponse>] = [:]
     private var calorieGoalCache: [UUID: CacheEntry<CalorieGoal>] = [:]
     private var healthEventsCache: [UUID: CacheEntry<[HealthEventWithCategory]>] = [:]
-    private var healthCategoriesCache: [String: CacheEntry<[HealthCategory]>] = [:]  // Keyed by orgId (family-wide)
-    private var medicationsCache: [String: CacheEntry<[Medication]>] = [:]  // Keyed by orgId
+    private var healthCategoriesCache: [String: CacheEntry<[HealthCategory]>] = [:]  // Keyed by familyId
+    private var medicationsCache: [String: CacheEntry<[Medication]>] = [:]  // Keyed by familyId
     private let cacheTTL: TimeInterval = 60  // 1 minute
     private let petsCacheTTL: TimeInterval = 300  // 5 minutes
     private let healthCacheTTL: TimeInterval = 300  // 5 minutes
@@ -39,8 +39,8 @@ final class DataService {
     private var petsRefreshInProgress = false
     private var familyRefreshInProgress: Set<String> = []
     private var healthEventsRefreshInProgress: Set<UUID> = []
-    private var healthCategoriesRefreshInProgress: Set<String> = []  // By orgId
-    private var medicationsRefreshInProgress: Set<String> = []  // By orgId
+    private var healthCategoriesRefreshInProgress: Set<String> = []  // By familyId
+    private var medicationsRefreshInProgress: Set<String> = []  // By familyId
 
     private init() {
         // Listen for memory warnings to clear caches
@@ -336,28 +336,28 @@ final class DataService {
         healthEventsCache[petId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    private func getCachedHealthCategories(for orgId: String) -> [HealthCategory]? {
-        guard let entry = healthCategoriesCache[orgId],
+    private func getCachedHealthCategories(for familyId: String) -> [HealthCategory]? {
+        guard let entry = healthCategoriesCache[familyId],
               Date().timeIntervalSince(entry.timestamp) < healthCacheTTL else {
             return nil
         }
         return entry.data
     }
 
-    private func cacheHealthCategories(_ data: [HealthCategory], for orgId: String) {
-        healthCategoriesCache[orgId] = CacheEntry(data: data, timestamp: Date())
+    private func cacheHealthCategories(_ data: [HealthCategory], for familyId: String) {
+        healthCategoriesCache[familyId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    func invalidateHealthCache(for petId: UUID, orgId: String? = nil) {
+    func invalidateHealthCache(for petId: UUID, familyId: String? = nil) {
         healthEventsCache.removeValue(forKey: petId)
         Task {
             await persistentCache.delete(forKey: .healthEvents(petId: petId.uuidString))
         }
-        // Also invalidate categories if orgId provided
-        if let orgId = orgId {
-            healthCategoriesCache.removeValue(forKey: orgId)
+        // Also invalidate categories if familyId provided
+        if let familyId = familyId {
+            healthCategoriesCache.removeValue(forKey: familyId)
             Task {
-                await persistentCache.delete(forKey: .healthCategories(orgId: orgId))
+                await persistentCache.delete(forKey: .healthCategories(familyId: familyId))
             }
         }
     }
@@ -368,7 +368,7 @@ final class DataService {
         healthCategoriesCache.removeAll()
         Task {
             await persistentCache.deleteAll(matching: .healthEvents(petId: ""))
-            await persistentCache.deleteAll(matching: .healthCategories(orgId: ""))
+            await persistentCache.deleteAll(matching: .healthCategories(familyId: ""))
         }
     }
 
@@ -425,7 +425,7 @@ final class DataService {
     }
 
     func getHealthCategories(for petId: UUID, forceRefresh: Bool = false) async throws -> [HealthCategory] {
-        // Get orgId from pet (categories are family-wide)
+        // Get familyId from pet (categories are family-wide)
         var pet = petsCache?.data.first(where: { $0.id == petId })
         if pet == nil {
             pet = (try? await getPets())?.first(where: { $0.id == petId })
@@ -434,26 +434,26 @@ final class DataService {
             // Fallback to API call if pet not in cache
             return try await api.getHealthCategories(petId: petId)
         }
-        let orgId = pet.orgId
+        let familyId = pet.familyId
 
-        // Check memory cache (by orgId, not petId)
-        if !forceRefresh, let cached = getCachedHealthCategories(for: orgId) {
+        // Check memory cache (by familyId, not petId)
+        if !forceRefresh, let cached = getCachedHealthCategories(for: familyId) {
             return cached
         }
 
         // Check disk cache
         if !forceRefresh {
-            let diskCached: PersistentCacheManager.CachedData<[HealthCategory]>? = await persistentCache.load(forKey: .healthCategories(orgId: orgId))
+            let diskCached: PersistentCacheManager.CachedData<[HealthCategory]>? = await persistentCache.load(forKey: .healthCategories(familyId: familyId))
             if let diskCached = diskCached {
-                cacheHealthCategories(diskCached.data, for: orgId)
+                cacheHealthCategories(diskCached.data, for: familyId)
                 // If stale, refresh in background (with stampede prevention)
                 if Date().timeIntervalSince(diskCached.timestamp) > healthCacheTTL {
-                    if !healthCategoriesRefreshInProgress.contains(orgId) {
-                        healthCategoriesRefreshInProgress.insert(orgId)
+                    if !healthCategoriesRefreshInProgress.contains(familyId) {
+                        healthCategoriesRefreshInProgress.insert(familyId)
                         Task {
-                            defer { Task { @MainActor in self.healthCategoriesRefreshInProgress.remove(orgId) } }
+                            defer { Task { @MainActor in self.healthCategoriesRefreshInProgress.remove(familyId) } }
                             do {
-                                try await refreshHealthCategoriesInBackground(petId: petId, orgId: orgId)
+                                try await refreshHealthCategoriesInBackground(petId: petId, familyId: familyId)
                             } catch {
                                 #if DEBUG
                                 print("Background health categories refresh failed: \(error)")
@@ -468,15 +468,15 @@ final class DataService {
 
         // Fetch from network
         let categories = try await api.getHealthCategories(petId: petId)
-        cacheHealthCategories(categories, for: orgId)
-        await persistentCache.save(categories, forKey: .healthCategories(orgId: orgId))
+        cacheHealthCategories(categories, for: familyId)
+        await persistentCache.save(categories, forKey: .healthCategories(familyId: familyId))
         return categories
     }
 
-    private func refreshHealthCategoriesInBackground(petId: UUID, orgId: String) async throws {
+    private func refreshHealthCategoriesInBackground(petId: UUID, familyId: String) async throws {
         let categories = try await api.getHealthCategories(petId: petId)
-        cacheHealthCategories(categories, for: orgId)
-        await persistentCache.save(categories, forKey: .healthCategories(orgId: orgId))
+        cacheHealthCategories(categories, for: familyId)
+        await persistentCache.save(categories, forKey: .healthCategories(familyId: familyId))
     }
 
     func getHealthEvent(eventId: UUID) async throws -> HealthEventWithCategory {
@@ -559,59 +559,59 @@ final class DataService {
 
     // MARK: - Medications Cache
 
-    private func getCachedMedications(for orgId: String) -> [Medication]? {
-        guard let entry = medicationsCache[orgId],
+    private func getCachedMedications(for familyId: String) -> [Medication]? {
+        guard let entry = medicationsCache[familyId],
               Date().timeIntervalSince(entry.timestamp) < medicationsCacheTTL else {
             return nil
         }
         return entry.data
     }
 
-    private func cacheMedications(_ data: [Medication], for orgId: String) {
-        medicationsCache[orgId] = CacheEntry(data: data, timestamp: Date())
+    private func cacheMedications(_ data: [Medication], for familyId: String) {
+        medicationsCache[familyId] = CacheEntry(data: data, timestamp: Date())
     }
 
-    func invalidateMedicationsCache(for orgId: String) {
-        medicationsCache.removeValue(forKey: orgId)
+    func invalidateMedicationsCache(for familyId: String) {
+        medicationsCache.removeValue(forKey: familyId)
         Task {
-            await persistentCache.delete(forKey: .medications(orgId: orgId))
+            await persistentCache.delete(forKey: .medications(familyId: familyId))
         }
     }
 
-    /// Invalidate all medication caches (used when mutations affect multiple orgs)
+    /// Invalidate all medication caches (used when mutations affect multiple families)
     func invalidateAllMedicationsCaches() {
         medicationsCache.removeAll()
         Task {
-            await persistentCache.deleteAll(matching: .medications(orgId: ""))
+            await persistentCache.deleteAll(matching: .medications(familyId: ""))
         }
     }
 
     // MARK: - Medications
 
-    func getMedications(for orgId: String, petId: UUID? = nil, includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [Medication] {
-        let orgIdStr = orgId.lowercased()
-        guard let orgUUID = UUID(uuidString: orgIdStr) else {
-            throw NSError(domain: "DataService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid org ID"])
+    func getMedications(for familyId: String, petId: UUID? = nil, includeArchived: Bool = false, forceRefresh: Bool = false) async throws -> [Medication] {
+        let familyIdStr = familyId.lowercased()
+        guard let familyUUID = UUID(uuidString: familyIdStr) else {
+            throw NSError(domain: "DataService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid family ID"])
         }
 
         // Check memory cache
-        if !forceRefresh, petId == nil, let cached = getCachedMedications(for: orgIdStr) {
+        if !forceRefresh, petId == nil, let cached = getCachedMedications(for: familyIdStr) {
             return cached
         }
 
-        // Check disk cache (only for full org list, not filtered by pet)
+        // Check disk cache (only for full family list, not filtered by pet)
         if !forceRefresh, petId == nil {
-            let diskCached: PersistentCacheManager.CachedData<[Medication]>? = await persistentCache.load(forKey: .medications(orgId: orgIdStr))
+            let diskCached: PersistentCacheManager.CachedData<[Medication]>? = await persistentCache.load(forKey: .medications(familyId: familyIdStr))
             if let diskCached = diskCached {
-                cacheMedications(diskCached.data, for: orgIdStr)
+                cacheMedications(diskCached.data, for: familyIdStr)
                 // If stale, refresh in background (with stampede prevention)
                 if Date().timeIntervalSince(diskCached.timestamp) > medicationsCacheTTL {
-                    if !medicationsRefreshInProgress.contains(orgIdStr) {
-                        medicationsRefreshInProgress.insert(orgIdStr)
+                    if !medicationsRefreshInProgress.contains(familyIdStr) {
+                        medicationsRefreshInProgress.insert(familyIdStr)
                         Task {
-                            defer { Task { @MainActor in self.medicationsRefreshInProgress.remove(orgIdStr) } }
+                            defer { Task { @MainActor in self.medicationsRefreshInProgress.remove(familyIdStr) } }
                             do {
-                                try await self.refreshMedicationsInBackground(orgId: orgIdStr)
+                                try await self.refreshMedicationsInBackground(familyId: familyIdStr)
                             } catch {
                                 print("Background medications refresh failed: \(error)")
                             }
@@ -623,26 +623,26 @@ final class DataService {
         }
 
         // Fetch from network
-        let response = try await api.getMedications(orgId: orgUUID, petId: petId, includeArchived: includeArchived)
+        let response = try await api.getMedications(familyId: familyUUID, petId: petId, includeArchived: includeArchived)
         let medications = response.medications
 
-        // Only cache full org list
+        // Only cache full family list
         if petId == nil {
-            cacheMedications(medications, for: orgIdStr)
-            await persistentCache.save(medications, forKey: .medications(orgId: orgIdStr))
+            cacheMedications(medications, for: familyIdStr)
+            await persistentCache.save(medications, forKey: .medications(familyId: familyIdStr))
         }
 
         return medications
     }
 
-    private func refreshMedicationsInBackground(orgId: String) async throws {
-        let orgIdStr = orgId.lowercased()
-        guard let orgUUID = UUID(uuidString: orgIdStr) else { return }
-        let oldMeds = getCachedMedications(for: orgIdStr) ?? []
-        let response = try await api.getMedications(orgId: orgUUID)
+    private func refreshMedicationsInBackground(familyId: String) async throws {
+        let familyIdStr = familyId.lowercased()
+        guard let familyUUID = UUID(uuidString: familyIdStr) else { return }
+        let oldMeds = getCachedMedications(for: familyIdStr) ?? []
+        let response = try await api.getMedications(familyId: familyUUID)
         let medications = response.medications
-        cacheMedications(medications, for: orgIdStr)
-        await persistentCache.save(medications, forKey: .medications(orgId: orgIdStr))
+        cacheMedications(medications, for: familyIdStr)
+        await persistentCache.save(medications, forKey: .medications(familyId: familyIdStr))
 
         // If medications changed, notify views to refresh
         let oldIds = Set(oldMeds.map { $0.id })
@@ -661,39 +661,39 @@ final class DataService {
         return response.medications
     }
 
-    func createMedication(_ medication: MedicationCreate, orgId: String) async throws -> Medication {
+    func createMedication(_ medication: MedicationCreate, familyId: String) async throws -> Medication {
         let result = try await api.createMedication(medication)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
         Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
-    func updateMedication(id: UUID, _ update: MedicationUpdate, orgId: String) async throws -> Medication {
+    func updateMedication(id: UUID, _ update: MedicationUpdate, familyId: String) async throws -> Medication {
         let result = try await api.updateMedication(id: id, update)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
         Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
-    func deleteMedication(id: UUID, orgId: String) async throws -> MedicationDeleteResponse {
+    func deleteMedication(id: UUID, familyId: String) async throws -> MedicationDeleteResponse {
         let result = try await api.deleteMedication(id: id)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
         Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
-    func uploadMedicationPhoto(medicationId: UUID, imageData: Data, mimeType: String = "image/jpeg", orgId: String) async throws -> MedicationPhoto {
+    func uploadMedicationPhoto(medicationId: UUID, imageData: Data, mimeType: String = "image/jpeg", familyId: String) async throws -> MedicationPhoto {
         let result = try await api.uploadMedicationPhoto(medicationId: medicationId, imageData: imageData, mimeType: mimeType)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
         return result
     }
 
-    func deleteMedicationPhoto(medicationId: UUID, photoId: UUID, orgId: String) async throws {
+    func deleteMedicationPhoto(medicationId: UUID, photoId: UUID, familyId: String) async throws {
         try await api.deleteMedicationPhoto(medicationId: medicationId, photoId: photoId)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
     }
 
     // MARK: - Doses
@@ -705,7 +705,7 @@ final class DataService {
         medicationId: UUID,
         notes: String? = nil,
         givenAt: Date? = nil,
-        orgId: String
+        familyId: String
     ) async throws -> MedicationDose? {
         let offlineQueue = await OfflineDoseQueue.shared
 
@@ -717,7 +717,7 @@ final class DataService {
                 givenAt: givenAt
             )
             let result = try await api.recordDose(doseCreate)
-            invalidateMedicationsCache(for: orgId.lowercased())
+            invalidateMedicationsCache(for: familyId.lowercased())
 
             // Sync widget after dose recorded
             Task { [self] in
@@ -731,7 +731,7 @@ final class DataService {
                 medicationId: medicationId,
                 givenAt: givenAt ?? Date(),
                 notes: notes,
-                orgId: orgId
+                familyId: familyId
             )
             return nil
         }
@@ -773,19 +773,19 @@ final class DataService {
     }
 
     /// Update a dose (for correcting time or notes)
-    func updateDose(doseId: UUID, givenAt: Date? = nil, notes: String? = nil, orgId: String) async throws -> MedicationDose {
+    func updateDose(doseId: UUID, givenAt: Date? = nil, notes: String? = nil, familyId: String) async throws -> MedicationDose {
         var update = DoseUpdate()
         update.givenAt = givenAt
         update.notes = notes
         let result = try await api.updateDose(doseId: doseId, update)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
         return result
     }
 
     /// Delete a dose
-    func deleteDose(doseId: UUID, orgId: String) async throws {
+    func deleteDose(doseId: UUID, familyId: String) async throws {
         try await api.deleteDose(doseId: doseId)
-        invalidateMedicationsCache(for: orgId.lowercased())
+        invalidateMedicationsCache(for: familyId.lowercased())
     }
 
     // MARK: - Background Refresh
@@ -814,13 +814,13 @@ final class DataService {
     func syncMedicationsToWidget() async {
         do {
             let pets = try await getPets(forceRefresh: false)
-            guard !pets.isEmpty, let orgId = pets.first?.orgId else {
+            guard !pets.isEmpty, let familyId = pets.first?.familyId else {
                 WidgetDataManager.shared.clearWidgetData()
                 return
             }
 
             // Force refresh to ensure we have latest data with scheduled_times
-            let medications = try await getMedications(for: orgId, includeArchived: false, forceRefresh: true)
+            let medications = try await getMedications(for: familyId, includeArchived: false, forceRefresh: true)
 
             #if DEBUG
             print("📱 [Widget] Processing \(medications.count) medications")

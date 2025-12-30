@@ -21,7 +21,7 @@ Authorization flow (important for mocking):
 - verify_pet_access: calls set_rls_user() first (requires RLS mock), queries pet, then calls verify_family_access
 - verify_family_access: calls set_rls_user() first (requires RLS mock), then queries membership
 """
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import UTC, datetime, timedelta, timezone as dt_timezone
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
@@ -54,7 +54,7 @@ def create_mock_medication(
     medication.name = name
     medication.medication_type = medication_type
     medication.is_archived = is_archived
-    medication.created_at = datetime.utcnow()
+    medication.created_at = datetime.now(UTC)
     return medication
 
 
@@ -69,10 +69,10 @@ def create_mock_dose(
     dose = MagicMock()
     dose.id = UUID(dose_id) if dose_id else uuid4()
     dose.medication_id = UUID(medication_id) if medication_id else uuid4()
-    dose.given_at = given_at or datetime.utcnow()
+    dose.given_at = given_at or datetime.now(UTC)
     dose.given_by = UUID(given_by) if given_by else uuid4()
     dose.notes = notes
-    dose.created_at = datetime.utcnow()
+    dose.created_at = datetime.now(UTC)
     return dose
 
 
@@ -108,7 +108,7 @@ class TestRecordDose:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
@@ -154,7 +154,7 @@ class TestRecordDose:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         with patch("app.api.endpoints.doses.cache_delete_pattern"), \
@@ -205,7 +205,7 @@ class TestRecordDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -247,7 +247,7 @@ class TestRecordDose:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         with patch("app.api.endpoints.doses.cache_delete_pattern"), \
@@ -321,7 +321,7 @@ class TestRecordDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -402,7 +402,7 @@ class TestDoseAdministrationNotifications:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name=pet_name,
         )
         pet_result = MagicMock()
@@ -453,7 +453,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         # Mock notification functions
@@ -480,7 +480,7 @@ class TestDoseAdministrationNotifications:
             # Verify notification function was called with correct parameters
             mock_get_tokens.assert_called_once()
             call_args = mock_get_tokens.call_args
-            assert call_args.args[1] == UUID(test_family_id)  # org_id
+            assert call_args.args[1] == UUID(test_family_id)  # family_id
             assert call_args.args[2] == UUID(test_user_id)    # exclude_user_id
             assert call_args.args[3] == "dose_administered"   # notification_type
 
@@ -518,7 +518,7 @@ class TestDoseAdministrationNotifications:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -561,7 +561,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         # Mock notification - only 1 user has this notification enabled
@@ -609,7 +609,7 @@ class TestDoseAdministrationNotifications:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -652,7 +652,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         with patch("app.api.endpoints.doses.cache_delete_pattern"), \
@@ -695,7 +695,7 @@ class TestDoseAdministrationNotifications:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -738,7 +738,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         with patch("app.api.endpoints.doses.cache_delete_pattern"), \
@@ -785,7 +785,7 @@ class TestDoseAdministrationNotifications:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_pet.name = "Buddy"
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
@@ -833,7 +833,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         with patch("app.api.endpoints.doses.cache_delete_pattern"), \
@@ -879,7 +879,7 @@ class TestDoseAdministrationNotifications:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -922,7 +922,7 @@ class TestDoseAdministrationNotifications:
         mock_db_session.add = MagicMock()
         def refresh_dose(obj):
             obj.id = uuid4()
-            obj.created_at = datetime.utcnow()
+            obj.created_at = datetime.now(UTC)
         mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
 
         # Mock notification to raise an exception
@@ -991,7 +991,7 @@ class TestListDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1082,7 +1082,7 @@ class TestListDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1162,7 +1162,7 @@ class TestListDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1245,7 +1245,7 @@ class TestGetTodayDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1313,7 +1313,7 @@ class TestGetTodayDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1373,7 +1373,7 @@ class TestGetLastDose:
             medication_id=medication_id,
             given_by=test_user_id,
             notes="Most recent",
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
         )
 
         # Mock authorization chain (verify_medication_access: medication first, no RLS)
@@ -1388,7 +1388,7 @@ class TestGetLastDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1457,7 +1457,7 @@ class TestGetLastDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1531,7 +1531,7 @@ class TestListAllDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1611,7 +1611,7 @@ class TestListAllDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1686,7 +1686,7 @@ class TestListAllDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1746,7 +1746,7 @@ class TestListAllDoses:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1843,7 +1843,7 @@ class TestUpdateDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -1932,7 +1932,7 @@ class TestUpdateDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -2040,7 +2040,7 @@ class TestUpdateDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -2112,7 +2112,7 @@ class TestDeleteDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 
@@ -2215,7 +2215,7 @@ class TestDeleteDose:
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
         pet_result = MagicMock()
         pet_result.scalar_one_or_none.return_value = mock_pet
 

@@ -36,7 +36,7 @@ class TestCreatePet:
             role="member",
         )
         mock_pet = create_mock_pet(
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Buddy",
             kind="dog",
             date_of_birth=date(2022, 3, 15),
@@ -57,7 +57,7 @@ class TestCreatePet:
 
         # Make request
         response = await client.post(
-            f"/api/v1/pets?org_id={test_family_id}",
+            f"/api/v1/pets?family_id={test_family_id}",
             json={
                 "name": "Buddy",
                 "kind": "dog",
@@ -90,7 +90,7 @@ class TestCreatePet:
             role="member",
         )
         mock_pet = create_mock_pet(
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Luna",
             kind="cat",
             date_of_birth=None,
@@ -112,7 +112,7 @@ class TestCreatePet:
 
         # Make request
         response = await client.post(
-            f"/api/v1/pets?org_id={test_family_id}",
+            f"/api/v1/pets?family_id={test_family_id}",
             json={
                 "name": "Luna",
                 "kind": "cat",
@@ -150,7 +150,7 @@ class TestUpdatePet:
         )
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Max",
             kind="dog",
             date_of_birth=None,
@@ -224,7 +224,7 @@ class TestUpdatePet:
         )
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Rocky",
             kind="hamster",
             date_of_birth=date(2021, 1, 1),
@@ -303,7 +303,7 @@ class TestGetPet:
         )
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Whiskers",
             kind="cat",
             date_of_birth=dob,
@@ -358,7 +358,7 @@ class TestGetPet:
         )
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Buddy",
             kind="dog",
             date_of_birth=None,

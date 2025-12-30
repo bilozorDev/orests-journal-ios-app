@@ -6,7 +6,7 @@ Tests cover:
 - Health event CRUD operations (list, create, get, update, delete)
 - Health event search and filtering
 - Health event photo management
-- Authorization checks (owner vs member, wrong org)
+- Authorization checks (owner vs member, wrong family)
 - Validation errors
 - Edge cases (fuzzy matching, date filtering, category cleanup)
 
@@ -14,7 +14,7 @@ NOTE: These tests mock the database session and use the FastAPI test client.
 All authorization functions (verify_pet_access, verify_health_event_access, etc.)
 call set_rls_user() first, which requires an RLS mock result in side_effect.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timezone, timedelta
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
@@ -34,7 +34,7 @@ from tests.conftest import (
 
 def create_mock_category(
     category_id: str = None,
-    org_id: str = TEST_FAMILY_ID,
+    family_id: str = TEST_FAMILY_ID,
     name: str = "Vomiting",
     name_normalized: str = None,
     created_by: str = None,
@@ -42,7 +42,7 @@ def create_mock_category(
     """Create a mock PetHealthCategory object."""
     category = MagicMock()
     category.id = UUID(category_id) if category_id else uuid4()
-    category.org_id = UUID(org_id)
+    category.family_id = UUID(family_id)
     category.name = name
     category.name_normalized = name_normalized or name.lower().strip()
     category.created_by = UUID(created_by) if created_by else uuid4()
@@ -107,14 +107,14 @@ class TestListCategories:
         # Setup mocks
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         mock_cat1 = create_mock_category(
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
         )
         mock_cat2 = create_mock_category(
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Diarrhea",
         )
 
@@ -174,7 +174,7 @@ class TestListCategories:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
 
         # Mock RLS, pet access, and empty categories
@@ -223,7 +223,7 @@ class TestListCategories:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
 
         # Mock RLS, pet lookup, but no membership
@@ -302,11 +302,11 @@ class TestCreateHealthEvent:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
         )
         mock_event = create_mock_event(
@@ -397,12 +397,12 @@ class TestCreateHealthEvent:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Buddy",
         )
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Seizure",
         )
         mock_event = create_mock_event(
@@ -462,7 +462,7 @@ class TestCreateHealthEvent:
         # Verify notification sent with correct args
         mock_notify.assert_called_once()
         call_args = mock_notify.call_args[0]
-        assert call_args[1] == UUID(test_family_id)  # org_id
+        assert call_args[1] == UUID(test_family_id)  # family_id
         assert call_args[2] == UUID(test_user_id)  # exclude_user_id
         assert call_args[3] == "Buddy"  # pet_name
         assert call_args[4] == "Seizure"  # category_name
@@ -483,8 +483,8 @@ class TestCreateHealthEvent:
 
         custom_time = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
-        mock_category = create_mock_category(category_id=category_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        mock_category = create_mock_category(category_id=category_id, family_id=test_family_id)
         mock_event = create_mock_event(
             event_id=event_id,
             pet_id=pet_id,
@@ -548,7 +548,7 @@ class TestCreateHealthEvent:
         """Should reject event with future occurred_at date."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock pet access
         rls_result = MagicMock()
@@ -621,11 +621,11 @@ class TestCreateHealthEvent:
         category_id = str(uuid4())
         event_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         # Category with slightly different case
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
             name_normalized="vomiting",
         )
@@ -702,8 +702,8 @@ class TestListHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
-        mock_category = create_mock_category(category_id=category_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        mock_category = create_mock_category(category_id=category_id, family_id=test_family_id)
         mock_event = create_mock_event(
             pet_id=pet_id,
             category_id=category_id,
@@ -768,10 +768,10 @@ class TestListHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
             name_normalized="vomiting",
         )
@@ -832,8 +832,8 @@ class TestListHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
-        mock_category = create_mock_category(category_id=category_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        mock_category = create_mock_category(category_id=category_id, family_id=test_family_id)
         mock_event = create_mock_event(
             pet_id=pet_id,
             category_id=category_id,
@@ -897,8 +897,8 @@ class TestListHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
-        mock_category = create_mock_category(category_id=category_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        mock_category = create_mock_category(category_id=category_id, family_id=test_family_id)
 
         # Create 2 events for page 2 (offset=50, limit=50)
         mock_event1 = create_mock_event(pet_id=pet_id, category_id=category_id)
@@ -955,7 +955,7 @@ class TestListHealthEvents:
         """Should return empty list when no events exist."""
         pet_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock queries
         rls_result = MagicMock()
@@ -1025,7 +1025,7 @@ class TestGetHealthEvent:
         )
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
 
         # Mock verify_health_event_access (checks event exists and user has access)
@@ -1034,7 +1034,7 @@ class TestGetHealthEvent:
         event_lookup_result.scalar_one_or_none.return_value = mock_event
 
         # 2-5. verify_pet_access (RLS, pet, RLS, membership)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
@@ -1116,7 +1116,7 @@ class TestGetHealthEvent:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock event found, but no family membership
         event_result = MagicMock()
@@ -1177,9 +1177,9 @@ class TestUpdateHealthEvent:
         )
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Update notes
         mock_event.notes = "Updated notes"
@@ -1260,15 +1260,15 @@ class TestUpdateHealthEvent:
         )
         mock_old_category = create_mock_category(
             category_id=old_category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
         )
         mock_new_category = create_mock_category(
             category_id=new_category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Diarrhea",
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock queries
         event_lookup = MagicMock()
@@ -1353,9 +1353,9 @@ class TestUpdateHealthEvent:
         )
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Update occurred_at
         mock_event.occurred_at = new_time.replace(tzinfo=None)
@@ -1452,7 +1452,7 @@ class TestDeleteHealthEvent:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock verify_health_event_access
         event_lookup = MagicMock()
@@ -1473,7 +1473,7 @@ class TestDeleteHealthEvent:
             family_id=test_family_id,
         )
 
-        # Get pet for org_id
+        # Get pet for family_id
         pet_query_result = MagicMock()
         pet_query_result.scalar_one.return_value = mock_pet
 
@@ -1524,7 +1524,7 @@ class TestDeleteHealthEvent:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Event has 2 photos
         photo1 = create_mock_photo(
@@ -1633,8 +1633,8 @@ class TestSearchHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
-        mock_category = create_mock_category(category_id=category_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        mock_category = create_mock_category(category_id=category_id, family_id=test_family_id)
         mock_event = create_mock_event(
             pet_id=pet_id,
             category_id=category_id,
@@ -1694,10 +1694,10 @@ class TestSearchHealthEvents:
         pet_id = str(uuid4())
         category_id = str(uuid4())
 
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_category = create_mock_category(
             category_id=category_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
             name="Vomiting",
             name_normalized="vomiting",
         )
@@ -1787,7 +1787,7 @@ class TestUploadHealthEventPhoto:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_photo = create_mock_photo(
             photo_id=photo_id,
             event_id=event_id,
@@ -1817,7 +1817,7 @@ class TestUploadHealthEventPhoto:
         photo_count_result = MagicMock()
         photo_count_result.scalar.return_value = 0
 
-        # Get pet for org_id
+        # Get pet for family_id
         pet_query_result = MagicMock()
         pet_query_result.scalar_one.return_value = mock_pet
 
@@ -1880,7 +1880,7 @@ class TestUploadHealthEventPhoto:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock access checks
         event_lookup = MagicMock()
@@ -1952,7 +1952,7 @@ class TestDeleteHealthEventPhoto:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_photo = create_mock_photo(
             photo_id=photo_id,
             event_id=event_id,
@@ -2033,7 +2033,7 @@ class TestDeleteHealthEventPhoto:
             pet_id=pet_id,
             category_id=category_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # Mock access checks
         event_lookup = MagicMock()

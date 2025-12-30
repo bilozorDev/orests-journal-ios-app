@@ -20,7 +20,7 @@ Test scenarios:
 - Family membership scenarios
 - Cache invalidation
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -51,7 +51,7 @@ def create_mock_user(
     user.email = email
     user.first_name = first_name
     user.last_name = last_name
-    user.created_at = datetime.utcnow()
+    user.created_at = datetime.now(UTC)
     return user
 
 

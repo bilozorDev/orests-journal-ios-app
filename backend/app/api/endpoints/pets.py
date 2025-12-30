@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
-    """Validate that a photo URL belongs to the expected R2 storage and org.
+def validate_photo_url(photo_url: Optional[str], family_id: str) -> Optional[str]:
+    """Validate that a photo URL belongs to the expected R2 storage and family.
 
     Returns the validated URL or None if invalid/empty.
     Raises HTTPException if URL format is invalid.
@@ -51,7 +51,7 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
             detail="Invalid photo URL: must be from our storage service"
         )
 
-    # Extract and validate path: folder/org_id/filename
+    # Extract and validate path: folder/family_id/filename
     path = photo_url.replace(f"{public_url_base}/", "")
     path_parts = path.split("/")
 
@@ -61,13 +61,13 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
             detail="Invalid photo URL format"
         )
 
-    folder, url_org_id, filename = path_parts
+    folder, url_family_id, filename = path_parts
 
-    # Validate org_id matches (security check)
-    if url_org_id != org_id:
+    # Validate family_id matches (security check)
+    if url_family_id != family_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Photo URL belongs to a different organization"
+            detail="Photo URL belongs to a different family"
         )
 
     return photo_url
@@ -75,7 +75,7 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
 
 async def notify_family_pet_change(
     db: AsyncSession,
-    org_id: UUID,
+    family_id: UUID,
     exclude_user_id: UUID,
     notification_type: str,
     pet_name: str,
@@ -85,13 +85,13 @@ async def notify_family_pet_change(
 
     Args:
         db: Database session
-        org_id: The family/org ID
+        family_id: The family ID
         exclude_user_id: User who triggered the change (won't receive notification)
         notification_type: One of 'pet_added', 'pet_updated', 'pet_deleted'
         pet_name: Name of the pet for notification text
         pet_id: ID of the pet
     """
-    tokens = await get_filtered_family_member_tokens(db, org_id, exclude_user_id, notification_type)
+    tokens = await get_filtered_family_member_tokens(db, family_id, exclude_user_id, notification_type)
     if not tokens:
         return
 
@@ -107,7 +107,7 @@ async def notify_family_pet_change(
         body="Tap to refresh",
         data={
             "type": notification_type,
-            "family_id": str(org_id),
+            "family_id": str(family_id),
             "pet_id": str(pet_id),
             "pet_name": pet_name,
         },
@@ -118,27 +118,26 @@ async def notify_family_pet_change(
 async def list_pets(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
-    org_id: Optional[str] = None,
+    family_id: Optional[str] = None,
 ):
     """List all pets for the user's family."""
-    # org_id is the family ID
-    if not org_id:
+    if not family_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="org_id query parameter is required",
+            detail="family_id query parameter is required",
         )
 
     # Verify user belongs to this family
-    await verify_family_access(db, user_id, org_id)
+    await verify_family_access(db, user_id, family_id)
 
     # Check cache first
-    cache_key = key_pets(org_id)
+    cache_key = key_pets(family_id)
     cached = await cache_get(cache_key, PetListResponse)
     if cached:
         return cached
 
     # Fetch from database
-    query = select(Pet).where(Pet.org_id == org_id).order_by(Pet.created_at.desc())
+    query = select(Pet).where(Pet.family_id == family_id).order_by(Pet.created_at.desc())
     result = await db.execute(query)
     pets = result.scalars().all()
 
@@ -153,19 +152,19 @@ async def list_pets(
 @router.post("", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
 async def create_pet(
     pet_in: PetCreate,
-    org_id: str,
+    family_id: str,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Create a new pet for the organization (family)."""
+    """Create a new pet for the family."""
     # Verify user belongs to this family
-    await verify_family_access(db, user_id, org_id)
+    await verify_family_access(db, user_id, family_id)
 
-    # Validate photo URL belongs to this org
-    validated_photo_url = validate_photo_url(pet_in.photo_url, org_id)
+    # Validate photo URL belongs to this family
+    validated_photo_url = validate_photo_url(pet_in.photo_url, family_id)
 
     pet = Pet(
-        org_id=UUID(org_id),
+        family_id=UUID(family_id),
         name=pet_in.name,
         kind=pet_in.kind,
         photo_url=validated_photo_url,
@@ -189,9 +188,9 @@ async def create_pet(
     await db.refresh(pet)
 
     # Invalidate cache and notify other family members
-    await cache_delete(key_pets(org_id))
+    await cache_delete(key_pets(family_id))
     await notify_family_pet_change(
-        db, pet.org_id, UUID(user_id), "pet_added", pet.name, pet.id
+        db, pet.family_id, UUID(user_id), "pet_added", pet.name, pet.id
     )
 
     return PetResponse.model_validate(pet)
@@ -229,8 +228,8 @@ async def update_pet(
     for field, value in update_data.items():
         # Validate and handle photo_url
         if field == "photo_url":
-            # Validate photo URL belongs to this org (or is empty for removal)
-            value = validate_photo_url(value, str(pet.org_id))
+            # Validate photo URL belongs to this family (or is empty for removal)
+            value = validate_photo_url(value, str(pet.family_id))
         setattr(pet, field, value)
 
     await db.commit()
@@ -247,9 +246,9 @@ async def update_pet(
             logger.error(f"Failed to delete old pet photo: {e}")
 
     # Invalidate cache and notify other family members
-    await cache_delete(key_pets(str(pet.org_id)))
+    await cache_delete(key_pets(str(pet.family_id)))
     await notify_family_pet_change(
-        db, pet.org_id, UUID(user_id), "pet_updated", pet.name, pet.id
+        db, pet.family_id, UUID(user_id), "pet_updated", pet.name, pet.id
     )
 
     return PetResponse.model_validate(pet)
@@ -267,7 +266,7 @@ async def delete_pet(
 
     # Store data for cleanup and notification before deleting
     photo_url = pet.photo_url
-    org_id = pet.org_id
+    family_id = pet.family_id
     pet_name = pet.name
 
     await db.delete(pet)
@@ -284,9 +283,9 @@ async def delete_pet(
             logger.error(f"Failed to delete pet photo on pet deletion: {e}")
 
     # Invalidate cache and notify other family members
-    await cache_delete(key_pets(str(org_id)))
+    await cache_delete(key_pets(str(family_id)))
     await notify_family_pet_change(
-        db, org_id, UUID(user_id), "pet_deleted", pet_name, pet_id
+        db, family_id, UUID(user_id), "pet_deleted", pet_name, pet_id
     )
 
 

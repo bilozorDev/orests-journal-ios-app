@@ -118,7 +118,7 @@ struct MedicationsView: View {
                     RecordDoseSheet(
                         medication: medication,
                         petName: pet.name,
-                        orgId: pet.orgId,
+                        familyId: pet.familyId,
                         onDoseRecorded: {
                             // No need to refresh the list, dose is recorded
                         }
@@ -556,11 +556,11 @@ struct MedicationsView: View {
 
     private func loadMedications(forceRefresh: Bool = false) async {
         guard let firstPet = pets.first else { return }
-        let orgId = firstPet.orgId
+        let familyId = firstPet.familyId
 
         do {
             let loaded = try await dataService.getMedications(
-                for: orgId,
+                for: familyId,
                 petId: selectedPet?.id,
                 includeArchived: true,
                 forceRefresh: forceRefresh

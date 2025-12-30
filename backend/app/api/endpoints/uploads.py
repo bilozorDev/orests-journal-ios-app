@@ -23,8 +23,8 @@ class UploadType(str, Enum):
     HEALTH_EVENT_PHOTO = "health-event-photo"
 
 
-async def get_user_org_id(db: AsyncSession, user_id: str) -> str:
-    """Get the user's family (org) ID from their membership."""
+async def get_user_family_id(db: AsyncSession, user_id: str) -> str:
+    """Get the user's family ID from their membership."""
     query = select(FamilyMember.family_id).where(FamilyMember.user_id == user_id)
     result = await db.execute(query)
     family_id = result.scalar_one_or_none()
@@ -54,14 +54,14 @@ async def upload_image(
     Returns:
         JSON with the public URL of the uploaded image
     """
-    # Get user's org_id from their family membership
-    org_id = await get_user_org_id(db, user_id)
+    # Get user's family_id from their family membership
+    family_id = await get_user_family_id(db, user_id)
 
     # Upload to R2
     url = await storage_service.upload_image(
         file=file,
         upload_type=upload_type.value,
-        org_id=org_id,
+        family_id=family_id,
     )
 
     return {"url": url}
@@ -81,11 +81,11 @@ async def delete_image(
     Returns:
         JSON with success status
     """
-    # Get user's org_id
-    user_org_id = await get_user_org_id(db, user_id)
+    # Get user's family_id
+    user_family_id = await get_user_family_id(db, user_id)
 
-    # Validate URL belongs to user's family by checking org_id in path
-    # URL format: {public_url}/{folder}/{org_id}/{file_id}.{extension}
+    # Validate URL belongs to user's family by checking family_id in path
+    # URL format: {public_url}/{folder}/{family_id}/{file_id}.{extension}
     if not storage_service.is_configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -99,21 +99,21 @@ async def delete_image(
             detail="Invalid image URL"
         )
 
-    # Extract path: folder/org_id/filename
+    # Extract path: folder/family_id/filename
     path = url.replace(f"{public_url_base}/", "")
     path_parts = path.split("/")
 
-    # Validate path format: folder/org_id/filename
+    # Validate path format: folder/family_id/filename
     if len(path_parts) != 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid image URL format"
         )
 
-    folder, url_org_id, filename = path_parts
+    folder, url_family_id, filename = path_parts
 
-    # Verify the org_id in URL matches user's org_id (security check)
-    if url_org_id != user_org_id:
+    # Verify the family_id in URL matches user's family_id (security check)
+    if url_family_id != user_family_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to delete this image"

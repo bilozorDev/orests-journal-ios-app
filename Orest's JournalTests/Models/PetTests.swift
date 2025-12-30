@@ -16,7 +16,7 @@ final class PetTests: XCTestCase {
         let json = """
         {
             "id": "550e8400-e29b-41d4-a716-446655440000",
-            "org_id": "family-123",
+            "family_id": "family-123",
             "name": "Max",
             "kind": "dog",
             "photo_url": "https://example.com/photo.jpg",
@@ -35,7 +35,7 @@ final class PetTests: XCTestCase {
         let pet = try decoder.decode(Pet.self, from: json)
 
         XCTAssertEqual(pet.id, UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000"))
-        XCTAssertEqual(pet.orgId, "family-123")
+        XCTAssertEqual(pet.familyId, "family-123")
         XCTAssertEqual(pet.name, "Max")
         XCTAssertEqual(pet.kind, "dog")
         XCTAssertEqual(pet.photoUrl, "https://example.com/photo.jpg")
@@ -49,7 +49,7 @@ final class PetTests: XCTestCase {
         let json = """
         {
             "id": "550e8400-e29b-41d4-a716-446655440000",
-            "org_id": "family-123",
+            "family_id": "family-123",
             "name": "Whiskers",
             "kind": "cat",
             "photo_url": null,
@@ -81,7 +81,7 @@ final class PetTests: XCTestCase {
     func testEncodingToJSON() throws {
         let pet = Pet(
             id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!,
-            orgId: "family-123",
+            familyId: "family-123",
             name: "Buddy",
             kind: "dog",
             photoUrl: nil,
@@ -111,7 +111,7 @@ final class PetTests: XCTestCase {
         let uuid = UUID()
         let pet = Pet(
             id: uuid,
-            orgId: "family-123",
+            familyId: "family-123",
             name: "Test",
             kind: "dog",
             photoUrl: nil,
@@ -132,7 +132,7 @@ final class PetTests: XCTestCase {
         let date = Date()  // Same date for both to ensure same hash
         let pet1 = Pet(
             id: uuid,
-            orgId: "family-123",
+            familyId: "family-123",
             name: "Test",
             kind: "dog",
             photoUrl: nil,
@@ -145,7 +145,7 @@ final class PetTests: XCTestCase {
 
         let pet2 = Pet(
             id: uuid,
-            orgId: "family-123",
+            familyId: "family-123",
             name: "Test",
             kind: "dog",
             photoUrl: nil,

@@ -48,7 +48,7 @@ SMALL_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 1000
 # Large file (over 5MB limit)
 LARGE_FILE = b"\xff\xd8\xff\xe0" + b"\x00" * (6 * 1024 * 1024)
 
-TEST_ORG_ID = str(uuid4())
+TEST_FAMILY_ID = str(uuid4())
 TEST_BUCKET = "test-bucket"
 TEST_ENDPOINT = "https://test.r2.cloudflarestorage.com"
 TEST_PUBLIC_URL = "https://cdn.example.com"
@@ -254,17 +254,17 @@ class TestStorageServiceUploadImage:
             )
 
             # Execute
-            url = await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             # Assert
-            assert url.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/")
+            assert url.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/")
             assert url.endswith(".jpg")
             mock_s3_client.put_object.assert_called_once()
 
             # Verify put_object was called with correct parameters
             call_kwargs = mock_s3_client.put_object.call_args[1]
             assert call_kwargs["Bucket"] == TEST_BUCKET
-            assert call_kwargs["Key"].startswith(f"pets/{TEST_ORG_ID}/")
+            assert call_kwargs["Key"].startswith(f"pets/{TEST_FAMILY_ID}/")
             assert call_kwargs["Key"].endswith(".jpg")
             assert call_kwargs["Body"] == VALID_JPEG_BYTES
             assert call_kwargs["ContentType"] == "image/jpeg"
@@ -286,9 +286,9 @@ class TestStorageServiceUploadImage:
                 content=VALID_PNG_BYTES,
             )
 
-            url = await service.upload_image(upload_file, "food-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "food-photo", TEST_FAMILY_ID)
 
-            assert url.startswith(f"{TEST_PUBLIC_URL}/foods/{TEST_ORG_ID}/")
+            assert url.startswith(f"{TEST_PUBLIC_URL}/foods/{TEST_FAMILY_ID}/")
             assert url.endswith(".png")
 
     @pytest.mark.asyncio
@@ -308,9 +308,9 @@ class TestStorageServiceUploadImage:
                 content=VALID_WEBP_BYTES,
             )
 
-            url = await service.upload_image(upload_file, "medicine-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "medicine-photo", TEST_FAMILY_ID)
 
-            assert url.startswith(f"{TEST_PUBLIC_URL}/medicines/{TEST_ORG_ID}/")
+            assert url.startswith(f"{TEST_PUBLIC_URL}/medicines/{TEST_FAMILY_ID}/")
             assert url.endswith(".webp")
 
     @pytest.mark.asyncio
@@ -326,9 +326,9 @@ class TestStorageServiceUploadImage:
 
             upload_file = create_mock_upload_file()
 
-            url = await service.upload_image(upload_file, "health-event-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "health-event-photo", TEST_FAMILY_ID)
 
-            assert url.startswith(f"{TEST_PUBLIC_URL}/health-events/{TEST_ORG_ID}/")
+            assert url.startswith(f"{TEST_PUBLIC_URL}/health-events/{TEST_FAMILY_ID}/")
 
     @pytest.mark.asyncio
     async def test_upload_invalid_upload_type(self):
@@ -340,7 +340,7 @@ class TestStorageServiceUploadImage:
             upload_file = create_mock_upload_file()
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "invalid-type", TEST_ORG_ID)
+                await service.upload_image(upload_file, "invalid-type", TEST_FAMILY_ID)
 
             assert exc_info.value.status_code == 400
             assert "Invalid upload type" in exc_info.value.detail
@@ -356,7 +356,7 @@ class TestStorageServiceUploadImage:
             upload_file = create_mock_upload_file(content_type="image/gif")
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+                await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             assert exc_info.value.status_code == 400
             assert "Invalid file type" in exc_info.value.detail
@@ -372,7 +372,7 @@ class TestStorageServiceUploadImage:
             upload_file = create_mock_upload_file(content=LARGE_FILE)
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+                await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             assert exc_info.value.status_code == 400
             assert "File too large" in exc_info.value.detail
@@ -394,7 +394,7 @@ class TestStorageServiceUploadImage:
             upload_file = create_mock_upload_file(content=boundary_content)
 
             # Should not raise
-            url = await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
             assert url is not None
 
     @pytest.mark.asyncio
@@ -411,7 +411,7 @@ class TestStorageServiceUploadImage:
             )
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+                await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             assert exc_info.value.status_code == 400
             assert "File content does not match declared type" in exc_info.value.detail
@@ -434,7 +434,7 @@ class TestStorageServiceUploadImage:
             upload_file = create_mock_upload_file()
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+                await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             assert exc_info.value.status_code == 500
             assert "Failed to upload image" in exc_info.value.detail
@@ -453,15 +453,15 @@ class TestStorageServiceUploadImage:
             upload_file1 = create_mock_upload_file()
             upload_file2 = create_mock_upload_file()
 
-            url1 = await service.upload_image(upload_file1, "pet-photo", TEST_ORG_ID)
-            url2 = await service.upload_image(upload_file2, "pet-photo", TEST_ORG_ID)
+            url1 = await service.upload_image(upload_file1, "pet-photo", TEST_FAMILY_ID)
+            url2 = await service.upload_image(upload_file2, "pet-photo", TEST_FAMILY_ID)
 
             # URLs should be different (different UUIDs)
             assert url1 != url2
 
             # Both should be in same folder
-            assert url1.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/")
-            assert url2.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/")
+            assert url1.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/")
+            assert url2.startswith(f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/")
 
 
 # ============== StorageService.delete_image Tests ==============
@@ -480,14 +480,14 @@ class TestStorageServiceDeleteImage:
             mock_s3_client = MagicMock()
             mock_boto3_client.return_value = mock_s3_client
 
-            url = f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/12345.jpg"
+            url = f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/12345.jpg"
 
             result = await service.delete_image(url)
 
             assert result is True
             mock_s3_client.delete_object.assert_called_once_with(
                 Bucket=TEST_BUCKET,
-                Key=f"pets/{TEST_ORG_ID}/12345.jpg",
+                Key=f"pets/{TEST_FAMILY_ID}/12345.jpg",
             )
 
     @pytest.mark.asyncio
@@ -501,12 +501,12 @@ class TestStorageServiceDeleteImage:
             mock_s3_client = MagicMock()
             mock_boto3_client.return_value = mock_s3_client
 
-            url = f"{TEST_PUBLIC_URL}/foods/{TEST_ORG_ID}/abc-def-123.png"
+            url = f"{TEST_PUBLIC_URL}/foods/{TEST_FAMILY_ID}/abc-def-123.png"
 
             await service.delete_image(url)
 
             call_kwargs = mock_s3_client.delete_object.call_args[1]
-            assert call_kwargs["Key"] == f"foods/{TEST_ORG_ID}/abc-def-123.png"
+            assert call_kwargs["Key"] == f"foods/{TEST_FAMILY_ID}/abc-def-123.png"
 
     @pytest.mark.asyncio
     async def test_delete_returns_false_when_not_configured(self):
@@ -515,7 +515,7 @@ class TestStorageServiceDeleteImage:
             mock_get_settings.return_value = create_mock_settings(s3_endpoint_url=None)
             service = StorageService()
 
-            url = f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/12345.jpg"
+            url = f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/12345.jpg"
 
             result = await service.delete_image(url)
 
@@ -550,7 +550,7 @@ class TestStorageServiceDeleteImage:
             )
             mock_boto3_client.return_value = mock_s3_client
 
-            url = f"{TEST_PUBLIC_URL}/pets/{TEST_ORG_ID}/12345.jpg"
+            url = f"{TEST_PUBLIC_URL}/pets/{TEST_FAMILY_ID}/12345.jpg"
 
             result = await service.delete_image(url)
 
@@ -567,12 +567,12 @@ class TestStorageServiceDeleteImage:
             mock_s3_client = MagicMock()
             mock_boto3_client.return_value = mock_s3_client
 
-            url = f"{TEST_PUBLIC_URL}/health-events/{TEST_ORG_ID}/subfolder/image.jpg"
+            url = f"{TEST_PUBLIC_URL}/health-events/{TEST_FAMILY_ID}/subfolder/image.jpg"
 
             await service.delete_image(url)
 
             call_kwargs = mock_s3_client.delete_object.call_args[1]
-            assert call_kwargs["Key"] == f"health-events/{TEST_ORG_ID}/subfolder/image.jpg"
+            assert call_kwargs["Key"] == f"health-events/{TEST_FAMILY_ID}/subfolder/image.jpg"
 
 
 # ============== Edge Cases and Integration Tests ==============
@@ -590,7 +590,7 @@ class TestStorageServiceEdgeCases:
             upload_file = create_mock_upload_file(content=b"")
 
             with pytest.raises(HTTPException) as exc_info:
-                await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+                await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
 
             # Should fail magic bytes validation
             assert exc_info.value.status_code == 400
@@ -610,7 +610,7 @@ class TestStorageServiceEdgeCases:
             minimal_jpeg = b"\xff\xd8\xff\xe0"
             upload_file = create_mock_upload_file(content=minimal_jpeg)
 
-            url = await service.upload_image(upload_file, "pet-photo", TEST_ORG_ID)
+            url = await service.upload_image(upload_file, "pet-photo", TEST_FAMILY_ID)
             assert url is not None
 
     @pytest.mark.asyncio
@@ -630,9 +630,9 @@ class TestStorageServiceEdgeCases:
 
             # Upload concurrently
             results = await asyncio.gather(
-                service.upload_image(upload_file1, "pet-photo", TEST_ORG_ID),
-                service.upload_image(upload_file2, "pet-photo", TEST_ORG_ID),
-                service.upload_image(upload_file3, "pet-photo", TEST_ORG_ID),
+                service.upload_image(upload_file1, "pet-photo", TEST_FAMILY_ID),
+                service.upload_image(upload_file2, "pet-photo", TEST_FAMILY_ID),
+                service.upload_image(upload_file3, "pet-photo", TEST_FAMILY_ID),
             )
 
             # All should succeed
@@ -643,8 +643,8 @@ class TestStorageServiceEdgeCases:
             assert len(set(results)) == 3
 
     @pytest.mark.asyncio
-    async def test_different_orgs_use_different_folders(self):
-        """Should upload files for different orgs to separate folders."""
+    async def test_different_families_use_different_folders(self):
+        """Should upload files for different families to separate folders."""
         with patch("app.services.storage.get_settings") as mock_get_settings, \
              patch("app.services.storage.boto3.client") as mock_boto3_client:
             mock_get_settings.return_value = create_mock_settings()
@@ -653,18 +653,18 @@ class TestStorageServiceEdgeCases:
             mock_s3_client = MagicMock()
             mock_boto3_client.return_value = mock_s3_client
 
-            org_id_1 = str(uuid4())
-            org_id_2 = str(uuid4())
+            family_id_1 = str(uuid4())
+            family_id_2 = str(uuid4())
 
             upload_file1 = create_mock_upload_file()
             upload_file2 = create_mock_upload_file()
 
-            url1 = await service.upload_image(upload_file1, "pet-photo", org_id_1)
-            url2 = await service.upload_image(upload_file2, "pet-photo", org_id_2)
+            url1 = await service.upload_image(upload_file1, "pet-photo", family_id_1)
+            url2 = await service.upload_image(upload_file2, "pet-photo", family_id_2)
 
-            # Should be in different org folders
-            assert f"/pets/{org_id_1}/" in url1
-            assert f"/pets/{org_id_2}/" in url2
+            # Should be in different family folders
+            assert f"/pets/{family_id_1}/" in url1
+            assert f"/pets/{family_id_2}/" in url2
             assert url1 != url2
 
     def test_upload_folders_constant_completeness(self):

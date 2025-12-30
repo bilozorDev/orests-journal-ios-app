@@ -132,7 +132,7 @@ async def test_create_medication_with_scheduled_times(
 ):
     """Admin can create medication with scheduled reminder times."""
     # ARRANGE - Setup test data and mocks
-    mock_pet = create_mock_pet(org_id=test_family_id)
+    mock_pet = create_mock_pet(family_id=test_family_id)
     mock_membership = create_mock_membership(
         user_id=test_user_id,
         family_id=test_family_id,
@@ -146,7 +146,7 @@ async def test_create_medication_with_scheduled_times(
 
     # ACT - Execute the operation
     response = await client.post(
-        f"/api/v1/medications?org_id={test_family_id}",
+        f"/api/v1/medications?family_id={test_family_id}",
         json={
             "pet_id": str(mock_pet.id),
             "name": "Prednisone",
@@ -212,7 +212,7 @@ async def test_create_medication_with_scheduled_times(
 ```python
 # Required tests (40 tests):
 - POST /medications - Create with photos, schedules, validation errors
-- GET /medications?org_id= - List active/archived, pagination
+- GET /medications?family_id= - List active/archived, pagination
 - GET /medications/{id} - Get with schedules and photos
 - PATCH /medications/{id} - Update fields, schedules
 - DELETE /medications/{id} - Archive medication
@@ -260,7 +260,7 @@ async def test_create_medication_with_scheduled_times(
 - GET /doses/medication/{id} - List doses with user names
 - PATCH /doses/{id} - Update dose
 - DELETE /doses/{id} - Delete dose
-- GET /doses/all - List all doses for org (pagination)
+- GET /doses/all - List all doses for family (pagination)
 - Authorization tests
 - "You" formatting for current user
 ```

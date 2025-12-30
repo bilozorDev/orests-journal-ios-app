@@ -13,7 +13,7 @@ class HealthCategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    org_id: UUID
+    family_id: UUID
     name: str
     name_normalized: str
     created_at: datetime

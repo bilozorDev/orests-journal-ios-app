@@ -9,7 +9,7 @@ import Foundation
 
 struct Pet: Codable, Identifiable, Hashable {
     let id: UUID
-    let orgId: String  // Family ID
+    let familyId: String
     let name: String
     let kind: String
     let photoUrl: String?

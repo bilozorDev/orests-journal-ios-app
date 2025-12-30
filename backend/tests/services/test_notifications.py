@@ -12,7 +12,7 @@ All external dependencies (APNS HTTP calls, database) are mocked for isolated un
 """
 import base64
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
@@ -49,7 +49,7 @@ def create_mock_family_member(user_id: UUID, family_id: UUID = TEST_FAMILY_ID, r
     member.user_id = user_id
     member.family_id = family_id
     member.role = role
-    member.joined_at = datetime.utcnow()
+    member.joined_at = datetime.now(UTC)
     return member
 
 
@@ -60,7 +60,7 @@ def create_mock_device_token(user_id: UUID, device_token: str, is_active: bool =
     token.user_id = user_id
     token.device_token = device_token
     token.is_active = is_active
-    token.created_at = datetime.utcnow()
+    token.created_at = datetime.now(UTC)
     return token
 
 
@@ -711,14 +711,13 @@ class TestAPNsSendNotification:
 
             with patch.object(service, "_generate_token", return_value="mock-jwt-token"):
                 # Mock the AsyncClient context manager to raise an exception
-                async def mock_async_client(*args, **kwargs):
-                    mock_client = AsyncMock()
-                    # Create a proper request for the exception
-                    mock_request = MagicMock()
-                    mock_client.post = AsyncMock(side_effect=httpx.RequestError("Network error", request=mock_request))
-                    return mock_client
+                mock_request = MagicMock()
+                mock_client = AsyncMock()
+                mock_client.post = AsyncMock(side_effect=httpx.RequestError("Network error", request=mock_request))
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
 
-                with patch("app.services.apns.httpx.AsyncClient", side_effect=mock_async_client):
+                with patch("app.services.apns.httpx.AsyncClient", return_value=mock_client):
                     result = await service.send_notification(
                         device_token=TEST_DEVICE_TOKEN_1,
                         title="Test",

@@ -79,7 +79,7 @@ cp .env.neon .env    # Use Neon cloud database
 
 ### Backend
 - All endpoints under `/api/v1/`
-- Most endpoints require `org_id` query param for family/organization context
+- Most endpoints require `family_id` query param for family context
 - Pydantic schemas for request/response validation
 - Async/await throughout
 
@@ -107,7 +107,7 @@ The app uses a **three-tier caching strategy**:
 |-----------|-----|-------------|
 | Family Details | 5 min | `family:{family_id}` |
 | Calorie Goal | 5 min | `calorie_goal:{pet_id}` |
-| Foods | 1 hr | `foods:{org_id}` |
+| Foods | 1 hr | `foods:{family_id}` |
 
 ### Cache Invalidation - IMPORTANT
 

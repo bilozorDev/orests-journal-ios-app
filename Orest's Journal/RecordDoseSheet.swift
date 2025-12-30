@@ -13,7 +13,7 @@ struct RecordDoseSheet: View {
 
     let medication: Medication
     let petName: String
-    let orgId: String
+    let familyId: String
     var onDoseRecorded: (() -> Void)?
 
     @State private var notes: String = ""
@@ -156,7 +156,7 @@ struct RecordDoseSheet: View {
                 medicationId: medication.id,
                 notes: notesText,
                 givenAt: givenAt,
-                orgId: orgId
+                familyId: familyId
             )
 
             // Show success feedback

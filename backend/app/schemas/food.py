@@ -29,7 +29,7 @@ class FoodResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    org_id: UUID
+    family_id: UUID
     name: str
     category: FoodCategory
     calories_per_kg: float

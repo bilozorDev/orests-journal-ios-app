@@ -17,7 +17,7 @@ from app.api.endpoints.auth import (
     ProfileUpdateRequest,
     DeleteAccountRequest,
     DeleteAccountResponse,
-    TestLoginRequest,
+    DevLoginRequest,
 )
 
 
@@ -557,12 +557,12 @@ class TestDeleteAccountResponse:
         assert response.steps_completed == steps
 
 
-class TestTestLoginRequest:
-    """Tests for TestLoginRequest schema (UI testing)."""
+class TestDevLoginRequestSchema:
+    """Tests for DevLoginRequest schema (UI testing)."""
 
     def test_test_login_request_defaults(self):
         """Should create request with default values."""
-        request = TestLoginRequest()
+        request = DevLoginRequest()
 
         assert request.test_user_id == "ui-test-user"
         assert request.email == "uitest@example.com"
@@ -573,7 +573,7 @@ class TestTestLoginRequest:
 
     def test_test_login_request_custom_values(self):
         """Should create request with custom values."""
-        request = TestLoginRequest(
+        request = DevLoginRequest(
             test_user_id="custom-user-123",
             email="custom@test.com",
             first_name="Custom",
@@ -591,15 +591,15 @@ class TestTestLoginRequest:
 
     def test_test_login_request_create_family_flag(self):
         """Should accept create_family boolean."""
-        request_false = TestLoginRequest(create_family=False)
-        request_true = TestLoginRequest(create_family=True)
+        request_false = DevLoginRequest(create_family=False)
+        request_true = DevLoginRequest(create_family=True)
 
         assert request_false.create_family is False
         assert request_true.create_family is True
 
     def test_test_login_request_partial_override(self):
         """Should allow partial override of defaults."""
-        request = TestLoginRequest(
+        request = DevLoginRequest(
             test_user_id="user-456",
             create_family=True,
         )
@@ -611,14 +611,14 @@ class TestTestLoginRequest:
 
     def test_test_login_request_all_fields_optional(self):
         """All fields should have defaults."""
-        request = TestLoginRequest()
+        request = DevLoginRequest()
 
         # Should not raise - all fields have defaults
         assert request is not None
 
     def test_test_login_request_family_name_for_creation(self):
         """Family name should be used when create_family is True."""
-        request = TestLoginRequest(
+        request = DevLoginRequest(
             create_family=True,
             family_name="My Test Family",
         )

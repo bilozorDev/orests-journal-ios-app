@@ -3,7 +3,7 @@ Tests for Family Pydantic schemas.
 
 Validates family schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -179,7 +179,7 @@ class TestFamilyMemberResponse:
         """Should create response with all required fields."""
         member_id = str(uuid4())
         user_id = str(uuid4())
-        joined_at = datetime.utcnow()
+        joined_at = datetime.now(UTC)
 
         response = FamilyMemberResponse(
             id=member_id,
@@ -200,7 +200,7 @@ class TestFamilyMemberResponse:
         """Should create response with all optional fields."""
         member_id = str(uuid4())
         user_id = str(uuid4())
-        joined_at = datetime.utcnow()
+        joined_at = datetime.now(UTC)
 
         response = FamilyMemberResponse(
             id=member_id,
@@ -229,7 +229,7 @@ class TestFamilyMemberResponse:
             first_name=None,
             last_name=None,
             role="member",
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(UTC),
         )
 
         assert response.email == "test@example.com"
@@ -242,7 +242,7 @@ class TestFamilyMemberResponse:
             id=str(uuid4()),
             user_id=str(uuid4()),
             role="admin",
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(UTC),
         )
 
         assert response.role == "admin"
@@ -253,7 +253,7 @@ class TestFamilyMemberResponse:
             id=str(uuid4()),
             user_id=str(uuid4()),
             role="member",
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(UTC),
         )
 
         assert response.role == "member"
@@ -265,7 +265,7 @@ class TestFamilyDetailResponse:
     def test_family_detail_response_with_no_members(self):
         """Should create response with empty members list."""
         family_id = str(uuid4())
-        created_at = datetime.utcnow()
+        created_at = datetime.now(UTC)
 
         response = FamilyDetailResponse(
             id=family_id,
@@ -284,7 +284,7 @@ class TestFamilyDetailResponse:
     def test_family_detail_response_with_members(self):
         """Should create response with multiple members."""
         family_id = str(uuid4())
-        created_at = datetime.utcnow()
+        created_at = datetime.now(UTC)
 
         members = [
             FamilyMemberResponse(
@@ -333,7 +333,7 @@ class TestFamilyDetailResponse:
                 id=str(uuid4()),
                 name="Test Family",
                 invite_code=code,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
                 members=[],
             )
             assert response.invite_code == code
@@ -534,7 +534,7 @@ class TestSchemaFieldTypes:
             id=str(uuid4()),
             user_id=str(uuid4()),
             role="member",
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(UTC),
         )
 
         assert isinstance(response.id, str)
@@ -546,7 +546,7 @@ class TestSchemaFieldTypes:
             id=str(uuid4()),
             name="Test",
             invite_code="ABCD1234",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             members=[],
         )
 
@@ -565,7 +565,7 @@ class TestSchemaFieldTypes:
 
     def test_datetime_fields_accept_datetime_objects(self):
         """DateTime fields should accept datetime objects."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         member = FamilyMemberResponse(
             id=str(uuid4()),
@@ -609,7 +609,7 @@ class TestSchemaEdgeCases:
             id=str(uuid4()),
             name="Test Family",
             invite_code="ABCD1234",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             members=[],
         )
 

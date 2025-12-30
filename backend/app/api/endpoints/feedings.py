@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -41,7 +41,7 @@ async def create_feeding(
         pet_id=feeding_in.pet_id,
         food_id=feeding_in.food_id,
         fed_by=UUID(user_id),
-        fed_at=feeding_in.fed_at or datetime.utcnow(),
+        fed_at=feeding_in.fed_at or datetime.now(UTC),
         amount=feeding_in.amount,
         amount_unit=feeding_in.amount_unit.value,
         calories=feeding_in.calories,
@@ -115,7 +115,7 @@ async def get_today_feedings(
     await verify_pet_access(db, user_id, pet_id)
 
     # Get start of today (UTC)
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
     query = (
@@ -196,7 +196,7 @@ async def get_active_calorie_goal(
     # Verify user has access to this pet through family membership
     await verify_pet_access(db, user_id, pet_id)
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     query = (
         select(PetCalorieGoal)
@@ -234,7 +234,7 @@ async def set_calorie_goal(
     await verify_pet_access(db, user_id, pet_id)
 
     # Optionally: End previous goal
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     prev_goal_query = (
         select(PetCalorieGoal)
         .where(

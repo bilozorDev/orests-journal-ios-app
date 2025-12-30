@@ -524,7 +524,7 @@ struct ZoomablePhotoView: View {
                 ),
                 category: HealthCategory(
                     id: UUID(),
-                    orgId: UUID(),
+                    familyId: UUID(),
                     name: "Vet Visit",
                     nameNormalized: "vet visit",
                     createdAt: Date(),
@@ -533,7 +533,7 @@ struct ZoomablePhotoView: View {
             ),
             pet: Pet(
                 id: UUID(),
-                orgId: UUID().uuidString,
+                familyId: UUID().uuidString,
                 name: "Max",
                 kind: "dog",
                 photoUrl: nil,

@@ -1292,7 +1292,7 @@ class SmartSearchManager {
         pets: [
             Pet(
                 id: UUID(),
-                orgId: UUID().uuidString,
+                familyId: UUID().uuidString,
                 name: "Max",
                 kind: "dog",
                 photoUrl: nil,
@@ -1304,7 +1304,7 @@ class SmartSearchManager {
             ),
             Pet(
                 id: UUID(),
-                orgId: UUID().uuidString,
+                familyId: UUID().uuidString,
                 name: "Bella",
                 kind: "cat",
                 photoUrl: nil,

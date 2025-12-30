@@ -10,7 +10,7 @@ import SwiftUI
 struct DoseHistoryView: View {
     let medication: Medication
     let petName: String
-    let orgId: String
+    let familyId: String
 
     @State private var doses: [MedicationDose] = []
     @State private var groupedDosesCache: [(String, [MedicationDose])] = []
@@ -63,7 +63,7 @@ struct DoseHistoryView: View {
             EditDoseSheet(
                 dose: dose,
                 medicationName: medication.name,
-                orgId: orgId,
+                familyId: familyId,
                 onDoseUpdated: {
                     Task { await loadDoses(reset: true) }
                 }
@@ -231,7 +231,7 @@ struct DoseHistoryView: View {
 
     private func deleteDose(_ dose: MedicationDose) async {
         do {
-            try await DataService.shared.deleteDose(doseId: dose.id, orgId: orgId)
+            try await DataService.shared.deleteDose(doseId: dose.id, familyId: familyId)
             doses.removeAll { $0.id == dose.id }
             totalDoses -= 1
             updateGroupedDosesCache()

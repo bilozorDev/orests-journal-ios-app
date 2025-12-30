@@ -59,10 +59,10 @@ File: `backend/tests/api/test_medications.py`
 - [ ] `test_create_medication_invalid_timezone_422()` - Invalid timezone
 - [ ] `test_create_medication_not_family_member_403()` - No access
 - [ ] `test_create_medication_pet_not_found_404()` - Invalid pet_id
-- [ ] `test_create_medication_missing_org_id_422()` - No org_id param
+- [ ] `test_create_medication_missing_family_id_422()` - No family_id param
 - [ ] `test_create_medication_no_auth_401()` - No token
 
-**GET /medications?org_id= - List (8 tests)**
+**GET /medications?family_id= - List (8 tests)**
 - [ ] `test_list_medications_active_only()` - Excludes archived
 - [ ] `test_list_medications_include_archived()` - With archived flag
 - [ ] `test_list_medications_filtered_by_pet()` - Pet filter
@@ -228,7 +228,7 @@ File: `backend/tests/api/test_doses.py`
 - [ ] `test_update_dose_not_found_404()` - Invalid dose
 - [ ] `test_delete_dose_success()` - Remove dose
 - [ ] `test_delete_dose_not_found_404()` - Invalid dose
-- [ ] `test_list_all_doses_org()` - All pets
+- [ ] `test_list_all_doses_family()` - All pets
 - [ ] `test_list_all_doses_pagination()` - Pagination
 - [ ] `test_list_all_doses_includes_pet_info()` - Pet data
 
@@ -254,7 +254,7 @@ File: `backend/tests/api/test_health.py`
 - [ ] `test_delete_health_event_success()` - Delete event
 - [ ] `test_delete_health_event_cascade_photos()` - Photos deleted
 - [ ] `test_create_category_success()` - New category
-- [ ] `test_list_categories_for_org()` - Get categories
+- [ ] `test_list_categories_for_family()` - Get categories
 - [ ] `test_update_category_name()` - Edit category
 - [ ] `test_delete_category_success()` - Remove category
 - [ ] `test_delete_category_with_events_fails()` - Has events
@@ -274,7 +274,7 @@ File: `backend/tests/api/test_health.py`
 File: `backend/tests/api/test_foods.py`
 
 - [ ] `test_create_food_success()` - Create food
-- [ ] `test_list_foods_for_org()` - Get org foods
+- [ ] `test_list_foods_for_family()` - Get family foods
 - [ ] `test_list_foods_cache_hit()` - 1hr cache
 - [ ] `test_update_food_calories()` - Edit nutrition
 - [ ] `test_delete_food_success()` - Delete food

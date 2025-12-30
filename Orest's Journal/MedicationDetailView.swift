@@ -109,7 +109,7 @@ struct MedicationDetailView: View {
             RecordDoseSheet(
                 medication: medication,
                 petName: pet.name,
-                orgId: pet.orgId,
+                familyId: pet.familyId,
                 onDoseRecorded: {
                     Task { await loadRecentDoses() }
                 }
@@ -407,7 +407,7 @@ struct MedicationDetailView: View {
                     DoseHistoryView(
                         medication: medication,
                         petName: pet.name,
-                        orgId: pet.orgId
+                        familyId: pet.familyId
                     )
                 } label: {
                     HStack(spacing: 4) {
@@ -519,7 +519,7 @@ struct MedicationDetailView: View {
         isDeleting = true
 
         do {
-            _ = try await dataService.deleteMedication(id: medication.id, orgId: pet.orgId)
+            _ = try await dataService.deleteMedication(id: medication.id, familyId: pet.familyId)
 
             await MainActor.run {
                 isDeleting = false
@@ -610,7 +610,7 @@ struct MedicationPhotoGalleryView: View {
             ),
             pet: Pet(
                 id: UUID(),
-                orgId: UUID().uuidString,
+                familyId: UUID().uuidString,
                 name: "Buddy",
                 kind: "dog",
                 photoUrl: nil,

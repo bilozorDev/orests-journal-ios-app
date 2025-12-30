@@ -15,34 +15,34 @@ from app.cache.keys import key_foods, TTL_FOODS
 router = APIRouter()
 
 
-async def invalidate_food_caches(org_id: str) -> None:
+async def invalidate_food_caches(family_id: str) -> None:
     """Invalidate food caches when foods change."""
-    await cache_delete_pattern(f"foods:{org_id}:*")
+    await cache_delete_pattern(f"foods:{family_id}:*")
 
 
 @router.get("", response_model=FoodListResponse)
 async def list_foods(
-    org_id: str,
+    family_id: str,
     response: Response,
     include_archived: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List all foods for the organization (family)."""
+    """List all foods for the family."""
     # Set cache control header for client-side caching (5 minutes)
     response.headers["Cache-Control"] = "private, max-age=300, stale-while-revalidate=600"
 
     # Verify user belongs to this family
-    await verify_family_access(db, user_id, org_id)
+    await verify_family_access(db, user_id, family_id)
 
     # Try cache first (only for non-archived queries which is the common case)
     if not include_archived:
-        cache_key = key_foods(org_id)
+        cache_key = key_foods(family_id)
         cached = await cache_get(cache_key, FoodListResponse)
         if cached:
             return cached
 
-    query = select(PetFood).where(PetFood.org_id == org_id)
+    query = select(PetFood).where(PetFood.family_id == family_id)
     if not include_archived:
         query = query.where(PetFood.is_archived == False)
     query = query.order_by(PetFood.created_at.desc())
@@ -53,7 +53,7 @@ async def list_foods(
 
     # Cache the response (only for non-archived queries)
     if not include_archived:
-        await cache_set(key_foods(org_id), response, TTL_FOODS)
+        await cache_set(key_foods(family_id), response, TTL_FOODS)
 
     return response
 
@@ -61,16 +61,16 @@ async def list_foods(
 @router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
 async def create_food(
     food_in: FoodCreate,
-    org_id: str,
+    family_id: str,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Create a new food item for the organization (family)."""
+    """Create a new food item for the family."""
     # Verify user belongs to this family
-    await verify_family_access(db, user_id, org_id)
+    await verify_family_access(db, user_id, family_id)
 
     food = PetFood(
-        org_id=UUID(org_id),
+        family_id=UUID(family_id),
         name=food_in.name,
         category=food_in.category.value,
         calories_per_kg=food_in.calories_per_kg,
@@ -84,7 +84,7 @@ async def create_food(
     await db.refresh(food)
 
     # Invalidate food cache
-    await invalidate_food_caches(org_id)
+    await invalidate_food_caches(family_id)
 
     return FoodResponse.model_validate(food)
 
@@ -124,7 +124,7 @@ async def update_food(
     await db.refresh(food)
 
     # Invalidate food cache
-    await invalidate_food_caches(str(food.org_id))
+    await invalidate_food_caches(str(food.family_id))
 
     return FoodResponse.model_validate(food)
 
@@ -138,7 +138,7 @@ async def delete_food(
     """Delete or archive a food item based on feeding history."""
     # Verify user has access to this food through family membership
     food = await verify_food_access(db, user_id, food_id)
-    org_id = str(food.org_id)
+    family_id = str(food.family_id)
 
     # Check if food has any feedings
     feeding_count_query = select(func.count()).select_from(PetFeeding).where(PetFeeding.food_id == food_id)
@@ -150,7 +150,7 @@ async def delete_food(
         food.is_archived = True
         await db.commit()
         # Invalidate food cache
-        await invalidate_food_caches(org_id)
+        await invalidate_food_caches(family_id)
         return FoodDeleteResponse(
             deleted=False,
             archived=True,
@@ -161,7 +161,7 @@ async def delete_food(
         await db.delete(food)
         await db.commit()
         # Invalidate food cache
-        await invalidate_food_caches(org_id)
+        await invalidate_food_caches(family_id)
         return FoodDeleteResponse(
             deleted=True,
             archived=False,

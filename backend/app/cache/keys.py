@@ -6,7 +6,7 @@ TTL_TODAY_FEEDINGS = 60     # 1 minute
 TTL_FEEDING_HISTORY = 60    # 1 minute (matches client-side cache)
 TTL_CALORIE_GOAL = 300      # 5 minutes (rarely changes)
 TTL_ACTIVE_MEDS = 600       # 10 minutes
-TTL_FOODS = 3600            # 1 hour (organization-wide)
+TTL_FOODS = 3600            # 1 hour (family-wide)
 TTL_DOSE_COUNTS = 60        # 1 minute (changes frequently)
 TTL_LAST_DOSE = 60          # 1 minute
 TTL_FAMILY = 300            # 5 minutes (family details with members)
@@ -35,9 +35,9 @@ def key_active_meds(pet_id: str, date: str) -> str:
     return f"active_meds:{pet_id}:{date}"
 
 
-def key_foods(org_id: str) -> str:
-    """Cache key for organization foods."""
-    return f"foods:{org_id}"
+def key_foods(family_id: str) -> str:
+    """Cache key for family foods."""
+    return f"foods:{family_id}"
 
 
 def key_dose_counts(medication_id: str, date: str) -> str:
@@ -55,18 +55,18 @@ def key_feeding_history(pet_id: str, offset: int, limit: int) -> str:
     return f"feeding_history:{pet_id}:{offset}:{limit}"
 
 
-def key_medications(org_id: str, pet_id: str = None, active_only: bool = False, include_archived: bool = False) -> str:
+def key_medications(family_id: str, pet_id: str = None, active_only: bool = False, include_archived: bool = False) -> str:
     """Cache key for medications list."""
     if pet_id:
-        return f"medications:{org_id}:{pet_id}:{active_only}:{include_archived}"
-    return f"medications:{org_id}:all:{active_only}:{include_archived}"
+        return f"medications:{family_id}:{pet_id}:{active_only}:{include_archived}"
+    return f"medications:{family_id}:all:{active_only}:{include_archived}"
 
 
-def key_all_doses(org_id: str, pet_id: str = None, offset: int = 0, limit: int = 50) -> str:
+def key_all_doses(family_id: str, pet_id: str = None, offset: int = 0, limit: int = 50) -> str:
     """Cache key for all doses history."""
     if pet_id:
-        return f"all_doses:{org_id}:{pet_id}:{offset}:{limit}"
-    return f"all_doses:{org_id}:all:{offset}:{limit}"
+        return f"all_doses:{family_id}:{pet_id}:{offset}:{limit}"
+    return f"all_doses:{family_id}:all:{offset}:{limit}"
 
 
 def key_family_detail(family_id: str) -> str:
@@ -74,9 +74,9 @@ def key_family_detail(family_id: str) -> str:
     return f"family:{family_id}"
 
 
-def key_pets(org_id: str) -> str:
-    """Cache key for organization pets list."""
-    return f"pets:{org_id}"
+def key_pets(family_id: str) -> str:
+    """Cache key for family pets list."""
+    return f"pets:{family_id}"
 
 
 def key_health_events(pet_id: str, offset: int = 0, limit: int = 100) -> str:
@@ -88,6 +88,6 @@ def key_health_events(pet_id: str, offset: int = 0, limit: int = 100) -> str:
     return f"health_events:{pet_id}:{offset}:{limit}"
 
 
-def key_health_categories(org_id: str) -> str:
+def key_health_categories(family_id: str) -> str:
     """Cache key for family-wide health categories."""
-    return f"health_categories:{org_id}"
+    return f"health_categories:{family_id}"
