@@ -8,16 +8,16 @@ This migration renames org_id to family_id in:
 The org_id column was a legacy name from when Clerk organizations were used.
 Now that we use families, the column should be named family_id for clarity.
 
-Revision ID: 026
-Revises: 025
+Revision ID: 028
+Revises: 027
 Create Date: 2024-12-30
 """
 from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision = "026"
-down_revision = "025"
+revision = "028"
+down_revision = "027"
 branch_labels = None
 depends_on = None
 

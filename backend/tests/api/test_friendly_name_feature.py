@@ -85,7 +85,7 @@ class TestCreateMedicationWithFriendlyName:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         # RLS and membership checks
         rls_result1 = MagicMock()
@@ -183,7 +183,7 @@ class TestCreateMedicationWithFriendlyName:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
 
         rls_result1 = MagicMock()
         rls_result1.scalar_one_or_none.return_value = None
@@ -275,7 +275,7 @@ class TestUpdateMedicationFriendlyName:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
 
         # Medication initially has no friendly_name
         mock_medication = create_mock_medication(
@@ -357,7 +357,7 @@ class TestUpdateMedicationFriendlyName:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
 
         # Medication has existing friendly_name
         mock_medication = create_mock_medication(
@@ -438,7 +438,7 @@ class TestUpdateMedicationFriendlyName:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
 
         mock_medication = create_mock_medication(
             medication_id=medication_id,
@@ -536,7 +536,7 @@ class TestNotificationsUseFriendlyName:
             name=medication_name,
             friendly_name=friendly_name,  # Has nickname
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name=pet_name)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name=pet_name)
         mock_membership = create_mock_membership(
             user_id=test_user_id,
             family_id=test_family_id,
@@ -628,7 +628,7 @@ class TestNotificationsUseFriendlyName:
             name=medication_name,
             friendly_name=None,  # No nickname
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name=pet_name)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name=pet_name)
         mock_membership = create_mock_membership(
             user_id=test_user_id,
             family_id=test_family_id,
@@ -727,7 +727,7 @@ class TestDoseNotificationsUseFriendlyName:
             name=medication_name,
             friendly_name=friendly_name,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name=pet_name)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name=pet_name)
         mock_membership = create_mock_membership(
             user_id=test_user_id,
             family_id=test_family_id,
