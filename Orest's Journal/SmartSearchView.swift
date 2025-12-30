@@ -234,9 +234,13 @@ struct SmartSearchView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "sparkles.slash")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
+            ZStack {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 56))
+                Image(systemName: "line.diagonal")
+                    .font(.system(size: 72, weight: .light))
+            }
+            .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
                 Text("AI Search Unavailable")
