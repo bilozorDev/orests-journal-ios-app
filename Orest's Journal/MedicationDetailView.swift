@@ -170,7 +170,7 @@ struct MedicationDetailView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(medication.name)
+                    Text(medication.displayName)
                         .font(.title2)
                         .fontWeight(.semibold)
 
@@ -183,6 +183,13 @@ struct MedicationDetailView: View {
                             .background(Color.orange.opacity(0.15))
                             .clipShape(Capsule())
                     }
+                }
+
+                // Show medical name if different from display name (i.e., friendly name is set)
+                if medication.friendlyName != nil {
+                    Text(medication.name)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
 
                 Text(medication.medicationType.displayName)
@@ -372,7 +379,7 @@ struct MedicationDetailView: View {
                 .foregroundColor(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .accessibilityLabel("Record dose of \(medication.name)")
+            .accessibilityLabel("Record dose of \(medication.displayName)")
             .accessibilityHint("Double tap to record a new dose")
 
             if let lastDose = lastDose {

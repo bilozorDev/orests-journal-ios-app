@@ -35,7 +35,8 @@ class MedicationPhotoResponse(BaseModel):
 # Medication Schemas
 class MedicationCreate(BaseModel):
     pet_id: UUID
-    name: str
+    name: str  # Full medical name (e.g., "fluticasone propionate")
+    friendly_name: Optional[str] = None  # Short name for notifications (e.g., "Asthma inhaler")
     medication_type: MedicationType
     dosage: Optional[str] = None
     interval_days: Optional[int] = None  # 1-30 for scheduled, None for PRN
@@ -51,6 +52,7 @@ class MedicationCreate(BaseModel):
 
 class MedicationUpdate(BaseModel):
     name: Optional[str] = None
+    friendly_name: Optional[str] = None
     medication_type: Optional[MedicationType] = None
     dosage: Optional[str] = None
     interval_days: Optional[int] = None
@@ -69,7 +71,8 @@ class MedicationResponse(BaseModel):
 
     id: UUID
     pet_id: UUID
-    name: str
+    name: str  # Full medical name
+    friendly_name: Optional[str] = None  # Short name for notifications/widget
     medication_type: MedicationType
     dosage: Optional[str] = None
     interval_days: Optional[int] = None
@@ -83,6 +86,11 @@ class MedicationResponse(BaseModel):
     is_archived: bool = False
     created_by: Optional[UUID] = None
     created_at: datetime
+
+    @property
+    def display_name(self) -> str:
+        """Returns friendly_name if set, otherwise name."""
+        return self.friendly_name or self.name
 
     @property
     def is_active(self) -> bool:

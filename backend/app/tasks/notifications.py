@@ -195,7 +195,8 @@ async def _send_scheduled_reminders():
                 # Check if any schedule matches
                 for schedule in med.schedules:
                     if schedule.scheduled_hour == local_hour and schedule.scheduled_minute == local_minute:
-                        logger.info(f"Medication '{med.name}' matches schedule {local_hour}:{local_minute:02d} in {med.timezone}")
+                        display_name = med.friendly_name or med.name
+                        logger.info(f"Medication '{display_name}' matches schedule {local_hour}:{local_minute:02d} in {med.timezone}")
                         medications.append(med)
                         break
 
@@ -239,9 +240,10 @@ async def _send_scheduled_reminders():
                     logger.info(f"No device tokens for medication {med.id}")
                     continue
 
-                # Send notifications
+                # Send notifications - use friendly_name if set
+                display_name = med.friendly_name or med.name
                 title = "Medication Reminder"
-                body = f"Time to give {pet.name} their {med.name}"
+                body = f"Time to give {pet.name} their {display_name}"
 
                 sent_count = await apns_service.send_to_multiple(
                     device_tokens=tokens,
@@ -257,7 +259,7 @@ async def _send_scheduled_reminders():
 
                 # Log the notification
                 await log_notification(db, med.id, "reminder", scheduled_time_utc, sent_count)
-                logger.info(f"Sent reminder for {med.name} to {sent_count} devices")
+                logger.info(f"Sent reminder for {display_name} to {sent_count} devices")
     finally:
         await engine.dispose()
 
@@ -359,9 +361,10 @@ async def _check_missed_doses():
                     if not tokens:
                         continue
 
-                    # Send missed dose notification
+                    # Send missed dose notification - use friendly_name if set
+                    display_name = med.friendly_name or med.name
                     title = "Medication Reminder"
-                    body = f"Did you remember to give {pet.name} their {med.name}?"
+                    body = f"Did you remember to give {pet.name} their {display_name}?"
 
                     sent_count = await apns_service.send_to_multiple(
                         device_tokens=tokens,
@@ -377,6 +380,6 @@ async def _check_missed_doses():
 
                     # Log the notification
                     await log_notification(db, med.id, "missed_dose", scheduled_utc, sent_count)
-                    logger.info(f"Sent missed dose reminder for {med.name} to {sent_count} devices")
+                    logger.info(f"Sent missed dose reminder for {display_name} to {sent_count} devices")
     finally:
         await engine.dispose()

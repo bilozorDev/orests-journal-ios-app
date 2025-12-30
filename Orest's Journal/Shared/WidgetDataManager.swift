@@ -226,7 +226,7 @@ final class WidgetDataManager {
 
         return WidgetDoseInfo(
             medicationId: medication.id,
-            medicationName: medication.name,
+            medicationName: medication.displayName,
             dosage: medication.dosage,
             iconName: medication.medicationType.icon,
             petName: petName,

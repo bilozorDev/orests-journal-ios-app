@@ -24,7 +24,8 @@ class PetMedication(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)  # Full medical name
+    friendly_name = Column(String(100), nullable=True)  # Short name for notifications/widget
     medication_type = Column(String(50), nullable=False)
     dosage = Column(String(255), nullable=True)
     interval_days = Column(Integer, nullable=True)  # 1-30 for scheduled, null for PRN

@@ -358,7 +358,7 @@ struct MedicationsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(medication.name), \(medication.intervalDescription)")
+        .accessibilityLabel("\(medication.displayName), \(medication.intervalDescription)")
         .accessibilityHint("Double tap to view details")
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !medication.isArchived {
@@ -396,9 +396,9 @@ struct MedicationsView: View {
     /// Label for medication picker - includes pet name if multiple pets
     private func medicationPickerLabel(for medication: Medication) -> String {
         if pets.count > 1, let petName = petName(for: medication) {
-            return "\(medication.name) (\(petName))"
+            return "\(medication.displayName) (\(petName))"
         }
-        return medication.name
+        return medication.displayName
     }
 
     private func petForMedication(_ medication: Medication) -> Pet? {
@@ -615,7 +615,7 @@ struct MedicationRow: View {
             // Medication details
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(medication.name)
+                    Text(medication.displayName)
                         .font(.headline)
                         .lineLimit(1)
                         .foregroundColor(medication.isArchived ? .secondary : .primary)

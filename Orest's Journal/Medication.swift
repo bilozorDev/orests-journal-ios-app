@@ -82,7 +82,8 @@ struct MedicationPhoto: Codable, Identifiable, Hashable {
 struct Medication: Codable, Identifiable, Hashable {
     let id: UUID
     let petId: UUID
-    let name: String
+    let name: String  // Full medical name (e.g., "fluticasone propionate")
+    let friendlyName: String?  // Short name for notifications (e.g., "Asthma inhaler")
     let medicationType: MedicationType
     let dosage: String?
     let intervalDays: Int?
@@ -98,6 +99,11 @@ struct Medication: Codable, Identifiable, Hashable {
     let createdAt: Date
     var scheduledTimes: [ScheduledTime]?
     var photos: [MedicationPhoto]?
+
+    /// Display name for UI (friendlyName if set, otherwise name)
+    var displayName: String {
+        friendlyName ?? name
+    }
 
     /// Check if medication is currently active based on dates
     var isActive: Bool {
@@ -125,6 +131,7 @@ struct Medication: Codable, Identifiable, Hashable {
         id = try container.decode(UUID.self, forKey: .id)
         petId = try container.decode(UUID.self, forKey: .petId)
         name = try container.decode(String.self, forKey: .name)
+        friendlyName = try container.decodeIfPresent(String.self, forKey: .friendlyName)
         medicationType = try container.decode(MedicationType.self, forKey: .medicationType)
         dosage = try container.decodeIfPresent(String.self, forKey: .dosage)
         intervalDays = try container.decodeIfPresent(Int.self, forKey: .intervalDays)
@@ -147,6 +154,7 @@ struct Medication: Codable, Identifiable, Hashable {
         id: UUID,
         petId: UUID,
         name: String,
+        friendlyName: String? = nil,
         medicationType: MedicationType,
         dosage: String?,
         intervalDays: Int?,
@@ -166,6 +174,7 @@ struct Medication: Codable, Identifiable, Hashable {
         self.id = id
         self.petId = petId
         self.name = name
+        self.friendlyName = friendlyName
         self.medicationType = medicationType
         self.dosage = dosage
         self.intervalDays = intervalDays
@@ -212,6 +221,7 @@ struct ScheduledTimeCreate: Encodable {
 struct MedicationCreate: Encodable {
     let petId: UUID
     let name: String
+    let friendlyName: String?
     let medicationType: MedicationType
     let dosage: String?
     let intervalDays: Int?
@@ -227,6 +237,7 @@ struct MedicationCreate: Encodable {
     init(
         petId: UUID,
         name: String,
+        friendlyName: String? = nil,
         medicationType: MedicationType,
         dosage: String? = nil,
         intervalDays: Int? = 1,
@@ -241,6 +252,7 @@ struct MedicationCreate: Encodable {
     ) {
         self.petId = petId
         self.name = name
+        self.friendlyName = friendlyName?.isEmpty == true ? nil : friendlyName
         self.medicationType = medicationType
         self.dosage = dosage
         self.intervalDays = isAsNeeded ? nil : intervalDays
@@ -257,6 +269,7 @@ struct MedicationCreate: Encodable {
 
 struct MedicationUpdate: Encodable {
     var name: String?
+    var friendlyName: String?
     var medicationType: MedicationType?
     var dosage: String?
     var intervalDays: Int?

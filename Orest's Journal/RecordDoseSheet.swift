@@ -37,7 +37,7 @@ struct RecordDoseSheet: View {
                             .clipShape(Circle())
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(medication.name)
+                            Text(medication.displayName)
                                 .font(.headline)
                             Text(petName)
                                 .font(.subheadline)

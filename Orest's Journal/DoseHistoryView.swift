@@ -45,7 +45,7 @@ struct DoseHistoryView: View {
                 ContentUnavailableView {
                     Label("No Doses Recorded", systemImage: "pills")
                 } description: {
-                    Text("No doses have been recorded for \(medication.name) yet.")
+                    Text("No doses have been recorded for \(medication.displayName) yet.")
                 }
             } else {
                 doseList
@@ -62,7 +62,7 @@ struct DoseHistoryView: View {
         .sheet(item: $selectedDose) { dose in
             EditDoseSheet(
                 dose: dose,
-                medicationName: medication.name,
+                medicationName: medication.displayName,
                 orgId: orgId,
                 onDoseUpdated: {
                     Task { await loadDoses(reset: true) }

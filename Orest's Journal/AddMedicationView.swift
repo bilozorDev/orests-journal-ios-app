@@ -17,6 +17,7 @@ struct AddMedicationView: View {
 
     // Basic info
     @State private var name = ""
+    @State private var friendlyName = ""
     @State private var medicationType: MedicationType = .pill
     @State private var dosage = ""
     @State private var notes = ""
@@ -84,10 +85,14 @@ struct AddMedicationView: View {
         NavigationStack {
             Form {
                 // Basic info section
-                Section("Medication") {
-                    TextField("Name", text: $name)
+                Section {
+                    TextField("Medical Name", text: $name)
                         .textContentType(.none)
                         .accessibilityLabel("Medication name")
+
+                    TextField("e.g., Asthma inhaler", text: $friendlyName)
+                        .textContentType(.none)
+                        .accessibilityLabel("Friendly name for notifications")
 
                     Picker("Type", selection: $medicationType) {
                         ForEach(MedicationType.allCases, id: \.self) { type in
@@ -99,6 +104,10 @@ struct AddMedicationView: View {
                     TextField("Dosage (optional)", text: $dosage)
                         .textContentType(.none)
                         .accessibilityLabel("Dosage")
+                } header: {
+                    Text("Medication")
+                } footer: {
+                    Text("Friendly name is shown in notifications and widgets instead of the full medical name")
                 }
 
                 // Schedule type section
@@ -360,6 +369,7 @@ struct AddMedicationView: View {
         guard let medication = existingMedication else { return }
 
         name = medication.name
+        friendlyName = medication.friendlyName ?? ""
         medicationType = medication.medicationType
         dosage = medication.dosage ?? ""
         notes = medication.notes ?? ""
@@ -438,6 +448,7 @@ struct AddMedicationView: View {
                 // Update existing medication
                 var update = MedicationUpdate()
                 update.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                update.friendlyName = friendlyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : friendlyName.trimmingCharacters(in: .whitespacesAndNewlines)
                 update.medicationType = medicationType
                 update.dosage = dosage.isEmpty ? nil : dosage
                 update.isAsNeeded = isAsNeeded
@@ -466,9 +477,11 @@ struct AddMedicationView: View {
                 onSave(refreshed)
             } else {
                 // Create new medication
+                let trimmedFriendlyName = friendlyName.trimmingCharacters(in: .whitespacesAndNewlines)
                 let medication = MedicationCreate(
                     petId: pet.id,
                     name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    friendlyName: trimmedFriendlyName.isEmpty ? nil : trimmedFriendlyName,
                     medicationType: medicationType,
                     dosage: dosage.isEmpty ? nil : dosage,
                     intervalDays: isAsNeeded ? nil : intervalDays,

@@ -157,6 +157,7 @@ def create_mock_medication(
     medication_id: str = None,
     pet_id: str = None,
     name: str = "Prednisone",
+    friendly_name: str = None,
     medication_type: str = "pill",
     dosage: str = "5mg",
     interval_days: int = 1,
@@ -175,6 +176,7 @@ def create_mock_medication(
     medication.id = medication_id or str(uuid4())
     medication.pet_id = pet_id or str(uuid4())
     medication.name = name
+    medication.friendly_name = friendly_name
     medication.medication_type = medication_type
     medication.dosage = dosage
     medication.interval_days = interval_days

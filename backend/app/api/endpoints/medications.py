@@ -263,6 +263,7 @@ async def create_medication(
     medication = PetMedication(
         pet_id=med_in.pet_id,
         name=med_in.name,
+        friendly_name=med_in.friendly_name,
         medication_type=med_in.medication_type,
         dosage=med_in.dosage,
         interval_days=interval_days if not med_in.is_as_needed else None,
@@ -297,13 +298,14 @@ async def create_medication(
     # Invalidate caches
     await invalidate_medication_caches(med_in.pet_id, str(pet.org_id))
 
-    # Send notification to family members
+    # Send notification to family members - use friendly_name if set
+    display_name = medication.friendly_name or medication.name
     await notify_family_medication_change(
         db=db,
         org_id=pet.org_id,
         exclude_user_id=UUID(user_id),
         pet_name=pet.name,
-        medication_name=medication.name,
+        medication_name=display_name,
         notification_type="medication_created",
     )
 
@@ -411,6 +413,9 @@ async def update_medication(
         for sched in existing.scalars().all():
             await db.delete(sched)
 
+        # Flush deletes before inserting new schedules to avoid unique constraint violation
+        await db.flush()
+
         # Create new schedules (only if not as-needed and reminders enabled)
         if not medication.is_as_needed and medication.reminders_enabled:
             for schedule in scheduled_times_data:
@@ -434,13 +439,14 @@ async def update_medication(
     # Invalidate caches
     await invalidate_medication_caches(medication.pet_id, org_id)
 
-    # Send notification to family members
+    # Send notification to family members - use friendly_name if set
+    display_name = medication.friendly_name or medication.name
     await notify_family_medication_change(
         db=db,
         org_id=pet.org_id,
         exclude_user_id=UUID(user_id),
         pet_name=pet.name,
-        medication_name=medication.name,
+        medication_name=display_name,
         notification_type="medication_updated",
     )
 
@@ -472,7 +478,7 @@ async def delete_medication(
     # Verify user has access to this medication through family membership
     medication = await verify_medication_access(db, user_id, medication_id)
     pet_id = medication.pet_id
-    medication_name = medication.name
+    medication_name = medication.friendly_name or medication.name  # Use friendly name for notifications
 
     # Get pet for cache invalidation and notifications
     pet_result = await db.execute(select(Pet).where(Pet.id == pet_id))

@@ -122,14 +122,15 @@ async def record_dose(
     # Invalidate dashboard cache
     await invalidate_dose_caches(db, dose_in.medication_id)
 
-    # Notify other family members
+    # Notify other family members - use friendly_name if set
+    display_name = medication.friendly_name or medication.name
     await notify_family_dose_administered(
         db=db,
         org_id=pet.org_id,
         exclude_user_id=UUID(user_id),
         user_name=user_name,
         pet_name=pet.name,
-        medication_name=medication.name,
+        medication_name=display_name,
     )
 
     return DoseResponse.model_validate(dose)
