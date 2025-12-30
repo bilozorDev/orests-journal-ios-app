@@ -66,6 +66,7 @@ def create_mock_medication(
     medication_id: UUID = TEST_MEDICATION_ID,
     pet_id: UUID = TEST_PET_ID,
     name: str = "Insulin",
+    friendly_name: str = None,
     reminders_enabled: bool = True,
     start_date: datetime = None,
     end_date: datetime = None,
@@ -77,6 +78,7 @@ def create_mock_medication(
     med.id = medication_id
     med.pet_id = pet_id
     med.name = name
+    med.friendly_name = friendly_name
     med.reminders_enabled = reminders_enabled
     med.start_date = start_date or datetime.utcnow()
     med.end_date = end_date

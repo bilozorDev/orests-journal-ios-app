@@ -44,6 +44,7 @@ def create_mock_medication(
     medication_id: str = None,
     pet_id: str = None,
     name: str = "Prednisone",
+    friendly_name: str = None,
     medication_type: str = "pill",
     is_archived: bool = False,
 ) -> MagicMock:
@@ -52,6 +53,7 @@ def create_mock_medication(
     medication.id = UUID(medication_id) if medication_id else uuid4()
     medication.pet_id = UUID(pet_id) if pet_id else uuid4()
     medication.name = name
+    medication.friendly_name = friendly_name
     medication.medication_type = medication_type
     medication.is_archived = is_archived
     medication.created_at = datetime.utcnow()
