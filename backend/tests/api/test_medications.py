@@ -8,9 +8,56 @@ Tests cover:
 - Validation errors
 - Edge cases (archived medications, PRN vs scheduled, photo limits)
 
-NOTE: These tests mock the database session and use the FastAPI test client.
-All authorization functions (verify_family_access, verify_pet_access, etc.)
-call set_rls_user() first, which requires an RLS mock result in side_effect.
+IMPORTANT: Authorization Mock Patterns
+======================================
+
+These tests mock the database session and use the FastAPI test client.
+
+Different endpoints use different authorization functions with nested calls:
+
+1. verify_family_access (e.g., list medications):
+   - Set RLS
+   - Query for membership
+
+2. verify_pet_access (e.g., create medication):
+   - Set RLS
+   - Query for pet
+   - Call verify_family_access (see above)
+
+3. verify_medication_access (e.g., get/update/delete medication, upload photo):
+   - Query for medication
+   - Call verify_pet_access (see above)
+
+4. verify_dose_access (e.g., update/delete dose):
+   - Query for dose
+   - Call verify_medication_access (see above)
+
+Helper Functions
+================
+
+Use these helper functions to generate the correct mock sequence:
+
+- setup_medication_access_mocks(medication, pet, membership)
+  Returns list of 5 mocks for verify_medication_access flow
+
+- setup_dose_access_mocks(dose, medication, pet, membership)
+  Returns list of 6 mocks for verify_dose_access flow
+
+Example Usage
+=============
+
+auth_mocks = setup_medication_access_mocks(
+    mock_medication, mock_pet, mock_membership
+)
+
+# Add any business logic mocks after authorization
+business_logic_mocks = [result1, result2, ...]
+
+mock_db_session.execute = AsyncMock(
+    side_effect=auth_mocks + business_logic_mocks
+)
+
+Note: Tests that need updating will have a NOTE comment explaining the required changes.
 """
 from datetime import datetime, date, timedelta
 from typing import Any, Dict
@@ -30,6 +77,81 @@ from tests.conftest import (
 
 
 # ============== Helper Functions ==============
+
+def setup_medication_access_mocks(
+    medication: MagicMock,
+    pet: MagicMock,
+    membership: MagicMock,
+) -> list:
+    """
+    Create the correct sequence of mock results for verify_medication_access.
+
+    The authorization flow is:
+    1. Query medication by ID
+    2. If found, call verify_pet_access which:
+       a. Set RLS
+       b. Query for pet
+       c. If found, call verify_family_access which:
+          i. Set RLS
+          ii. Query for membership
+
+    Returns list of mock results in the correct order for side_effect.
+    """
+    # 1. Get medication
+    med_query_result = MagicMock()
+    med_query_result.scalar_one_or_none.return_value = medication
+
+    # 2. verify_pet_access: set RLS
+    rls_result1 = MagicMock()
+    rls_result1.scalar_one_or_none.return_value = None
+
+    # 3. verify_pet_access: get pet
+    pet_result = MagicMock()
+    pet_result.scalar_one_or_none.return_value = pet
+
+    # 4. verify_family_access: set RLS
+    rls_result2 = MagicMock()
+    rls_result2.scalar_one_or_none.return_value = None
+
+    # 5. verify_family_access: get membership
+    membership_result = MagicMock()
+    membership_result.scalar_one_or_none.return_value = membership
+
+    return [
+        med_query_result,
+        rls_result1,
+        pet_result,
+        rls_result2,
+        membership_result,
+    ]
+
+
+def setup_dose_access_mocks(
+    dose: MagicMock,
+    medication: MagicMock,
+    pet: MagicMock,
+    membership: MagicMock,
+) -> list:
+    """
+    Create the correct sequence of mock results for verify_dose_access.
+
+    The authorization flow is:
+    1. Query dose by ID
+    2. If found, call verify_medication_access (see above)
+
+    Returns list of mock results in the correct order for side_effect.
+    """
+    # 1. Get dose
+    dose_query_result = MagicMock()
+    dose_query_result.scalar_one_or_none.return_value = dose
+
+    # 2-6. verify_medication_access flow
+    medication_access_mocks = setup_medication_access_mocks(
+        medication, pet, membership
+    )
+
+    return [dose_query_result] + medication_access_mocks
+
 
 def create_mock_medication(
     medication_id: str = None,
@@ -485,77 +607,1233 @@ class TestCreateMedication:
         assert "As-needed (PRN) medications cannot have reminders enabled" in response.json()["detail"]
 
 
-# ============== Integration Test Notes ==============
+# ============== Get Single Medication Tests ==============
 
-class TestMedicationIntegrationNotes:
-    """
-    Documentation of comprehensive test coverage that should be implemented.
+class TestGetMedication:
+    """Tests for GET /api/v1/medications/{id} endpoint."""
 
-    The tests above demonstrate the core patterns. A complete test suite would include:
+    @pytest.mark.asyncio
+    async def test_get_medication_success_with_schedules_and_photos(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return medication with schedules and photos."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
 
-    1. GET /api/v1/medications/{id} - get single medication
-       - Test success with schedules and photos
-       - Test 404 when medication doesn't exist
-       - Test 403 when user doesn't have access
+        # Create mocks
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            name="Prednisone",
+            reminders_enabled=True,
+        )
+        mock_schedule1 = create_mock_schedule(
+            medication_id=medication_id, scheduled_hour=9, scheduled_minute=0
+        )
+        mock_schedule2 = create_mock_schedule(
+            medication_id=medication_id, scheduled_hour=21, scheduled_minute=0
+        )
+        mock_photo1 = create_mock_photo(medication_id=medication_id, sort_order=0)
+        mock_medication.photos = [mock_photo1]
 
-    2. PATCH /api/v1/medications/{id} - update medication
-       - Test successful field updates
-       - Test converting scheduled to PRN (clears reminders, interval)
-       - Test converting PRN to scheduled
-       - Test updating scheduled_times
-       - Test 404/403 errors
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
 
-    3. DELETE /api/v1/medications/{id} - delete medication
-       - Test hard delete when no doses exist
-       - Test archive when doses exist (preserves history)
-       - Test photo deletion on hard delete
-       - Test 404/403 errors
+        # Mock business logic queries
+        # Get medication with photos
+        med_with_photos_result = MagicMock()
+        med_with_photos_result.scalar_one.return_value = mock_medication
 
-    4. POST /api/v1/medications/{id}/photos - upload photo
-       - Test successful upload
-       - Test photo limit (max 3)
-       - Test 404/403 errors
+        # Get schedules
+        schedules_result = MagicMock()
+        schedules_result.scalars.return_value.all.return_value = [
+            mock_schedule1,
+            mock_schedule2,
+        ]
 
-    5. DELETE /api/v1/medications/{id}/photos/{photo_id} - delete photo
-       - Test successful deletion
-       - Test R2 storage cleanup
-       - Test 404 for non-existent photo
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [med_with_photos_result, schedules_result]
+        )
 
-    6. POST /api/v1/doses - record dose
-       - Test successful dose recording
-       - Test custom given_at timestamp
-       - Test notes field
-       - Test cache invalidation
+        response = await client.get(
+            f"/api/v1/medications/{medication_id}",
+            headers=auth_headers,
+        )
 
-    7. GET /api/v1/doses/medication/{id} - list doses
-       - Test pagination (limit parameter)
-       - Test user name formatting ("You" for current user)
-       - Test ordering (most recent first)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == medication_id
+        assert data["name"] == "Prednisone"
+        assert len(data["scheduled_times"]) == 2
+        assert len(data["photos"]) == 1
 
-    8. PATCH /api/v1/doses/{id} - update dose
-       - Test updating given_at
-       - Test updating notes
-       - Test 404/403 errors
+    @pytest.mark.asyncio
+    async def test_get_medication_not_found(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 404 when medication doesn't exist."""
+        medication_id = str(uuid4())
 
-    9. DELETE /api/v1/doses/{id} - delete dose
-       - Test successful deletion
-       - Test cache invalidation
-       - Test 404/403 errors
+        # Mock RLS
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
 
-    Each endpoint should test:
-    - Happy path (200/201 responses)
-    - Validation errors (400/422)
-    - Authentication errors (401)
-    - Authorization errors (403)
-    - Not found errors (404)
-    - Edge cases specific to the domain
+        # Mock membership check
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
 
-    The key pattern for all tests:
-    1. Mock RLS call (set_rls_user) - returns None
-    2. Mock authorization checks (verify_*_access) - returns membership/object
-    3. Mock business logic queries
-    4. Mock cache operations
-    5. Assert response status and data
-    6. Verify side effects (cache invalidation, notifications, etc.)
-    """
-    pass
+        # Mock pet query (returns None - pet not found via medication)
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = None
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[rls_result, membership_result, pet_result]
+        )
+
+        response = await client.get(
+            f"/api/v1/medications/{medication_id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_medication_forbidden_wrong_org(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 403 when user doesn't have access to medication."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+        wrong_org_id = str(uuid4())
+
+        # Create mocks - medication exists but in different org
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=wrong_org_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # 1. Get medication
+        med_query_result = MagicMock()
+        med_query_result.scalar_one_or_none.return_value = mock_medication
+
+        # 2. verify_pet_access: set RLS
+        rls_result1 = MagicMock()
+        rls_result1.scalar_one_or_none.return_value = None
+
+        # 3. verify_pet_access: get pet
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+
+        # 4. verify_family_access: set RLS
+        rls_result2 = MagicMock()
+        rls_result2.scalar_one_or_none.return_value = None
+
+        # 5. verify_family_access: no membership found (403)
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = None
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                med_query_result,
+                rls_result1,
+                pet_result,
+                rls_result2,
+                membership_result,
+            ]
+        )
+
+        response = await client.get(
+            f"/api/v1/medications/{medication_id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 403
+
+
+# ============== Update Medication Tests ==============
+
+class TestUpdateMedication:
+    """Tests for PATCH /api/v1/medications/{id} endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_update_medication_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully update medication fields."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            name="Old Name",
+            dosage="5mg",
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        # Get pet for cache invalidation
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # For fetching existing schedules
+        schedules_result = MagicMock()
+        schedules_result.scalars.return_value.all.return_value = []
+
+        # For re-fetching medication with photos
+        med_with_photos_result = MagicMock()
+        med_with_photos_result.scalar_one.return_value = mock_medication
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                schedules_result,
+                med_with_photos_result,
+            ]
+        )
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"):
+            response = await client.patch(
+                f"/api/v1/medications/{medication_id}",
+                json={
+                    "name": "New Name",
+                    "dosage": "10mg",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == medication_id
+
+    @pytest.mark.asyncio
+    async def test_update_medication_convert_to_prn(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should clear reminders/interval when converting to PRN."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            is_as_needed=False,
+            reminders_enabled=True,
+            interval_days=1,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # For deleting existing schedules
+        existing_schedules_result = MagicMock()
+        existing_schedules_result.scalars.return_value.all.return_value = []
+
+        # For re-fetching medication with photos
+        med_with_photos_result = MagicMock()
+        med_with_photos_result.scalar_one.return_value = mock_medication
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                existing_schedules_result,
+                med_with_photos_result,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"):
+            response = await client.patch(
+                f"/api/v1/medications/{medication_id}",
+                json={"is_as_needed": True},
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        # Verify medication was updated to PRN
+        assert mock_medication.is_as_needed == True
+
+    @pytest.mark.asyncio
+    async def test_update_medication_scheduled_times(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should update scheduled reminder times."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            is_as_needed=False,
+            reminders_enabled=True,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # For deleting existing schedules
+        existing_schedules_result = MagicMock()
+        existing_schedules_result.scalars.return_value.all.return_value = []
+
+        # For re-fetching medication with photos
+        med_with_photos_result = MagicMock()
+        med_with_photos_result.scalar_one.return_value = mock_medication
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                existing_schedules_result,
+                med_with_photos_result,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        # Mock db.add to set id on schedule objects
+        def mock_add(obj):
+            if not hasattr(obj, 'id') or obj.id is None:
+                obj.id = str(uuid4())
+
+        mock_db_session.add = mock_add
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"):
+            response = await client.patch(
+                f"/api/v1/medications/{medication_id}",
+                json={
+                    "scheduled_times": [
+                        {"hour": 8, "minute": 0},
+                        {"hour": 20, "minute": 0},
+                    ]
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_medication_not_found(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 404 when medication doesn't exist."""
+        medication_id = str(uuid4())
+
+        # Mock RLS
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
+
+        # Mock membership
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+
+        # Mock pet not found
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = None
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[rls_result, membership_result, pet_result]
+        )
+
+        response = await client.patch(
+            f"/api/v1/medications/{medication_id}",
+            json={"name": "Updated Name"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 404
+
+
+# ============== Delete Medication Tests ==============
+
+class TestDeleteMedication:
+    """Tests for DELETE /api/v1/medications/{id} endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_delete_medication_hard_delete_no_doses(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should hard delete medication when no doses exist."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            name="Test Med",
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # Dose count query returns 0
+        dose_count_result = MagicMock()
+        dose_count_result.scalar.return_value = 0
+
+        # Photos query returns empty
+        photos_result = MagicMock()
+        photos_result.scalars.return_value.all.return_value = []
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                dose_count_result,
+                photos_result,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"):
+            response = await client.delete(
+                f"/api/v1/medications/{medication_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted"] == True
+        assert data["archived"] == False
+
+    @pytest.mark.asyncio
+    async def test_delete_medication_archive_with_doses(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should archive medication when doses exist to preserve history."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            name="Test Med",
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # Dose count query returns 5
+        dose_count_result = MagicMock()
+        dose_count_result.scalar.return_value = 5
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                dose_count_result,
+            ]
+        )
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"):
+            response = await client.delete(
+                f"/api/v1/medications/{medication_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted"] == False
+        assert data["archived"] == True
+        assert "5 dose record(s)" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_delete_medication_with_photos(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should delete photos from R2 on hard delete."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+        photo_url = "https://example.com/photo.jpg"
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_photo = create_mock_photo(
+            medication_id=medication_id, photo_url=photo_url
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        # Dose count = 0
+        dose_count_result = MagicMock()
+        dose_count_result.scalar.return_value = 0
+
+        # Photos query returns one photo
+        photos_result = MagicMock()
+        photos_result.scalars.return_value.all.return_value = [mock_photo]
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_result2,
+                dose_count_result,
+                photos_result,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        mock_storage = AsyncMock()
+        mock_storage.delete_image = AsyncMock(return_value=True)
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.notify_family_medication_change"), \
+             patch("app.api.endpoints.medications.storage_service", mock_storage):
+            response = await client.delete(
+                f"/api/v1/medications/{medication_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        # Verify storage service was called
+        mock_storage.delete_image.assert_called_once_with(photo_url)
+
+
+# ============== Photo Upload/Delete Tests ==============
+
+class TestMedicationPhotos:
+    """Tests for medication photo upload/delete endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_upload_photo_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully upload a photo."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+        photo_url = "https://example.com/new-photo.jpg"
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        # Photo count = 0
+        photo_count_result = MagicMock()
+        photo_count_result.scalar.return_value = 0
+
+        # Pet query for org_id
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                photo_count_result,
+                pet_result2,
+            ]
+        )
+
+        # Mock db.add to set id and created_at on the photo object
+        def mock_add(obj):
+            obj.id = str(uuid4())
+            obj.created_at = datetime(2024, 1, 1)
+
+        mock_db_session.add = mock_add
+
+        mock_storage = AsyncMock()
+        mock_storage.upload_image = AsyncMock(return_value=photo_url)
+
+        # Create a mock file
+        from io import BytesIO
+        file_content = BytesIO(b"fake image data")
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.storage_service", mock_storage):
+            response = await client.post(
+                f"/api/v1/medications/{medication_id}/photos",
+                headers=auth_headers,
+                files={"file": ("test.jpg", file_content, "image/jpeg")},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["medication_id"] == medication_id
+        assert data["photo_url"] == photo_url
+
+    @pytest.mark.asyncio
+    async def test_upload_photo_exceeds_limit(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 400 when photo limit (3) is reached."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Photo count = 3 (max limit)
+        photo_count_result = MagicMock()
+        photo_count_result.scalar.return_value = 3
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                photo_count_result,
+            ]
+        )
+
+        from io import BytesIO
+        file_content = BytesIO(b"fake image data")
+
+        response = await client.post(
+            f"/api/v1/medications/{medication_id}/photos",
+            headers=auth_headers,
+            files={"file": ("test.jpg", file_content, "image/jpeg")},
+        )
+
+        assert response.status_code == 400
+        assert "Maximum 3 photos" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_delete_photo_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully delete a photo."""
+        medication_id = str(uuid4())
+        photo_id = str(uuid4())
+        pet_id = str(uuid4())
+        photo_url = "https://example.com/photo.jpg"
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_photo = create_mock_photo(
+            photo_id=photo_id,
+            medication_id=medication_id,
+            photo_url=photo_url,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic mocks
+        # Photo query
+        photo_result = MagicMock()
+        photo_result.scalar_one_or_none.return_value = mock_photo
+
+        # Pet query for cache invalidation
+        pet_result2 = MagicMock()
+        pet_result2.scalar_one.return_value = mock_pet
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                photo_result,
+                pet_result2,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        mock_storage = AsyncMock()
+        mock_storage.delete_image = AsyncMock(return_value=True)
+
+        with patch("app.api.endpoints.medications.cache_delete_pattern"), \
+             patch("app.api.endpoints.medications.storage_service", mock_storage):
+            response = await client.delete(
+                f"/api/v1/medications/{medication_id}/photos/{photo_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 204
+        mock_storage.delete_image.assert_called_once_with(photo_url)
+
+    @pytest.mark.asyncio
+    async def test_delete_photo_not_found(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 404 when photo doesn't exist."""
+        medication_id = str(uuid4())
+        photo_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Photo not found
+        photo_result = MagicMock()
+        photo_result.scalar_one_or_none.return_value = None
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                photo_result,
+            ]
+        )
+
+        response = await client.delete(
+            f"/api/v1/medications/{medication_id}/photos/{photo_id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 404
+        assert "Photo not found" in response.json()["detail"]
+
+
+# ============== Dose Management Tests ==============
+
+class TestDoseManagement:
+    """Tests for dose recording and management endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_record_dose_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully record a dose."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic: get pet_id for cache invalidation
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = pet_id
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_id_result,
+            ]
+        )
+
+        # Mock db.add to set id and created_at on the dose object
+        def mock_add(obj):
+            obj.id = str(uuid4())
+            obj.created_at = datetime(2024, 1, 1)
+
+        mock_db_session.add = mock_add
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+            response = await client.post(
+                "/api/v1/doses",
+                json={
+                    "medication_id": medication_id,
+                    "notes": "Given with food",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["medication_id"] == medication_id
+        assert data["given_by"] == test_user_id
+
+    @pytest.mark.asyncio
+    async def test_record_dose_custom_timestamp(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should record dose with custom given_at timestamp."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+        custom_time = "2024-01-01T10:30:00Z"
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = pet_id
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_id_result,
+            ]
+        )
+
+        # Mock db.add to set id and created_at
+        def mock_add(obj):
+            obj.id = str(uuid4())
+            obj.created_at = datetime(2024, 1, 1)
+
+        mock_db_session.add = mock_add
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+            response = await client.post(
+                "/api/v1/doses",
+                json={
+                    "medication_id": medication_id,
+                    "given_at": custom_time,
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_list_doses_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should list doses with user names formatted."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+        dose_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_dose = create_mock_dose(
+            dose_id=dose_id,
+            medication_id=medication_id,
+            given_by=test_user_id,
+        )
+        mock_user = create_mock_user(user_id=test_user_id)
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic
+        # Doses query
+        doses_result = MagicMock()
+        doses_result.scalars.return_value.all.return_value = [mock_dose]
+
+        # Users query
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = [mock_user]
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                doses_result,
+                users_result,
+            ]
+        )
+
+        response = await client.get(
+            f"/api/v1/doses/medication/{medication_id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["doses"]) == 1
+        # Current user should show as "You"
+        assert data["doses"][0]["given_by"] == "You"
+
+    @pytest.mark.asyncio
+    async def test_list_doses_with_limit(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should respect limit parameter for pagination."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+
+        # Mock authorization flow
+        auth_mocks = setup_medication_access_mocks(
+            mock_medication, mock_pet, mock_membership
+        )
+
+        # Empty doses result
+        doses_result = MagicMock()
+        doses_result.scalars.return_value.all.return_value = []
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                doses_result,
+            ]
+        )
+
+        response = await client.get(
+            f"/api/v1/doses/medication/{medication_id}?limit=10",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_dose_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully update a dose."""
+        dose_id = str(uuid4())
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_dose = create_mock_dose(
+            dose_id=dose_id,
+            medication_id=medication_id,
+            given_by=test_user_id,
+        )
+        mock_user = create_mock_user(user_id=test_user_id)
+
+        # Mock authorization flow (verify_dose_access)
+        auth_mocks = setup_dose_access_mocks(
+            mock_dose, mock_medication, mock_pet, mock_membership
+        )
+
+        # Business logic
+        # For get pet_id from medication (cache invalidation)
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = pet_id
+
+        # Users query for name formatting
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = [mock_user]
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_id_result,
+                users_result,
+            ]
+        )
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+            response = await client.patch(
+                f"/api/v1/doses/{dose_id}",
+                json={"notes": "Updated notes"},
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == dose_id
+
+    @pytest.mark.asyncio
+    async def test_delete_dose_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully delete a dose."""
+        dose_id = str(uuid4())
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_dose = create_mock_dose(
+            dose_id=dose_id,
+            medication_id=medication_id,
+        )
+
+        # Mock authorization flow (verify_dose_access)
+        auth_mocks = setup_dose_access_mocks(
+            mock_dose, mock_medication, mock_pet, mock_membership
+        )
+
+        # For get pet_id from medication (cache invalidation)
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = pet_id
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=auth_mocks + [
+                pet_id_result,
+            ]
+        )
+        mock_db_session.delete = AsyncMock()
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+            response = await client.delete(
+                f"/api/v1/doses/{dose_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_delete_dose_not_found(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should return 404 when dose doesn't exist."""
+        dose_id = str(uuid4())
+
+        # Mock RLS
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
+
+        # Mock membership
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+
+        # Mock pet not found
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = None
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[rls_result, membership_result, pet_result]
+        )
+
+        response = await client.delete(
+            f"/api/v1/doses/{dose_id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 404

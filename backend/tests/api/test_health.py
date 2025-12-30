@@ -871,11 +871,12 @@ class TestListHealthEvents:
         )
 
         # Request with time range
+        from urllib.parse import quote
         since = datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat()
         until = datetime(2024, 3, 1, tzinfo=timezone.utc).isoformat()
 
         response = await client.get(
-            f"/api/v1/health/pet/{pet_id}/events?since={since}&until={until}",
+            f"/api/v1/health/pet/{pet_id}/events?since={quote(since)}&until={quote(until)}",
             headers=auth_headers,
         )
 
@@ -1246,10 +1247,16 @@ class TestUpdateHealthEvent:
         old_category_id = str(uuid4())
         new_category_id = str(uuid4())
 
-        mock_event = create_mock_event(
+        mock_event_old = create_mock_event(
             event_id=event_id,
             pet_id=pet_id,
             category_id=old_category_id,
+        )
+        # Create updated event with new category for the reload result
+        mock_event_new = create_mock_event(
+            event_id=event_id,
+            pet_id=pet_id,
+            category_id=new_category_id,
         )
         mock_old_category = create_mock_category(
             category_id=old_category_id,
@@ -1263,12 +1270,9 @@ class TestUpdateHealthEvent:
         )
         mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
 
-        # Update category
-        mock_event.category_id = UUID(new_category_id)
-
         # Mock queries
         event_lookup = MagicMock()
-        event_lookup.scalar_one_or_none.return_value = mock_event
+        event_lookup.scalar_one_or_none.return_value = mock_event_old
 
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
@@ -1292,9 +1296,9 @@ class TestUpdateHealthEvent:
         new_category_result = MagicMock()
         new_category_result.scalar_one.return_value = mock_new_category
 
-        # Reload event
+        # Reload event - return the updated event
         reload_result = MagicMock()
-        reload_result.scalar_one.return_value = mock_event
+        reload_result.scalar_one.return_value = mock_event_new
 
         # Delete orphaned category
         delete_result = MagicMock()
@@ -1827,7 +1831,13 @@ class TestUploadHealthEventPhoto:
         )
         mock_db_session.add = MagicMock()
         mock_db_session.commit = AsyncMock()
-        mock_db_session.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, 'id', UUID(photo_id)))
+        # Mock refresh to set all required attributes on the photo object
+        def mock_refresh(obj):
+            obj.id = UUID(photo_id)
+            obj.photo_url = "https://example.com/photo.jpg"
+            obj.sort_order = 0
+            obj.created_at = datetime(2024, 1, 1)
+        mock_db_session.refresh = AsyncMock(side_effect=mock_refresh)
 
         # Mock storage service
         mock_storage = AsyncMock()

@@ -93,8 +93,13 @@ def create_mock_family(
     invite_code: str = "ABC12345",
 ):
     """Create a mock Family object."""
+    from uuid import UUID
     family = MagicMock()
-    family.id = family_id
+    # Convert string to UUID if needed for proper comparisons
+    if isinstance(family_id, str):
+        family.id = UUID(family_id)
+    else:
+        family.id = family_id
     family.name = name
     family.invite_code = invite_code
     family.created_at = datetime.utcnow()
@@ -186,9 +191,12 @@ def create_mock_food(
     created_by: str = None,
 ):
     """Create a mock PetFood object."""
-    food = MagicMock()
-    food.id = food_id or str(uuid4())
-    food.org_id = org_id
+    from uuid import UUID
+    from types import SimpleNamespace
+    food = SimpleNamespace()
+    # Ensure UUID objects
+    food.id = UUID(food_id) if food_id else uuid4()
+    food.org_id = UUID(org_id) if isinstance(org_id, str) else org_id
     food.name = name
     food.category = category
     food.calories_per_kg = calories_per_kg
@@ -197,7 +205,7 @@ def create_mock_food(
     food.image_url = image_url
     food.is_archived = is_archived
     food.created_at = datetime.utcnow()
-    food.created_by = created_by
+    food.created_by = UUID(created_by) if created_by else None
     return food
 
 
@@ -239,14 +247,18 @@ def create_mock_calorie_goal(
     created_by: str = TEST_USER_ID,
 ):
     """Create a mock PetCalorieGoal object."""
-    goal = MagicMock()
-    goal.id = goal_id or str(uuid4())
-    goal.pet_id = pet_id or str(uuid4())
+    from uuid import UUID
+    from types import SimpleNamespace
+
+    # Use SimpleNamespace instead of MagicMock to avoid comparison issues
+    goal = SimpleNamespace()
+    goal.id = UUID(goal_id) if goal_id else uuid4()
+    goal.pet_id = UUID(pet_id) if pet_id else uuid4()
     goal.daily_calories = daily_calories
-    goal.effective_from = effective_from or datetime.utcnow()
-    goal.effective_until = effective_until
+    goal.effective_from = effective_from if effective_from is not None else datetime.utcnow()
+    goal.effective_until = effective_until  # Can be None or datetime
     goal.notes = notes
-    goal.created_by = created_by
+    goal.created_by = UUID(created_by) if isinstance(created_by, str) else created_by
     goal.created_at = datetime.utcnow()
     return goal
 
