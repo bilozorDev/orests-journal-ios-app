@@ -151,12 +151,12 @@ struct AddEditPetView: View {
                                             .scaleEffect(0.8)
                                         Text("Loading...")
                                             .font(.subheadline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
                             Text("cal/day")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         if let suggested = suggestedCalorieGoal {
@@ -166,7 +166,7 @@ struct AddEditPetView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "lightbulb.fill")
-                                        .foregroundColor(.yellow)
+                                        .foregroundStyle(.yellow)
                                     Text("Use suggested: \(suggested) cal/day")
                                         .font(.subheadline)
                                 }
@@ -175,7 +175,7 @@ struct AddEditPetView: View {
 
                             Text("Based on typical \(petKind.lowercased()) calorie needs")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -202,7 +202,7 @@ struct AddEditPetView: View {
                 if let error = errorMessage {
                     Section {
                         Text(error)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .font(.caption)
                     }
                 }
@@ -220,8 +220,8 @@ struct AddEditPetView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(isFormValid && !isSaving ? Color.blue : Color.gray.opacity(0.3))
-                                    .foregroundColor(.white)
-                                    .cornerRadius(10)
+                                    .foregroundStyle(.white)
+                                    .clipShape(.rect(cornerRadius: 10))
                             }
                             .disabled(!isFormValid || isSaving)
                             .accessibilityIdentifier(AccessibilityIdentifier.savePetButton)
@@ -235,8 +235,8 @@ struct AddEditPetView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(isFormValid && !isSaving ? Color.green : Color.gray.opacity(0.3))
-                                    .foregroundColor(.white)
-                                    .cornerRadius(10)
+                                    .foregroundStyle(.white)
+                                    .clipShape(.rect(cornerRadius: 10))
                             }
                             .disabled(!isFormValid || isSaving)
                             .accessibilityIdentifier(AccessibilityIdentifier.saveAndAddAnotherPetButton)
@@ -278,12 +278,12 @@ struct AddEditPetView: View {
                 if showSuccessToast {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                         Text(successMessage)
                     }
                     .padding()
                     .background(Color(.systemBackground))
-                    .cornerRadius(10)
+                    .clipShape(.rect(cornerRadius: 10))
                     .shadow(radius: 5)
                     .padding(.top, 60)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -320,7 +320,9 @@ struct AddEditPetView: View {
             }
         } catch {
             // Silently fail - calorie goal is optional
+            #if DEBUG
             print("Failed to load calorie goal: \(error)")
+            #endif
         }
         isLoadingCalorieGoal = false
     }
@@ -335,7 +337,7 @@ struct AddEditPetView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 200)
-                        .cornerRadius(10)
+                        .clipShape(.rect(cornerRadius: 10))
                         .accessibilityLabel("Selected photo of \(petName.isEmpty ? "pet" : petName)")
 
                     // Loading overlay during background removal
@@ -349,7 +351,7 @@ struct AddEditPetView: View {
                                 .tint(.white)
                             Text("Processing...")
                                 .font(.caption)
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                         }
                         .accessibilityLabel("Processing photo, please wait")
                     }
@@ -360,13 +362,13 @@ struct AddEditPetView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 200)
-                        .cornerRadius(10)
+                        .clipShape(.rect(cornerRadius: 10))
                         .accessibilityLabel("Current photo of \(petName.isEmpty ? "pet" : petName)")
                 } placeholder: {
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
                         .frame(height: 200)
-                        .cornerRadius(10)
+                        .clipShape(.rect(cornerRadius: 10))
                         .overlay(ProgressView())
                         .accessibilityLabel("Loading photo")
                 }
@@ -378,7 +380,7 @@ struct AddEditPetView: View {
                     HStack {
                         ProgressView()
                         Text("Loading photo...")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 } else {
                     PhotosPicker(

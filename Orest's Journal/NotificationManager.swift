@@ -38,7 +38,9 @@ final class NotificationManager {
                 registerForRemoteNotifications()
             }
         } catch {
+            #if DEBUG
             print("Failed to request notification authorization: \(error)")
+            #endif
         }
     }
 

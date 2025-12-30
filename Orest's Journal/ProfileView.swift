@@ -13,7 +13,7 @@ struct ProfileView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 if authManager.isAuthenticated {
                     Text("Welcome!")
@@ -38,7 +38,7 @@ struct ProfileView: View {
                     }
                     .padding()
                     .background(Color.gray.opacity(0.1))
-                    .cornerRadius(10)
+                    .clipShape(.rect(cornerRadius: 10))
 
                     Spacer()
 
@@ -47,8 +47,8 @@ struct ProfileView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .foregroundStyle(.white)
+                            .clipShape(.rect(cornerRadius: 10))
                     }
                 } else {
                     ProgressView("Loading profile...")
@@ -56,7 +56,7 @@ struct ProfileView: View {
 
                 if let error = errorMessage {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                         .font(.caption)
                 }
             }

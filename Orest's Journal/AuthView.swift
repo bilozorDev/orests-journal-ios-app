@@ -14,13 +14,13 @@ struct SignInScreen: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 Spacer()
 
                 Image(systemName: "pawprint.circle.fill")
                     .font(.system(size: 80))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
 
                 Text("Orest's Journal")
                     .font(.largeTitle)
@@ -28,7 +28,7 @@ struct SignInScreen: View {
 
                 Text("Track your pet's health and wellness")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.bottom, 30)
 
                 if isSigningIn {
@@ -50,7 +50,7 @@ struct SignInScreen: View {
 
                 if let error = errorMessage {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                         .font(.caption)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)

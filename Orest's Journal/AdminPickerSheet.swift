@@ -25,7 +25,7 @@ struct AdminPickerSheet: View {
                 Section {
                     Text(message)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section(header: Text("Select New Admin")) {
@@ -34,17 +34,17 @@ struct AdminPickerSheet: View {
                             HStack {
                                 Image(systemName: "person.circle.fill")
                                     .font(.title3)
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(member.displayName)
                                         .font(.body)
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
 
                                     if let email = member.email {
                                         Text(email)
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
 
@@ -52,10 +52,10 @@ struct AdminPickerSheet: View {
 
                                 if selectedMember?.userId == member.userId {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                 } else {
                                     Image(systemName: "circle")
-                                        .foregroundColor(.gray.opacity(0.5))
+                                        .foregroundStyle(.gray.opacity(0.5))
                                 }
                             }
                         }

@@ -116,7 +116,7 @@ struct HealthEventDetailView: View {
                 ProgressView("Deleting...")
                     .padding()
                     .background(Color(uiColor: .systemBackground))
-                    .cornerRadius(10)
+                    .clipShape(.rect(cornerRadius: 10))
             }
         }
     }
@@ -127,7 +127,7 @@ struct HealthEventDetailView: View {
         HStack(spacing: 16) {
             Image(systemName: categoryIcon)
                 .font(.system(size: 24))
-                .foregroundColor(categoryColor)
+                .foregroundStyle(categoryColor)
                 .frame(width: 56, height: 56)
                 .background(categoryColor.opacity(0.15))
                 .clipShape(Circle())
@@ -138,7 +138,7 @@ struct HealthEventDetailView: View {
                     .fontWeight(.semibold)
                 Text("Health Event")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -152,7 +152,7 @@ struct HealthEventDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Date & Time", systemImage: "calendar")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(formattedDate)
                 .font(.body)
@@ -167,7 +167,7 @@ struct HealthEventDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Photos (\(event.event.photos.count))", systemImage: "photo")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             if event.event.photos.count == 1 {
                 // Single photo - show larger
@@ -245,7 +245,7 @@ struct HealthEventDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Notes", systemImage: "note.text")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(notes)
                 .font(.body)
@@ -260,12 +260,12 @@ struct HealthEventDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Details", systemImage: "info.circle")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Created")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Text(Formatters.shortDate.string(from: event.event.createdAt))
                 }

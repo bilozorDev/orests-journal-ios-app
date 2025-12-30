@@ -47,7 +47,8 @@ enum APIError: Error, LocalizedError {
 
 // MARK: - API Client
 
-class APIClient: APIClientProtocol {
+@MainActor
+final class APIClient: APIClientProtocol {
     static let shared = APIClient()
 
     private let session: URLSession
@@ -400,10 +401,10 @@ class APIClient: APIClientProtocol {
             queryItems.append(URLQueryItem(name: "category", value: category))
         }
         if let since = since {
-            queryItems.append(URLQueryItem(name: "since", value: ISO8601DateFormatter().string(from: since)))
+            queryItems.append(URLQueryItem(name: "since", value: Formatters.iso8601.string(from: since)))
         }
         if let until = until {
-            queryItems.append(URLQueryItem(name: "until", value: ISO8601DateFormatter().string(from: until)))
+            queryItems.append(URLQueryItem(name: "until", value: Formatters.iso8601.string(from: until)))
         }
         let response: HealthEventListResponse = try await get("/health/pet/\(petId.uuidString.lowercased())/events", queryItems: queryItems)
         return response.events

@@ -122,7 +122,9 @@ final class PersistentCacheManager {
                 try jsonData.write(to: fileURL, options: .atomic)
             }.value
         } catch {
+            #if DEBUG
             print("PersistentCache: Failed to save \(key.fileName): \(error)")
+            #endif
         }
     }
 
@@ -140,14 +142,18 @@ final class PersistentCacheManager {
 
             // Check cache version
             guard cached.cacheVersion == currentCacheVersion else {
+                #if DEBUG
                 print("PersistentCache: Version mismatch for \(key.fileName), deleting")
+                #endif
                 await delete(forKey: key)
                 return nil
             }
 
             // Check max age
             guard Date().timeIntervalSince(cached.timestamp) < maxCacheAge else {
+                #if DEBUG
                 print("PersistentCache: Cache expired for \(key.fileName), deleting")
+                #endif
                 await delete(forKey: key)
                 return nil
             }
@@ -156,7 +162,9 @@ final class PersistentCacheManager {
         } catch {
             // File doesn't exist or is corrupted - this is normal for first run
             if (error as NSError).code != NSFileReadNoSuchFileError {
+                #if DEBUG
                 print("PersistentCache: Failed to load \(key.fileName): \(error)")
+                #endif
                 // Delete corrupted file
                 await delete(forKey: key)
             }
@@ -175,7 +183,9 @@ final class PersistentCacheManager {
         } catch {
             // Ignore file not found errors
             if (error as NSError).code != NSFileNoSuchFileError {
+                #if DEBUG
                 print("PersistentCache: Failed to delete \(key.fileName): \(error)")
+                #endif
             }
         }
     }
@@ -191,7 +201,9 @@ final class PersistentCacheManager {
             }.value
             createCacheDirectoryIfNeeded()
         } catch {
+            #if DEBUG
             print("PersistentCache: Failed to clear all caches: \(error)")
+            #endif
         }
     }
 
@@ -229,7 +241,9 @@ final class PersistentCacheManager {
                 }
             }.value
         } catch {
+            #if DEBUG
             print("PersistentCache: Failed to delete files matching \(prefix): \(error)")
+            #endif
         }
     }
 
@@ -280,7 +294,9 @@ final class PersistentCacheManager {
             do {
                 try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
             } catch {
+                #if DEBUG
                 print("PersistentCache: Failed to create cache directory: \(error)")
+                #endif
             }
         }
     }

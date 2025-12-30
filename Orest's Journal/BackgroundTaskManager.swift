@@ -30,7 +30,9 @@ final class BackgroundTaskManager {
         ) { task in
             self.handleAppRefresh(task: task as! BGAppRefreshTask)
         }
+        #if DEBUG
         print("BackgroundTaskManager: Registered background refresh task")
+        #endif
     }
 
     /// Schedule the next background refresh. Call when app enters background.
@@ -40,22 +42,30 @@ final class BackgroundTaskManager {
 
         do {
             try BGTaskScheduler.shared.submit(request)
+            #if DEBUG
             print("BackgroundTaskManager: Scheduled background refresh for ~\(Int(minimumRefreshInterval/60)) minutes")
+            #endif
         } catch {
+            #if DEBUG
             print("BackgroundTaskManager: Failed to schedule background refresh: \(error)")
+            #endif
         }
     }
 
     /// Cancel any pending background refresh tasks
     func cancelPendingRefresh() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshIdentifier)
+        #if DEBUG
         print("BackgroundTaskManager: Cancelled pending background refresh")
+        #endif
     }
 
     // MARK: - Private Methods
 
     private func handleAppRefresh(task: BGAppRefreshTask) {
+        #if DEBUG
         print("BackgroundTaskManager: Starting background refresh")
+        #endif
 
         // Schedule the next refresh first
         scheduleAppRefresh()
@@ -67,14 +77,18 @@ final class BackgroundTaskManager {
 
         // Handle task expiration
         task.expirationHandler = {
+            #if DEBUG
             print("BackgroundTaskManager: Background task expired, cancelling")
+            #endif
             refreshTask.cancel()
         }
 
         // Complete the task when refresh finishes
         Task {
             await refreshTask.value
+            #if DEBUG
             print("BackgroundTaskManager: Background refresh completed")
+            #endif
             task.setTaskCompleted(success: true)
         }
     }

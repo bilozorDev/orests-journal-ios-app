@@ -37,7 +37,7 @@ struct EditMemberRoleSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "person.circle.fill")
                             .font(.title)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(member.displayName)
@@ -46,7 +46,7 @@ struct EditMemberRoleSheet: View {
                             if let email = member.email {
                                 Text(email)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -58,7 +58,7 @@ struct EditMemberRoleSheet: View {
                         ForEach(roles, id: \.self) { role in
                             HStack {
                                 Image(systemName: role == "admin" ? "star.fill" : "person.fill")
-                                    .foregroundColor(role == "admin" ? .orange : .blue)
+                                    .foregroundStyle(role == "admin" ? .orange : .blue)
                                 Text(role.capitalized)
                             }
                             .tag(role)
@@ -76,11 +76,11 @@ struct EditMemberRoleSheet: View {
                                 .fontWeight(.medium)
                         } icon: {
                             Image(systemName: "star.fill")
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                         }
                         Text("Can manage family members, change roles, and remove members")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
 
@@ -90,11 +90,11 @@ struct EditMemberRoleSheet: View {
                                 .fontWeight(.medium)
                         } icon: {
                             Image(systemName: "person.fill")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                         }
                         Text("Can view and record pet activities but cannot manage family members")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 } header: {
@@ -104,7 +104,7 @@ struct EditMemberRoleSheet: View {
                 if let error = errorMessage {
                     Section {
                         Text(error)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .font(.caption)
                     }
                 }

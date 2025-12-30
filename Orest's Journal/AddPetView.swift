@@ -21,7 +21,7 @@ struct AddPetView: View {
     let petKinds = ["Dog", "Cat", "Bird", "Rabbit", "Hamster", "Guinea Pig", "Other"]
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Form {
                     Section(header: Text("Pet Information")) {
@@ -46,7 +46,7 @@ struct AddPetView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(maxHeight: 200)
-                                    .cornerRadius(10)
+                                    .clipShape(.rect(cornerRadius: 10))
                             } else {
                                 Label("Select Photo", systemImage: "photo")
                             }
@@ -69,7 +69,7 @@ struct AddPetView: View {
                     if let error = errorMessage {
                         Section {
                             Text(error)
-                                .foregroundColor(.red)
+                                .foregroundStyle(.red)
                                 .font(.caption)
                         }
                     }
@@ -85,7 +85,7 @@ struct AddPetView: View {
                             Button(action: savePet) {
                                 Text("Add Pet")
                                     .frame(maxWidth: .infinity)
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                             }
                             .disabled(!isFormValid)
                         }
@@ -101,7 +101,9 @@ struct AddPetView: View {
                             NotificationCenter.default.post(name: NSNotification.Name("RefreshFamilyStatus"), object: nil)
                         }
                     } catch {
+                        #if DEBUG
                         print("Error checking pet status: \(error)")
+                        #endif
                     }
                 }
 
@@ -112,7 +114,7 @@ struct AddPetView: View {
                         Spacer()
                         Button(action: signOut) {
                             Image(systemName: "rectangle.portrait.and.arrow.right")
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .padding()
                                 .background(Color.red)
                                 .clipShape(Circle())

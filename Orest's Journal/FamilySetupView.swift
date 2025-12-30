@@ -42,7 +42,7 @@ struct FamilySetupView: View {
 
             Image(systemName: "house.fill")
                 .font(.system(size: 80))
-                .foregroundColor(.blue)
+                .foregroundStyle(.blue)
 
             Text("Setup Your Family")
                 .font(.largeTitle)
@@ -50,7 +50,7 @@ struct FamilySetupView: View {
 
             Text("Create a new family or join an existing one")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
@@ -65,8 +65,8 @@ struct FamilySetupView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .foregroundStyle(.white)
+                    .clipShape(.rect(cornerRadius: 12))
                 }
                 .accessibilityIdentifier(AccessibilityIdentifier.createFamilyButton)
 
@@ -78,8 +78,8 @@ struct FamilySetupView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .foregroundStyle(.white)
+                    .clipShape(.rect(cornerRadius: 12))
                 }
                 .accessibilityIdentifier(AccessibilityIdentifier.joinFamilyButton)
             }
@@ -108,7 +108,7 @@ struct FamilySetupView: View {
             if let error = errorMessage {
                 Section {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                         .font(.caption)
                 }
             }
@@ -124,7 +124,7 @@ struct FamilySetupView: View {
                     Button(action: createFamily) {
                         Text("Create Family")
                             .frame(maxWidth: .infinity)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                     }
                     .disabled(familyName.isEmpty)
                     .accessibilityIdentifier(AccessibilityIdentifier.submitCreateFamilyButton)
@@ -161,7 +161,7 @@ struct FamilySetupView: View {
             if let error = errorMessage {
                 Section {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                         .font(.caption)
                 }
             }
@@ -177,7 +177,7 @@ struct FamilySetupView: View {
                     Button(action: joinFamily) {
                         Text("Join Family")
                             .frame(maxWidth: .infinity)
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                     }
                     .disabled(inviteCode.isEmpty)
                     .accessibilityIdentifier(AccessibilityIdentifier.submitJoinFamilyButton)
