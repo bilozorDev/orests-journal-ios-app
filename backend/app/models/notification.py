@@ -72,6 +72,7 @@ class NotificationPreference(Base):
     medication_created = Column(Boolean, default=True, nullable=False)
     medication_updated = Column(Boolean, default=True, nullable=False)
     medication_archived = Column(Boolean, default=True, nullable=False)
+    dose_administered = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

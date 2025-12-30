@@ -279,3 +279,73 @@ struct MedicationDeleteResponse: Codable {
     let archived: Bool
     let message: String
 }
+
+// MARK: - Dose Types
+
+/// A recorded dose of a medication
+struct MedicationDose: Codable, Identifiable, Hashable {
+    let id: UUID
+    let medicationId: UUID
+    let givenAt: Date
+    let givenBy: String  // Formatted user name
+    let notes: String?
+    let createdAt: Date
+
+    /// Formatted relative time string (e.g., "2 hours ago")
+    var relativeTimeString: String {
+        Formatters.relativeDateTime.localizedString(for: givenAt, relativeTo: Date())
+    }
+
+    /// Formatted date and time string
+    var formattedDateTime: String {
+        Formatters.mediumDateTime.string(from: givenAt)
+    }
+
+    /// Short formatted time string
+    var formattedTime: String {
+        Formatters.shortTime.string(from: givenAt)
+    }
+}
+
+/// Response containing a list of doses
+struct DoseListResponse: Codable {
+    let doses: [MedicationDose]
+    let total: Int
+}
+
+/// Dose with medication info for all-doses endpoint
+struct AllDoseDetail: Codable, Identifiable, Hashable {
+    let id: UUID
+    let medicationId: UUID
+    let medicationName: String
+    let petId: UUID
+    let givenAt: Date
+    let givenBy: String
+    let notes: String?
+    let createdAt: Date
+}
+
+/// Response for all doses for a pet
+struct AllDosesListResponse: Codable {
+    let doses: [AllDoseDetail]
+    let total: Int
+}
+
+/// DTO for creating a new dose
+struct DoseCreate: Encodable {
+    let medicationId: UUID
+    let notes: String?
+    let givenAt: Date?
+
+    init(medicationId: UUID, notes: String? = nil, givenAt: Date? = nil) {
+        self.medicationId = medicationId
+        self.notes = notes
+        self.givenAt = givenAt
+    }
+}
+
+/// DTO for updating a dose
+struct DoseUpdate: Encodable {
+    var givenAt: Date?
+    var notes: String?
+}

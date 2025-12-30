@@ -568,6 +568,36 @@ final class APIClient: APIClientProtocol {
     func deleteMedicationPhoto(medicationId: UUID, photoId: UUID) async throws {
         try await delete("/medications/\(medicationId.uuidString.lowercased())/photos/\(photoId.uuidString.lowercased())")
     }
+
+    // MARK: - Doses
+
+    func recordDose(_ dose: DoseCreate) async throws -> MedicationDose {
+        return try await post("/doses", body: dose)
+    }
+
+    func getDosesForMedication(medicationId: UUID, limit: Int = 50, offset: Int = 0) async throws -> DoseListResponse {
+        return try await get("/doses/medication/\(medicationId.uuidString.lowercased())?limit=\(limit)&offset=\(offset)")
+    }
+
+    func getTodaysDoses(medicationId: UUID, timezone: String = TimeZone.current.identifier) async throws -> DoseListResponse {
+        return try await get("/doses/medication/\(medicationId.uuidString.lowercased())/today?timezone=\(timezone)")
+    }
+
+    func getLastDose(medicationId: UUID) async throws -> MedicationDose {
+        return try await get("/doses/medication/\(medicationId.uuidString.lowercased())/last")
+    }
+
+    func getAllDosesForPet(petId: UUID, limit: Int = 50, offset: Int = 0) async throws -> AllDosesListResponse {
+        return try await get("/doses/all/\(petId.uuidString.lowercased())?limit=\(limit)&offset=\(offset)")
+    }
+
+    func updateDose(doseId: UUID, _ update: DoseUpdate) async throws -> MedicationDose {
+        return try await patch("/doses/\(doseId.uuidString.lowercased())", body: update)
+    }
+
+    func deleteDose(doseId: UUID) async throws {
+        try await delete("/doses/\(doseId.uuidString.lowercased())")
+    }
 }
 
 // MARK: - Request/Response Types
@@ -668,6 +698,7 @@ struct NotificationPreferences: Codable {
     var medicationCreated: Bool
     var medicationUpdated: Bool
     var medicationArchived: Bool
+    var doseAdministered: Bool
 
     /// All family-related preferences enabled
     var allFamilyUpdatesEnabled: Bool {
@@ -682,7 +713,7 @@ struct NotificationPreferences: Codable {
 
     /// All medication-related preferences enabled
     var allMedicationUpdatesEnabled: Bool {
-        medicationCreated && medicationUpdated && medicationArchived
+        medicationCreated && medicationUpdated && medicationArchived && doseAdministered
     }
 
     /// Default preferences (all enabled)
@@ -699,7 +730,8 @@ struct NotificationPreferences: Codable {
             petDeleted: true,
             medicationCreated: true,
             medicationUpdated: true,
-            medicationArchived: true
+            medicationArchived: true,
+            doseAdministered: true
         )
     }
 
@@ -719,6 +751,7 @@ struct NotificationPreferences: Codable {
         medicationCreated = try container.decodeIfPresent(Bool.self, forKey: .medicationCreated) ?? true
         medicationUpdated = try container.decodeIfPresent(Bool.self, forKey: .medicationUpdated) ?? true
         medicationArchived = try container.decodeIfPresent(Bool.self, forKey: .medicationArchived) ?? true
+        doseAdministered = try container.decodeIfPresent(Bool.self, forKey: .doseAdministered) ?? true
     }
 
     // Memberwise initializer
@@ -734,7 +767,8 @@ struct NotificationPreferences: Codable {
         petDeleted: Bool,
         medicationCreated: Bool,
         medicationUpdated: Bool,
-        medicationArchived: Bool
+        medicationArchived: Bool,
+        doseAdministered: Bool
     ) {
         self.familyMemberJoined = familyMemberJoined
         self.familyRoleChanged = familyRoleChanged
@@ -748,6 +782,7 @@ struct NotificationPreferences: Codable {
         self.medicationCreated = medicationCreated
         self.medicationUpdated = medicationUpdated
         self.medicationArchived = medicationArchived
+        self.doseAdministered = doseAdministered
     }
 }
 
@@ -764,4 +799,5 @@ struct NotificationPreferencesUpdate: Encodable {
     var medicationCreated: Bool?
     var medicationUpdated: Bool?
     var medicationArchived: Bool?
+    var doseAdministered: Bool?
 }

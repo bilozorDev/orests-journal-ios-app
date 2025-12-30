@@ -23,6 +23,12 @@ struct MedicationDetailView: View {
     @State private var showError = false
     @State private var errorMessage = ""
 
+    // Dose tracking
+    @State private var showRecordDoseSheet = false
+    @State private var recentDoses: [MedicationDose] = []
+    @State private var lastDose: MedicationDose?
+    @State private var isLoadingDoses = false
+
     private let dataService = DataService.shared
 
     var body: some View {
@@ -30,6 +36,16 @@ struct MedicationDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Header with name and type
                 headerSection
+
+                // Dose recording (only for non-archived)
+                if !medication.isArchived {
+                    doseRecordingSection
+                }
+
+                // Recent doses
+                if !recentDoses.isEmpty || lastDose != nil {
+                    recentDosesSection
+                }
 
                 // Schedule info
                 scheduleSection
@@ -88,6 +104,19 @@ struct MedicationDetailView: View {
                 medication = updated
                 onUpdate(updated)
             }
+        }
+        .sheet(isPresented: $showRecordDoseSheet) {
+            RecordDoseSheet(
+                medication: medication,
+                petName: pet.name,
+                orgId: pet.orgId,
+                onDoseRecorded: {
+                    Task { await loadRecentDoses() }
+                }
+            )
+        }
+        .task {
+            await loadRecentDoses()
         }
         .fullScreenCover(isPresented: $showFullScreenPhoto) {
             if let photos = medication.photos {
@@ -326,6 +355,120 @@ struct MedicationDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    private var doseRecordingSection: some View {
+        VStack(spacing: 12) {
+            Button {
+                showRecordDoseSheet = true
+            } label: {
+                HStack {
+                    Image(systemName: "pills.fill")
+                        .font(.title3)
+                    Text("Record Dose")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.accentColor)
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
+            if let lastDose = lastDose {
+                HStack {
+                    Image(systemName: "clock")
+                        .foregroundColor(.secondary)
+                    Text("Last given: \(lastDose.relativeTimeString)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    if lastDose.givenBy != "You" {
+                        Text("by \(lastDose.givenBy)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var recentDosesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Recent Doses", systemImage: "list.bullet.clipboard")
+                    .font(.headline)
+
+                Spacer()
+
+                NavigationLink {
+                    DoseHistoryView(
+                        medication: medication,
+                        petName: pet.name,
+                        orgId: pet.orgId
+                    )
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("View All")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.accentColor)
+                }
+            }
+
+            if isLoadingDoses {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else if recentDoses.isEmpty {
+                Text("No doses recorded yet")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(recentDoses.prefix(5)) { dose in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(formatDoseDate(dose.givenAt))
+                                    .font(.subheadline)
+                                Text(dose.givenBy)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Text(dose.formattedTime)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+
+                        if dose.id != recentDoses.prefix(5).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func formatDoseDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            return Formatters.shortDate.string(from: date)
+        }
+    }
+
     // MARK: - Computed Properties
 
     private var statusText: String {
@@ -353,6 +496,22 @@ struct MedicationDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func loadRecentDoses() async {
+        isLoadingDoses = true
+        defer { isLoadingDoses = false }
+
+        do {
+            // Load last dose
+            lastDose = try await dataService.getLastDose(medicationId: medication.id)
+
+            // Load recent doses
+            recentDoses = try await dataService.getDosesForMedication(medicationId: medication.id, limit: 10)
+        } catch {
+            // Silently fail - not critical
+            print("Failed to load doses: \(error)")
+        }
+    }
 
     private func deleteMedication() async {
         isDeleting = true

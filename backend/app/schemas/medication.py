@@ -144,6 +144,7 @@ class DoseDetailResponse(BaseModel):
 
 class DoseListResponse(BaseModel):
     doses: list[DoseDetailResponse]
+    total: int = 0  # Total count for pagination
 
 
 class MedicationDeleteResponse(BaseModel):

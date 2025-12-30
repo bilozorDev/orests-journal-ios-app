@@ -59,6 +59,7 @@ def create_mock_notification_preferences(
     medication_created: bool = True,
     medication_updated: bool = True,
     medication_archived: bool = True,
+    dose_administered: bool = True,
 ) -> MagicMock:
     """Create a mock NotificationPreference object."""
     prefs = MagicMock()
@@ -76,6 +77,7 @@ def create_mock_notification_preferences(
     prefs.medication_created = medication_created
     prefs.medication_updated = medication_updated
     prefs.medication_archived = medication_archived
+    prefs.dose_administered = dose_administered
     prefs.created_at = datetime(2024, 1, 1)
     prefs.updated_at = datetime(2024, 1, 1)
     return prefs

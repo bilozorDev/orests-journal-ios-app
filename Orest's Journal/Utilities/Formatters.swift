@@ -36,16 +36,38 @@ enum Formatters {
         return formatter
     }()
 
+    /// Medium date with short time (e.g., "Dec 17, 2025, 3:30 PM")
+    static let mediumDateTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    /// Short time only (e.g., "3:30 PM")
+    static let shortTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    /// Relative date/time (e.g., "2 hours ago")
+    static let relativeDateTime: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    /// Month and year (e.g., "December 2025")
+    static let monthYear: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+
     static func formatWeight(_ weight: Double) -> String {
         Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }
-
-    /// ISO8601 formatter for API date encoding
-    static let iso8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
 
     /// Formats a display name from first/last name components.
     /// Returns "FirstName L." format if both names provided, just firstName if no lastName,

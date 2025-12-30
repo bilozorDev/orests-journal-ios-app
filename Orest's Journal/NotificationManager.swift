@@ -215,7 +215,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             // Pet changes from other family members - refresh pets list
             DataService.shared.invalidatePetsCache()
             NavigationManager.shared.requestFamilyRefresh()
-        case "medication_created", "medication_updated", "medication_archived":
+        case "medication_created", "medication_updated", "medication_archived", "dose_administered":
             // Medication changes from other family members - refresh medications list
             DataService.shared.invalidateAllMedicationsCaches()
             NavigationManager.shared.requestTabRefresh(.medication)
@@ -266,8 +266,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             Task { @MainActor in
                 NavigationManager.shared.selectedTab = .medication
             }
-        case "medication_created", "medication_updated", "medication_archived":
-            // Navigate to medication tab for CRUD notifications
+        case "medication_created", "medication_updated", "medication_archived", "dose_administered":
+            // Navigate to medication tab for CRUD and dose notifications
             Task { @MainActor in
                 NavigationManager.shared.selectedTab = .medication
                 NavigationManager.shared.requestTabRefresh(.medication)

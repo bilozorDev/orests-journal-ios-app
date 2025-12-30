@@ -28,6 +28,10 @@ struct MedicationsView: View {
     @State private var showPetPickerForAdd = false
     @State private var showArchived = false
 
+    // Dose recording
+    @State private var medicationForDose: Medication?
+    @State private var showRecordDoseSheet = false
+
     @AppStorage("medication_selected_pet_id") private var savedPetId: String = ""
 
     private let dataService = DataService.shared
@@ -102,6 +106,19 @@ struct MedicationsView: View {
                             await loadMedications(forceRefresh: true)
                         }
                     }
+                }
+            }
+            .sheet(isPresented: $showRecordDoseSheet) {
+                if let medication = medicationForDose,
+                   let pet = petForMedication(medication) {
+                    RecordDoseSheet(
+                        medication: medication,
+                        petName: pet.name,
+                        orgId: pet.orgId,
+                        onDoseRecorded: {
+                            // No need to refresh the list, dose is recorded
+                        }
+                    )
                 }
             }
             .confirmationDialog(
@@ -269,13 +286,34 @@ struct MedicationsView: View {
             }
 
             // Archived medications section (if showing)
-            if showArchived && !archivedMedications.isEmpty {
-                Section {
-                    ForEach(archivedMedications) { medication in
-                        medicationRow(medication)
+            if showArchived {
+                if !archivedMedications.isEmpty {
+                    Section {
+                        ForEach(archivedMedications) { medication in
+                            medicationRow(medication)
+                        }
+                    } header: {
+                        sectionHeader("Archived", count: archivedMedications.count)
                     }
-                } header: {
-                    sectionHeader("Archived", count: archivedMedications.count)
+                } else {
+                    // Empty archived state
+                    Section {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 8) {
+                                Image(systemName: "archivebox")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("No archived medications")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 20)
+                            Spacer()
+                        }
+                    } header: {
+                        sectionHeader("Archived", count: 0)
+                    }
                 }
             }
         }
@@ -294,6 +332,17 @@ struct MedicationsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(medication.name), \(medication.intervalDescription)")
         .accessibilityHint("Double tap to view details")
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if !medication.isArchived {
+                Button {
+                    medicationForDose = medication
+                    showRecordDoseSheet = true
+                } label: {
+                    Label("Dose", systemImage: "pills.fill")
+                }
+                .tint(.green)
+            }
+        }
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {

@@ -48,7 +48,7 @@ struct NotificationPreferencesView: View {
                     // Medication Updates Toggle
                     preferenceCard(
                         title: "Medication Updates",
-                        subtitle: "Medications added, updated, or archived",
+                        subtitle: "Medications added, updated, archived, and doses recorded",
                         icon: "pills.fill",
                         iconColor: .green,
                         isOn: Binding(
@@ -185,12 +185,14 @@ struct NotificationPreferencesView: View {
             preferences.medicationCreated = enabled
             preferences.medicationUpdated = enabled
             preferences.medicationArchived = enabled
+            preferences.doseAdministered = enabled
 
             do {
                 let update = NotificationPreferencesUpdate(
                     medicationCreated: enabled,
                     medicationUpdated: enabled,
-                    medicationArchived: enabled
+                    medicationArchived: enabled,
+                    doseAdministered: enabled
                 )
                 preferences = try await APIClient.shared.updateNotificationPreferences(update)
             } catch {

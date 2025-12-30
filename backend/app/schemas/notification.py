@@ -71,6 +71,7 @@ class NotificationPreferencesUpdate(BaseModel):
     medication_created: Optional[bool] = None
     medication_updated: Optional[bool] = None
     medication_archived: Optional[bool] = None
+    dose_administered: Optional[bool] = None
 
 
 class NotificationPreferencesResponse(BaseModel):
@@ -94,3 +95,4 @@ class NotificationPreferencesResponse(BaseModel):
     medication_created: bool
     medication_updated: bool
     medication_archived: bool
+    dose_administered: bool

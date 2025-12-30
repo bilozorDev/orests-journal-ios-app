@@ -27,6 +27,7 @@ NOTIFICATION_TYPE_TO_PREF = {
     "medication_created": "medication_created",
     "medication_updated": "medication_updated",
     "medication_archived": "medication_archived",
+    "dose_administered": "dose_administered",
 }
 
 

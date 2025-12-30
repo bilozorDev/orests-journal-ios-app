@@ -693,6 +693,91 @@ final class DataService {
         invalidateMedicationsCache(for: orgId.lowercased())
     }
 
+    // MARK: - Doses
+
+    /// Record a dose for a medication. If offline, queues for later sync.
+    /// - Returns: The recorded dose if online, nil if queued for offline sync
+    @discardableResult
+    func recordDose(
+        medicationId: UUID,
+        notes: String? = nil,
+        givenAt: Date? = nil,
+        orgId: String
+    ) async throws -> MedicationDose? {
+        let offlineQueue = await OfflineDoseQueue.shared
+
+        // Check if online
+        if await offlineQueue.isOnline {
+            let doseCreate = DoseCreate(
+                medicationId: medicationId,
+                notes: notes,
+                givenAt: givenAt
+            )
+            let result = try await api.recordDose(doseCreate)
+            invalidateMedicationsCache(for: orgId.lowercased())
+            return result
+        } else {
+            // Queue for later
+            await offlineQueue.queueDose(
+                medicationId: medicationId,
+                givenAt: givenAt ?? Date(),
+                notes: notes
+            )
+            return nil
+        }
+    }
+
+    /// Get dose history for a medication
+    func getDosesForMedication(medicationId: UUID, limit: Int = 50, offset: Int = 0) async throws -> [MedicationDose] {
+        let response = try await api.getDosesForMedication(medicationId: medicationId, limit: limit, offset: offset)
+        return response.doses
+    }
+
+    /// Get doses for a medication with pagination info (total count)
+    func getDosesForMedicationPaginated(medicationId: UUID, limit: Int = 50, offset: Int = 0) async throws -> DoseListResponse {
+        return try await api.getDosesForMedication(medicationId: medicationId, limit: limit, offset: offset)
+    }
+
+    /// Get today's doses for a medication
+    func getTodaysDoses(medicationId: UUID) async throws -> [MedicationDose] {
+        let response = try await api.getTodaysDoses(medicationId: medicationId)
+        return response.doses
+    }
+
+    /// Get the most recent dose for a medication
+    func getLastDose(medicationId: UUID) async throws -> MedicationDose? {
+        do {
+            return try await api.getLastDose(medicationId: medicationId)
+        } catch {
+            // 404 means no doses recorded - return nil instead of throwing
+            if let apiError = error as? APIError, case .notFound = apiError {
+                return nil
+            }
+            throw error
+        }
+    }
+
+    /// Get all doses for a pet across all medications
+    func getAllDosesForPet(petId: UUID, limit: Int = 50, offset: Int = 0) async throws -> AllDosesListResponse {
+        return try await api.getAllDosesForPet(petId: petId, limit: limit, offset: offset)
+    }
+
+    /// Update a dose (for correcting time or notes)
+    func updateDose(doseId: UUID, givenAt: Date? = nil, notes: String? = nil, orgId: String) async throws -> MedicationDose {
+        var update = DoseUpdate()
+        update.givenAt = givenAt
+        update.notes = notes
+        let result = try await api.updateDose(doseId: doseId, update)
+        invalidateMedicationsCache(for: orgId.lowercased())
+        return result
+    }
+
+    /// Delete a dose
+    func deleteDose(doseId: UUID, orgId: String) async throws {
+        try await api.deleteDose(doseId: doseId)
+        invalidateMedicationsCache(for: orgId.lowercased())
+    }
+
     // MARK: - Background Refresh
 
     func refreshAllDataInBackground() async {

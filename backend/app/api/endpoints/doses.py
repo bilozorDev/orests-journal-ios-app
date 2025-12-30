@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Dict
 from uuid import UUID
@@ -18,6 +19,10 @@ from app.schemas.medication import (
     AllDoseDetailResponse, AllDosesListResponse,
 )
 from app.cache.helpers import cache_delete_pattern
+from app.services.family_notifications import get_filtered_family_member_tokens
+from app.services.apns import apns_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -33,6 +38,49 @@ async def invalidate_dose_caches(db: AsyncSession, medication_id: UUID) -> None:
         await cache_delete_pattern(f"dashboard:{pet_id}:*")
 
 
+async def notify_family_dose_administered(
+    db: AsyncSession,
+    org_id: UUID,
+    exclude_user_id: UUID,
+    user_name: str,
+    pet_name: str,
+    medication_name: str,
+) -> None:
+    """Send push notification to family members when a dose is administered.
+
+    Args:
+        db: Database session
+        org_id: The family/organization ID
+        exclude_user_id: User ID to exclude (the user who gave the dose)
+        user_name: Name of the user who gave the dose
+        pet_name: Name of the pet
+        medication_name: Name of the medication
+    """
+    try:
+        tokens = await get_filtered_family_member_tokens(
+            db, org_id, exclude_user_id, "dose_administered"
+        )
+        if not tokens:
+            return
+
+        title = f"Dose Recorded: {pet_name}"
+        body = f"{user_name} gave {medication_name}"
+
+        await apns_service.send_to_multiple(
+            device_tokens=tokens,
+            title=title,
+            body=body,
+            data={
+                "type": "dose_administered",
+                "pet_name": pet_name,
+                "medication_name": medication_name,
+            },
+        )
+        logger.info(f"Sent dose_administered notification to {len(tokens)} devices")
+    except Exception as e:
+        logger.error(f"Failed to send dose_administered notification: {e}")
+
+
 @router.post("", response_model=DoseResponse, status_code=status.HTTP_201_CREATED)
 async def record_dose(
     dose_in: DoseCreate,
@@ -42,6 +90,22 @@ async def record_dose(
     """Record a medication dose."""
     # Verify user has access to this medication through family membership
     await verify_medication_access(db, user_id, dose_in.medication_id)
+
+    # Get medication with pet info for notification
+    med_query = (
+        select(PetMedication, Pet)
+        .join(Pet, PetMedication.pet_id == Pet.id)
+        .where(PetMedication.id == dose_in.medication_id)
+    )
+    med_result = await db.execute(med_query)
+    med_row = med_result.first()
+    medication = med_row[0]
+    pet = med_row[1]
+
+    # Get current user for notification
+    user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    current_user = user_result.scalar_one()
+    user_name = format_user_name(current_user.first_name, current_user.last_name)
 
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
@@ -55,6 +119,16 @@ async def record_dose(
 
     # Invalidate dashboard cache
     await invalidate_dose_caches(db, dose_in.medication_id)
+
+    # Notify other family members
+    await notify_family_dose_administered(
+        db=db,
+        org_id=pet.org_id,
+        exclude_user_id=UUID(user_id),
+        user_name=user_name,
+        pet_name=pet.name,
+        medication_name=medication.name,
+    )
 
     return DoseResponse.model_validate(dose)
 
@@ -78,17 +152,24 @@ async def get_user_name_map(db: AsyncSession, user_ids: set, current_user_id: st
 async def list_doses(
     medication_id: UUID,
     limit: int = Query(default=50, le=100),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List doses for a medication."""
+    """List doses for a medication with pagination."""
     # Verify user has access to this medication through family membership
     await verify_medication_access(db, user_id, medication_id)
+
+    # Get total count for pagination
+    count_query = select(func.count()).where(PetMedicationDose.medication_id == medication_id)
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
 
     query = (
         select(PetMedicationDose)
         .where(PetMedicationDose.medication_id == medication_id)
         .order_by(PetMedicationDose.given_at.desc())
+        .offset(offset)
         .limit(limit)
     )
     result = await db.execute(query)
@@ -111,7 +192,7 @@ async def list_doses(
         }
         dose_responses.append(DoseDetailResponse.model_validate(dose_dict))
 
-    return DoseListResponse(doses=dose_responses)
+    return DoseListResponse(doses=dose_responses, total=total)
 
 
 @router.get("/medication/{medication_id}/today", response_model=DoseListResponse)

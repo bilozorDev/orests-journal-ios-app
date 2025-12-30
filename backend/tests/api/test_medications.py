@@ -1490,12 +1490,25 @@ class TestDoseManagement:
             mock_medication, mock_pet, mock_membership
         )
 
+        # Business logic: medication + pet query for notification
+        med_pet_result = MagicMock()
+        med_pet_result.first.return_value = (mock_medication, mock_pet)
+
+        # Business logic: user query for notification name
+        mock_user = MagicMock()
+        mock_user.first_name = "Test"
+        mock_user.last_name = "User"
+        user_result = MagicMock()
+        user_result.scalar_one.return_value = mock_user
+
         # Business logic: get pet_id for cache invalidation
         pet_id_result = MagicMock()
         pet_id_result.scalar_one_or_none.return_value = pet_id
 
         mock_db_session.execute = AsyncMock(
             side_effect=auth_mocks + [
+                med_pet_result,
+                user_result,
                 pet_id_result,
             ]
         )
@@ -1507,7 +1520,8 @@ class TestDoseManagement:
 
         mock_db_session.add = mock_add
 
-        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+        with patch("app.api.endpoints.doses.cache_delete_pattern"), \
+             patch("app.api.endpoints.doses.notify_family_dose_administered", new_callable=AsyncMock):
             response = await client.post(
                 "/api/v1/doses",
                 json={
@@ -1551,11 +1565,24 @@ class TestDoseManagement:
             mock_medication, mock_pet, mock_membership
         )
 
+        # Business logic: medication + pet query for notification
+        med_pet_result = MagicMock()
+        med_pet_result.first.return_value = (mock_medication, mock_pet)
+
+        # Business logic: user query for notification name
+        mock_user = MagicMock()
+        mock_user.first_name = "Test"
+        mock_user.last_name = "User"
+        user_result = MagicMock()
+        user_result.scalar_one.return_value = mock_user
+
         pet_id_result = MagicMock()
         pet_id_result.scalar_one_or_none.return_value = pet_id
 
         mock_db_session.execute = AsyncMock(
             side_effect=auth_mocks + [
+                med_pet_result,
+                user_result,
                 pet_id_result,
             ]
         )
@@ -1567,7 +1594,8 @@ class TestDoseManagement:
 
         mock_db_session.add = mock_add
 
-        with patch("app.api.endpoints.doses.cache_delete_pattern"):
+        with patch("app.api.endpoints.doses.cache_delete_pattern"), \
+             patch("app.api.endpoints.doses.notify_family_dose_administered", new_callable=AsyncMock):
             response = await client.post(
                 "/api/v1/doses",
                 json={
@@ -1615,6 +1643,10 @@ class TestDoseManagement:
         )
 
         # Business logic
+        # Count query for pagination
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+
         # Doses query
         doses_result = MagicMock()
         doses_result.scalars.return_value.all.return_value = [mock_dose]
@@ -1625,6 +1657,7 @@ class TestDoseManagement:
 
         mock_db_session.execute = AsyncMock(
             side_effect=auth_mocks + [
+                count_result,
                 doses_result,
                 users_result,
             ]
@@ -1638,6 +1671,7 @@ class TestDoseManagement:
         assert response.status_code == 200
         data = response.json()
         assert len(data["doses"]) == 1
+        assert data["total"] == 1
         # Current user should show as "You"
         assert data["doses"][0]["given_by"] == "You"
 
@@ -1669,12 +1703,17 @@ class TestDoseManagement:
             mock_medication, mock_pet, mock_membership
         )
 
+        # Count query for pagination
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
         # Empty doses result
         doses_result = MagicMock()
         doses_result.scalars.return_value.all.return_value = []
 
         mock_db_session.execute = AsyncMock(
             side_effect=auth_mocks + [
+                count_result,
                 doses_result,
             ]
         )
@@ -1685,6 +1724,8 @@ class TestDoseManagement:
         )
 
         assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
 
     @pytest.mark.asyncio
     async def test_update_dose_success(

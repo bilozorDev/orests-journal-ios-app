@@ -343,6 +343,7 @@ class TestNotificationContract:
             medication_created=True,
             medication_updated=True,
             medication_archived=False,
+            dose_administered=True,
         )
 
         json_dict = prefs.model_dump(mode='json')
@@ -354,7 +355,7 @@ class TestNotificationContract:
 
     def test_notification_preferences_has_all_required_fields(self):
         """
-        iOS expects exactly 12 notification preference fields.
+        iOS expects exactly 13 notification preference fields.
 
         Adding/removing fields will break iOS decoding.
         """
@@ -371,6 +372,7 @@ class TestNotificationContract:
             medication_created=True,
             medication_updated=True,
             medication_archived=True,
+            dose_administered=True,
         )
 
         json_dict = prefs.model_dump(mode='json')
@@ -388,6 +390,7 @@ class TestNotificationContract:
             "medication_created",
             "medication_updated",
             "medication_archived",
+            "dose_administered",
         }
 
         actual_fields = set(json_dict.keys())
