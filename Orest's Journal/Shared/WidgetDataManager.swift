@@ -30,6 +30,17 @@ private enum WidgetDataKey {
     static let lastUpdated = "widget_last_updated"
 }
 
+// MARK: - Widget Formatters
+
+/// Static formatters to avoid recreating expensive DateFormatter instances
+private enum WidgetFormatters {
+    static let shortTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}
+
 // MARK: - Widget Data Models
 
 /// Simplified medication info for widget display
@@ -65,17 +76,13 @@ struct WidgetDoseInfo: Codable, Identifiable {
 
     /// Formatted time string
     var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: scheduledTime)
+        WidgetFormatters.shortTime.string(from: scheduledTime)
     }
 
     /// Formatted given time string
     var formattedGivenTime: String? {
         guard let givenAt else { return nil }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: givenAt)
+        return WidgetFormatters.shortTime.string(from: givenAt)
     }
 
     /// Relative time description (e.g., "in 2h 30m" or "30m ago")

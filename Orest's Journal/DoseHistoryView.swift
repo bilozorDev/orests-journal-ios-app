@@ -218,6 +218,7 @@ struct DoseHistoryView: View {
                 limit: pageSize,
                 offset: currentOffset
             )
+            guard !Task.isCancelled else { return }
             doses.append(contentsOf: response.doses)
             currentOffset += response.doses.count
             updateGroupedDosesCache()

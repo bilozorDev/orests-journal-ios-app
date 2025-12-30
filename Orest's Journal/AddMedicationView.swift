@@ -283,6 +283,7 @@ struct AddMedicationView: View {
                                             .background(Color.black.opacity(0.5))
                                             .clipShape(Circle())
                                     }
+                                    .accessibilityLabel("Remove photo")
                                     .offset(x: 4, y: -4)
                                 }
                             }
@@ -312,6 +313,7 @@ struct AddMedicationView: View {
                                         .background(Color.black.opacity(0.5))
                                         .clipShape(Circle())
                                 }
+                                .accessibilityLabel("Remove photo")
                                 .offset(x: 4, y: -4)
                             }
                         }
@@ -462,18 +464,36 @@ struct AddMedicationView: View {
 
                 _ = try await dataService.updateMedication(id: existing.id, update, orgId: pet.orgId)
 
-                // Handle photo deletions
+                // Handle photo deletions (track failures)
+                var photoErrors: [String] = []
                 for photoId in photosToDelete {
-                    try? await dataService.deleteMedicationPhoto(medicationId: existing.id, photoId: photoId, orgId: pet.orgId)
+                    do {
+                        try await dataService.deleteMedicationPhoto(medicationId: existing.id, photoId: photoId, orgId: pet.orgId)
+                    } catch {
+                        photoErrors.append("Failed to delete photo")
+                    }
                 }
 
-                // Upload new photos
+                // Upload new photos (track failures)
                 for photo in newPhotos {
-                    _ = try? await dataService.uploadMedicationPhoto(medicationId: existing.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                    do {
+                        _ = try await dataService.uploadMedicationPhoto(medicationId: existing.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                    } catch {
+                        photoErrors.append("Failed to upload photo")
+                    }
                 }
 
                 // Fetch updated medication with photos
                 let refreshed = try await dataService.getMedication(id: existing.id)
+
+                // Warn user if some photos failed but medication was saved
+                if !photoErrors.isEmpty {
+                    await MainActor.run {
+                        errorMessage = "Medication saved, but \(photoErrors.count) photo(s) failed to sync."
+                        showError = true
+                    }
+                }
+
                 onSave(refreshed)
             } else {
                 // Create new medication
@@ -496,13 +516,27 @@ struct AddMedicationView: View {
 
                 let created = try await dataService.createMedication(medication, orgId: pet.orgId)
 
-                // Upload photos
+                // Upload photos (track failures)
+                var photoUploadErrors = 0
                 for photo in newPhotos {
-                    _ = try? await dataService.uploadMedicationPhoto(medicationId: created.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                    do {
+                        _ = try await dataService.uploadMedicationPhoto(medicationId: created.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                    } catch {
+                        photoUploadErrors += 1
+                    }
                 }
 
                 // Fetch with photos
                 let refreshed = try await dataService.getMedication(id: created.id)
+
+                // Warn user if some photos failed but medication was created
+                if photoUploadErrors > 0 {
+                    await MainActor.run {
+                        errorMessage = "Medication created, but \(photoUploadErrors) photo(s) failed to upload."
+                        showError = true
+                    }
+                }
+
                 onSave(refreshed)
             }
 

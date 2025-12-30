@@ -203,29 +203,19 @@ async def list_medications(
             )
         )
 
+    # Eager load schedules to avoid N+1 queries
+    query = query.options(selectinload(PetMedication.schedules))
     query = query.order_by(PetMedication.created_at.desc())
     result = await db.execute(query)
     medications = result.scalars().all()
 
-    # Fetch scheduled times for all medications
-    med_ids = [m.id for m in medications]
-    schedules_by_med: dict[UUID, list] = {m.id: [] for m in medications}
-
-    if med_ids:
-        schedules_query = select(MedicationSchedule).where(
-            MedicationSchedule.medication_id.in_(med_ids)
-        )
-        schedules_result = await db.execute(schedules_query)
-        for schedule in schedules_result.scalars().all():
-            schedules_by_med[schedule.medication_id].append(
-                ScheduledTimeResponse.model_validate(schedule)
-            )
-
-    # Build response with scheduled times
+    # Build response with scheduled times from eager-loaded relationship
     response_items = []
     for m in medications:
         item = MedicationListItemResponse.model_validate(m)
-        item.scheduled_times = schedules_by_med.get(m.id, [])
+        item.scheduled_times = [
+            ScheduledTimeResponse.model_validate(s) for s in m.schedules
+        ]
         response_items.append(item)
 
     response_data = MedicationListResponse(medications=response_items)

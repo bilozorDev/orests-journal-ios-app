@@ -107,6 +107,10 @@ struct EditDoseSheet: View {
                 orgId: orgId
             )
 
+            // Haptic feedback on success
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+
             onDoseUpdated?()
             dismiss()
 

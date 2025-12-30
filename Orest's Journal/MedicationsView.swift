@@ -550,6 +550,7 @@ struct MedicationsView: View {
 
         Task {
             await loadMedications()
+            guard !Task.isCancelled else { return }
             isLoadingMedications = false
         }
     }
