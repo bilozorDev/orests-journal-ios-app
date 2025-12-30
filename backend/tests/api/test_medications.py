@@ -301,8 +301,12 @@ class TestListMedications:
         meds_result = MagicMock()
         meds_result.scalars.return_value.all.return_value = [mock_med1, mock_med2]
 
+        # Mock scheduled times query (returns empty list)
+        schedules_result = MagicMock()
+        schedules_result.scalars.return_value.all.return_value = []
+
         mock_db_session.execute = AsyncMock(
-            side_effect=[rls_result, membership_result, pets_result, meds_result]
+            side_effect=[rls_result, membership_result, pets_result, meds_result, schedules_result]
         )
 
         # Make request with mocked cache
@@ -319,6 +323,9 @@ class TestListMedications:
         assert len(data["medications"]) == 2
         assert data["medications"][0]["name"] == "Prednisone"
         assert data["medications"][1]["name"] == "Eye Drops"
+        # Verify scheduled_times is included in response
+        assert "scheduled_times" in data["medications"][0]
+        assert "scheduled_times" in data["medications"][1]
 
     @pytest.mark.asyncio
     async def test_list_medications_unauthorized_not_member(

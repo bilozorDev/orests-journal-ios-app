@@ -16,8 +16,8 @@ from app.models.medication import PetMedication, PetMedicationDose, PetMedicatio
 from app.models.notification import MedicationSchedule
 from app.schemas.medication import (
     MedicationCreate, MedicationUpdate, MedicationResponse, MedicationListResponse,
-    MedicationWithSchedulesResponse, ScheduledTimeResponse, MedicationDeleteResponse,
-    MedicationPhotoResponse,
+    MedicationListItemResponse, MedicationWithSchedulesResponse, ScheduledTimeResponse,
+    MedicationDeleteResponse, MedicationPhotoResponse,
 )
 from app.cache.helpers import cache_get, cache_set, cache_delete_pattern
 from app.cache.keys import key_medications, TTL_ACTIVE_MEDS
@@ -207,9 +207,28 @@ async def list_medications(
     result = await db.execute(query)
     medications = result.scalars().all()
 
-    response_data = MedicationListResponse(
-        medications=[MedicationResponse.model_validate(m) for m in medications]
-    )
+    # Fetch scheduled times for all medications
+    med_ids = [m.id for m in medications]
+    schedules_by_med: dict[UUID, list] = {m.id: [] for m in medications}
+
+    if med_ids:
+        schedules_query = select(MedicationSchedule).where(
+            MedicationSchedule.medication_id.in_(med_ids)
+        )
+        schedules_result = await db.execute(schedules_query)
+        for schedule in schedules_result.scalars().all():
+            schedules_by_med[schedule.medication_id].append(
+                ScheduledTimeResponse.model_validate(schedule)
+            )
+
+    # Build response with scheduled times
+    response_items = []
+    for m in medications:
+        item = MedicationListItemResponse.model_validate(m)
+        item.scheduled_times = schedules_by_med.get(m.id, [])
+        response_items.append(item)
+
+    response_data = MedicationListResponse(medications=response_items)
 
     # Cache the response (only for non-active queries)
     if not active_only:

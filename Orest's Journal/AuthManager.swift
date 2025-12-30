@@ -592,6 +592,8 @@ final class AuthManager {
         APIClient.shared.authToken = nil
         APIClient.shared.currentOrgId = nil
         NavigationManager.shared.reset()
+        // Clear widget data
+        WidgetDataManager.shared.clearWidgetData()
     }
 
     // MARK: - Keychain Operations

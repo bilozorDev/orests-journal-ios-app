@@ -31,6 +31,7 @@ struct MedicationsView: View {
     // Dose recording
     @State private var medicationForDose: Medication?
     @State private var showRecordDoseSheet = false
+    @State private var showMedicationPicker = false
 
     @AppStorage("medication_selected_pet_id") private var savedPetId: String = ""
 
@@ -99,12 +100,15 @@ struct MedicationsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showAddMedication) {
+            .sheet(isPresented: $showAddMedication, onDismiss: {
+                // Reload after sheet dismisses to ensure we have latest data
+                Task {
+                    await loadMedications(forceRefresh: true)
+                }
+            }) {
                 if let pet = selectedPet ?? pets.first {
                     AddMedicationView(pet: pet) { _ in
-                        Task {
-                            await loadMedications(forceRefresh: true)
-                        }
+                        // Sheet will dismiss and trigger onDismiss reload
                     }
                 }
             }
@@ -147,6 +151,30 @@ struct MedicationsView: View {
                         await loadMedications(forceRefresh: true)
                     }
                 }
+            }
+            .onChange(of: navigationManager.pendingDestination) { _, destination in
+                handlePendingDestination(destination)
+            }
+            .onAppear {
+                // Handle pending destination on appear (e.g., from quick action)
+                if let destination = navigationManager.pendingDestination {
+                    handlePendingDestination(destination)
+                }
+            }
+            .confirmationDialog(
+                "Select Medication",
+                isPresented: $showMedicationPicker,
+                titleVisibility: .visible
+            ) {
+                ForEach(activeMedications) { medication in
+                    Button(medicationPickerLabel(for: medication)) {
+                        medicationForDose = medication
+                        showRecordDoseSheet = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Which medication do you want to record a dose for?")
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
@@ -365,11 +393,50 @@ struct MedicationsView: View {
         pets.first { $0.id == medication.petId }?.name
     }
 
+    /// Label for medication picker - includes pet name if multiple pets
+    private func medicationPickerLabel(for medication: Medication) -> String {
+        if pets.count > 1, let petName = petName(for: medication) {
+            return "\(medication.name) (\(petName))"
+        }
+        return medication.name
+    }
+
     private func petForMedication(_ medication: Medication) -> Pet? {
         if let pet = selectedPet {
             return pet
         }
         return pets.first { $0.id == medication.petId }
+    }
+
+    private func handlePendingDestination(_ destination: AppDestination?) {
+        guard let destination = destination else { return }
+
+        switch destination {
+        case .recordDose:
+            // Only handle if we have medications loaded
+            guard !activeMedications.isEmpty else {
+                navigationManager.clearPendingDestination()
+                return
+            }
+
+            if activeMedications.count == 1 {
+                // Single medication: go directly to dose sheet
+                medicationForDose = activeMedications.first
+                showRecordDoseSheet = true
+            } else {
+                // Multiple medications: show picker
+                showMedicationPicker = true
+            }
+            navigationManager.clearPendingDestination()
+
+        case .medications:
+            // Already on medications tab, just clear
+            navigationManager.clearPendingDestination()
+
+        default:
+            // Not for us
+            break
+        }
     }
 
     // MARK: - Empty Views

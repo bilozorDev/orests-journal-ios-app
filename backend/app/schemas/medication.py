@@ -102,8 +102,13 @@ class MedicationWithSchedulesResponse(MedicationResponse):
     photos: list[MedicationPhotoResponse] = []
 
 
+class MedicationListItemResponse(MedicationResponse):
+    """Medication with scheduled times for list responses (without photos for efficiency)."""
+    scheduled_times: list[ScheduledTimeResponse] = []
+
+
 class MedicationListResponse(BaseModel):
-    medications: list[MedicationResponse]
+    medications: list[MedicationListItemResponse]
 
 
 # Dose Schemas

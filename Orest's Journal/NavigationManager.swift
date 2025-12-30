@@ -18,6 +18,8 @@ enum Tab: Int {
 
 enum AppDestination: Equatable {
     case familyManagement
+    case medications
+    case recordDose
 }
 
 @MainActor
@@ -37,6 +39,10 @@ final class NavigationManager {
         case .familyManagement:
             selectedTab = .settings
             familyRefreshTrigger += 1
+        case .medications:
+            selectedTab = .medication
+        case .recordDose:
+            selectedTab = .medication
         }
         pendingDestination = destination
     }

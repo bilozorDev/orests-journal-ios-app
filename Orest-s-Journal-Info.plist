@@ -31,5 +31,28 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos of your pet</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.notip.orests-journal.recordDose</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>pills.fill</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Record Dose</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Log a medication dose</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.notip.orests-journal.viewMedications</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>list.bullet.clipboard</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Medications</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>View all medications</string>
+		</dict>
+	</array>
 </dict>
 </plist>

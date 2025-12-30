@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EA2592F12F038E9F000064B9 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA2592F02F038E9F000064B9 /* WidgetKit.framework */; };
+		EA2592F32F038E9F000064B9 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA2592F22F038E9F000064B9 /* SwiftUI.framework */; };
+		EA2593002F038EA0000064B9 /* OrestsJournalWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EA2592EF2F038E9F000064B9 /* OrestsJournalWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		EA2592FE2F038EA0000064B9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EA87EFAF2E918B2B001CE4AD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EA2592EE2F038E9F000064B9;
+			remoteInfo = OrestsJournalWidgetExtension;
+		};
 		EA5242762EE9276A00828D92 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EA87EFAF2E918B2B001CE4AD /* Project object */;
@@ -23,13 +36,58 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		EA2593052F038EA0000064B9 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				EA2593002F038EA0000064B9 /* OrestsJournalWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		EA2592EF2F038E9F000064B9 /* OrestsJournalWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OrestsJournalWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		EA2592F02F038E9F000064B9 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		EA2592F22F038E9F000064B9 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		EA25930F2F038FF7000064B9 /* OrestsJournalWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OrestsJournalWidgetExtension.entitlements; sourceTree = "<group>"; };
 		EA5242702EE9276A00828D92 /* Orest's JournalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Orest's JournalUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Orest's Journal.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA87F0002E920000001CE4AD /* Orest's JournalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Orest's JournalTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EA2593012F038EA0000064B9 /* Exceptions for "OrestsJournalWidget" folder in "OrestsJournalWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EA2592EE2F038E9F000064B9 /* OrestsJournalWidgetExtension */;
+		};
+		EA25930C2F038FB3000064B9 /* Exceptions for "Orest's Journal" folder in "OrestsJournalWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Medication.swift,
+				Shared/WidgetDataManager.swift,
+				Utilities/Formatters.swift,
+			);
+			target = EA2592EE2F038E9F000064B9 /* OrestsJournalWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		EA2592F42F038E9F000064B9 /* OrestsJournalWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EA2593012F038EA0000064B9 /* Exceptions for "OrestsJournalWidget" folder in "OrestsJournalWidgetExtension" target */,
+			);
+			path = OrestsJournalWidget;
+			sourceTree = "<group>";
+		};
 		EA5242712EE9276A00828D92 /* Orest's JournalUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Orest's JournalUITests";
@@ -37,6 +95,9 @@
 		};
 		EA87EFB92E918B2B001CE4AD /* Orest's Journal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EA25930C2F038FB3000064B9 /* Exceptions for "Orest's Journal" folder in "OrestsJournalWidgetExtension" target */,
+			);
 			path = "Orest's Journal";
 			sourceTree = "<group>";
 		};
@@ -48,6 +109,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		EA2592EC2F038E9F000064B9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA2592F32F038E9F000064B9 /* SwiftUI.framework in Frameworks */,
+				EA2592F12F038E9F000064B9 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EA52426D2EE9276A00828D92 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -75,9 +145,11 @@
 		EA87EFAE2E918B2B001CE4AD = {
 			isa = PBXGroup;
 			children = (
+				EA25930F2F038FF7000064B9 /* OrestsJournalWidgetExtension.entitlements */,
 				EA87EFB92E918B2B001CE4AD /* Orest's Journal */,
 				EA87F0032E920000001CE4AD /* Orest's JournalTests */,
 				EA5242712EE9276A00828D92 /* Orest's JournalUITests */,
+				EA2592F42F038E9F000064B9 /* OrestsJournalWidget */,
 				EA87EFD42E918E92001CE4AD /* Frameworks */,
 				EA87EFB82E918B2B001CE4AD /* Products */,
 			);
@@ -89,6 +161,7 @@
 				EA87EFB72E918B2B001CE4AD /* Orest's Journal.app */,
 				EA87F0002E920000001CE4AD /* Orest's JournalTests.xctest */,
 				EA5242702EE9276A00828D92 /* Orest's JournalUITests.xctest */,
+				EA2592EF2F038E9F000064B9 /* OrestsJournalWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -96,6 +169,8 @@
 		EA87EFD42E918E92001CE4AD /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				EA2592F02F038E9F000064B9 /* WidgetKit.framework */,
+				EA2592F22F038E9F000064B9 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -103,6 +178,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		EA2592EE2F038E9F000064B9 /* OrestsJournalWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EA2593022F038EA0000064B9 /* Build configuration list for PBXNativeTarget "OrestsJournalWidgetExtension" */;
+			buildPhases = (
+				EA2592EB2F038E9F000064B9 /* Sources */,
+				EA2592EC2F038E9F000064B9 /* Frameworks */,
+				EA2592ED2F038E9F000064B9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EA2592F42F038E9F000064B9 /* OrestsJournalWidget */,
+			);
+			name = OrestsJournalWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = OrestsJournalWidgetExtension;
+			productReference = EA2592EF2F038E9F000064B9 /* OrestsJournalWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		EA52426F2EE9276A00828D92 /* Orest's JournalUITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = EA5242782EE9276A00828D92 /* Build configuration list for PBXNativeTarget "Orest's JournalUITests" */;
@@ -133,10 +230,12 @@
 				EA87EFB32E918B2B001CE4AD /* Sources */,
 				EA87EFB42E918B2B001CE4AD /* Frameworks */,
 				EA87EFB52E918B2B001CE4AD /* Resources */,
+				EA2593052F038EA0000064B9 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EA2592FF2F038EA0000064B9 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				EA87EFB92E918B2B001CE4AD /* Orest's Journal */,
@@ -178,9 +277,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2610;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
+					EA2592EE2F038E9F000064B9 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					EA52426F2EE9276A00828D92 = {
 						CreatedOnToolsVersion = 26.1.1;
 						TestTargetID = EA87EFB62E918B2B001CE4AD;
@@ -213,11 +315,19 @@
 				EA87EFB62E918B2B001CE4AD /* Orest's Journal */,
 				EA87EFFF2E920000001CE4AD /* Orest's JournalTests */,
 				EA52426F2EE9276A00828D92 /* Orest's JournalUITests */,
+				EA2592EE2F038E9F000064B9 /* OrestsJournalWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		EA2592ED2F038E9F000064B9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EA52426E2EE9276A00828D92 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -242,6 +352,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		EA2592EB2F038E9F000064B9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EA52426C2EE9276A00828D92 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -266,6 +383,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		EA2592FF2F038EA0000064B9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EA2592EE2F038E9F000064B9 /* OrestsJournalWidgetExtension */;
+			targetProxy = EA2592FE2F038EA0000064B9 /* PBXContainerItemProxy */;
+		};
 		EA5242772EE9276A00828D92 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = EA87EFB62E918B2B001CE4AD /* Orest's Journal */;
@@ -279,6 +401,72 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		EA2593032F038EA0000064B9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = OrestsJournalWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J7F9MRA4G4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OrestsJournalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OrestsJournalWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Notip.Orest-s-Journal.OrestsJournalWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EA2593042F038EA0000064B9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = OrestsJournalWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J7F9MRA4G4;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OrestsJournalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OrestsJournalWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Notip.Orest-s-Journal.OrestsJournalWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		EA5242792EE9276A00828D92 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -581,6 +769,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		EA2593022F038EA0000064B9 /* Build configuration list for PBXNativeTarget "OrestsJournalWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EA2593032F038EA0000064B9 /* Debug */,
+				EA2593042F038EA0000064B9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		EA5242782EE9276A00828D92 /* Build configuration list for PBXNativeTarget "Orest's JournalUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

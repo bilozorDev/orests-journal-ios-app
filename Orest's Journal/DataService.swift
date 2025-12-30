@@ -665,6 +665,7 @@ final class DataService {
         let result = try await api.createMedication(medication)
         invalidateMedicationsCache(for: orgId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
+        Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
@@ -672,6 +673,7 @@ final class DataService {
         let result = try await api.updateMedication(id: id, update)
         invalidateMedicationsCache(for: orgId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
+        Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
@@ -679,6 +681,7 @@ final class DataService {
         let result = try await api.deleteMedication(id: id)
         invalidateMedicationsCache(for: orgId.lowercased())
         NavigationManager.shared.requestTabRefresh(.medication)
+        Task { [self] in await syncMedicationsToWidget() }
         return result
     }
 
@@ -715,6 +718,12 @@ final class DataService {
             )
             let result = try await api.recordDose(doseCreate)
             invalidateMedicationsCache(for: orgId.lowercased())
+
+            // Sync widget after dose recorded
+            Task { [self] in
+                await syncMedicationsToWidget()
+            }
+
             return result
         } else {
             // Queue for later
@@ -794,6 +803,80 @@ final class DataService {
     func prefetchDataOnForeground() {
         Task {
             _ = try? await getPets(forceRefresh: false)
+            // Sync widget data
+            await syncMedicationsToWidget()
+        }
+    }
+
+    // MARK: - Widget Sync
+
+    /// Sync medication data to the widget via App Group
+    func syncMedicationsToWidget() async {
+        do {
+            let pets = try await getPets(forceRefresh: false)
+            guard !pets.isEmpty, let orgId = pets.first?.orgId else {
+                WidgetDataManager.shared.clearWidgetData()
+                return
+            }
+
+            // Force refresh to ensure we have latest data with scheduled_times
+            let medications = try await getMedications(for: orgId, includeArchived: false, forceRefresh: true)
+
+            #if DEBUG
+            print("📱 [Widget] Processing \(medications.count) medications")
+            #endif
+
+            // Build dose info for all scheduled medications
+            var allDoses: [WidgetDoseInfo] = []
+
+            for medication in medications {
+                #if DEBUG
+                let hasScheduledTimes = medication.scheduledTimes?.isEmpty == false
+                print("📱 [Widget] \(medication.name): asNeeded=\(medication.isAsNeeded), archived=\(medication.isArchived), active=\(medication.isActive), hasScheduledTimes=\(hasScheduledTimes)")
+                #endif
+
+                guard !medication.isAsNeeded,
+                      !medication.isArchived,
+                      medication.isActive else {
+                    #if DEBUG
+                    print("   ↳ Skipped (failed guard)")
+                    #endif
+                    continue
+                }
+
+                // Find pet name for this medication
+                let petName = pets.first { $0.id == medication.petId }?.name ?? "Pet"
+
+                // Calculate next dose times
+                let doses = WidgetDataManager.calculateNextDoseTimes(
+                    for: medication,
+                    petName: petName,
+                    maxCount: 3
+                )
+
+                #if DEBUG
+                print("   ↳ Generated \(doses.count) dose times")
+                #endif
+
+                allDoses.append(contentsOf: doses)
+            }
+
+            // Sort by scheduled time and take top doses
+            let sortedDoses = allDoses
+                .sorted { $0.scheduledTime < $1.scheduledTime }
+                .prefix(5)
+                .map { $0 }
+
+            WidgetDataManager.shared.updateNextDoses(sortedDoses)
+
+            #if DEBUG
+            print("📱 [Widget] Synced \(sortedDoses.count) upcoming doses")
+            #endif
+
+        } catch {
+            #if DEBUG
+            print("📱 [Widget] Sync failed: \(error)")
+            #endif
         }
     }
 }

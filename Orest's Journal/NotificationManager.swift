@@ -126,6 +126,17 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
+    // Configure scene delegate for quick actions
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = SceneDelegate.self
+        return config
+    }
+
     // Called when APNs successfully registers and provides device token
     func application(
         _ application: UIApplication,
