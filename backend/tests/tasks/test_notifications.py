@@ -13,7 +13,7 @@ Tests cover:
 All external dependencies (Celery, database, APNS, asyncio) are mocked for isolated unit testing.
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from uuid import uuid4, UUID
@@ -51,13 +51,13 @@ TEST_DEVICE_TOKEN_2 = "b" * 64
 
 def create_mock_pet(
     pet_id: UUID = TEST_PET_ID,
-    org_id: UUID = TEST_FAMILY_ID,
+    family_id: UUID = TEST_FAMILY_ID,
     name: str = "Buddy",
 ) -> MagicMock:
     """Create a mock Pet object."""
     pet = MagicMock()
     pet.id = pet_id
-    pet.org_id = org_id
+    pet.family_id = family_id
     pet.name = name
     return pet
 
@@ -80,7 +80,7 @@ def create_mock_medication(
     med.name = name
     med.friendly_name = friendly_name
     med.reminders_enabled = reminders_enabled
-    med.start_date = start_date or datetime.utcnow()
+    med.start_date = start_date or datetime.now(UTC)
     med.end_date = end_date
     med.timezone = timezone
     med.schedules = schedules or []
@@ -113,7 +113,7 @@ def create_mock_notification_log(
     log.id = uuid4()
     log.medication_id = medication_id
     log.notification_type = notification_type
-    log.scheduled_time = scheduled_time or datetime.utcnow()
+    log.scheduled_time = scheduled_time or datetime.now(UTC)
     log.recipient_count = recipient_count
     return log
 
@@ -126,7 +126,7 @@ def create_mock_dose(
     dose = MagicMock()
     dose.id = uuid4()
     dose.medication_id = medication_id
-    dose.given_at = given_at or datetime.utcnow()
+    dose.given_at = given_at or datetime.now(UTC)
     return dose
 
 
@@ -358,7 +358,7 @@ class TestNotificationAlreadySent:
         """Should return True when a notification log exists for the given parameters."""
         # Setup
         db = AsyncMock()
-        scheduled_time = datetime.utcnow()
+        scheduled_time = datetime.now(UTC)
         existing_log = create_mock_notification_log(
             medication_id=TEST_MEDICATION_ID,
             notification_type="reminder",
@@ -380,7 +380,7 @@ class TestNotificationAlreadySent:
         """Should return False when no notification log exists."""
         # Setup
         db = AsyncMock()
-        scheduled_time = datetime.utcnow()
+        scheduled_time = datetime.now(UTC)
         result = create_mock_scalar_result(None)
         db.execute = AsyncMock(return_value=result)
 
@@ -399,9 +399,10 @@ class TestLogNotification:
     @pytest.mark.asyncio
     async def test_creates_notification_log_entry(self):
         """Should create a NotificationLog entry and commit to database."""
-        # Setup
-        db = AsyncMock()
-        scheduled_time = datetime.utcnow()
+        # Setup - use MagicMock for sync methods, AsyncMock for async methods
+        db = MagicMock()
+        db.commit = AsyncMock()
+        scheduled_time = datetime.now(UTC)
 
         # Execute
         await log_notification(db, TEST_MEDICATION_ID, "reminder", scheduled_time, 3)
@@ -426,7 +427,7 @@ class TestDoseRecordedAroundTime:
         """Should return True when a dose exists within the time window."""
         # Setup
         db = AsyncMock()
-        expected_time = datetime.utcnow()
+        expected_time = datetime.now(UTC)
         dose = create_mock_dose(given_at=expected_time + timedelta(minutes=15))
         result = create_mock_scalar_result(dose)
         db.execute = AsyncMock(return_value=result)
@@ -444,7 +445,7 @@ class TestDoseRecordedAroundTime:
         """Should return False when no dose exists in the time window."""
         # Setup
         db = AsyncMock()
-        expected_time = datetime.utcnow()
+        expected_time = datetime.now(UTC)
         result = create_mock_scalar_result(None)
         db.execute = AsyncMock(return_value=result)
 
@@ -461,7 +462,7 @@ class TestDoseRecordedAroundTime:
         """Should use the provided window_minutes parameter."""
         # Setup
         db = AsyncMock()
-        expected_time = datetime.utcnow()
+        expected_time = datetime.now(UTC)
         result = create_mock_scalar_result(None)
         db.execute = AsyncMock(return_value=result)
 
@@ -509,7 +510,7 @@ class TestSendScheduledRemindersAsync:
     async def test_sends_reminder_for_matching_schedule(self):
         """Should send reminder when medication schedule matches current time."""
         # Setup - create a medication with a schedule matching current UTC time
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         current_hour = now.hour
         current_minute = now.minute
 
@@ -528,6 +529,7 @@ class TestSendScheduledRemindersAsync:
 
         # Mock database
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         # Query 1: Get all active medications
         meds_result = create_mock_db_result([medication], unique_method=True)
@@ -589,7 +591,7 @@ class TestSendScheduledRemindersAsync:
     async def test_does_not_send_if_notification_already_sent(self):
         """Should not send notification if it was already sent for this time."""
         # Setup
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -602,6 +604,7 @@ class TestSendScheduledRemindersAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         # Mock queries
         meds_result = create_mock_db_result([medication], unique_method=True)
@@ -637,7 +640,7 @@ class TestSendScheduledRemindersAsync:
     async def test_skips_medication_with_no_device_tokens(self):
         """Should skip notification when family has no device tokens."""
         # Setup
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -650,6 +653,7 @@ class TestSendScheduledRemindersAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -696,11 +700,12 @@ class TestSendScheduledRemindersAsync:
         medication = create_mock_medication(
             schedules=[schedule],
             timezone="America/Los_Angeles",
-            start_date=datetime.utcnow() - timedelta(days=1),
+            start_date=datetime.now(UTC) - timedelta(days=1),
         )
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -739,7 +744,7 @@ class TestSendScheduledRemindersAsync:
     async def test_skips_medications_outside_date_range(self):
         """Should not send reminders for medications outside their active date range."""
         # Setup - medication that hasn't started yet
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -751,6 +756,7 @@ class TestSendScheduledRemindersAsync:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         # No medications should match (filtered by start_date in query)
         meds_result = create_mock_db_result([], unique_method=True)
@@ -780,7 +786,7 @@ class TestSendScheduledRemindersAsync:
     async def test_handles_invalid_timezone_gracefully(self):
         """Should fall back to UTC for invalid timezones."""
         # Setup
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -793,6 +799,7 @@ class TestSendScheduledRemindersAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -861,7 +868,7 @@ class TestCheckMissedDosesAsync:
     async def test_sends_missed_dose_notification_after_one_hour(self):
         """Should send missed dose notification when dose is 1+ hour late and not recorded."""
         # Setup - scheduled time was 2 hours ago
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         two_hours_ago = now_utc - timedelta(hours=2)
 
         schedule = create_mock_schedule(
@@ -877,6 +884,7 @@ class TestCheckMissedDosesAsync:
         pet = create_mock_pet(name="Buddy")
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         # Query 1: Get all active medications
         meds_result = create_mock_db_result([medication], unique_method=True)
@@ -937,7 +945,7 @@ class TestCheckMissedDosesAsync:
     async def test_does_not_send_if_dose_was_recorded(self):
         """Should not send notification if dose was recorded within time window."""
         # Setup
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         two_hours_ago = now_utc - timedelta(hours=2)
 
         schedule = create_mock_schedule(
@@ -952,6 +960,7 @@ class TestCheckMissedDosesAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -988,7 +997,7 @@ class TestCheckMissedDosesAsync:
     async def test_does_not_send_for_doses_less_than_one_hour_late(self):
         """Should not send missed dose notification for doses less than 1 hour late."""
         # Setup - scheduled time was only 30 minutes ago
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         thirty_min_ago = now_utc - timedelta(minutes=30)
 
         schedule = create_mock_schedule(
@@ -1002,6 +1011,7 @@ class TestCheckMissedDosesAsync:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
 
@@ -1030,7 +1040,7 @@ class TestCheckMissedDosesAsync:
     async def test_does_not_send_for_doses_more_than_24_hours_old(self):
         """Should not send missed dose notification for doses more than 24 hours old."""
         # Setup - scheduled time was 25 hours ago (yesterday)
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         yesterday = now_utc - timedelta(hours=25)
 
         schedule = create_mock_schedule(
@@ -1044,6 +1054,7 @@ class TestCheckMissedDosesAsync:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
 
@@ -1072,7 +1083,7 @@ class TestCheckMissedDosesAsync:
     async def test_does_not_send_if_already_sent(self):
         """Should not send missed dose notification if already sent for this time."""
         # Setup
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         two_hours_ago = now_utc - timedelta(hours=2)
 
         schedule = create_mock_schedule(
@@ -1087,6 +1098,7 @@ class TestCheckMissedDosesAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -1121,7 +1133,7 @@ class TestCheckMissedDosesAsync:
     async def test_handles_multiple_schedules_per_medication(self):
         """Should check all schedules for a medication."""
         # Setup - medication with 2 schedules, one is late, one is not
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         two_hours_ago = now_utc - timedelta(hours=2)
         in_future = now_utc + timedelta(hours=2)
 
@@ -1144,6 +1156,7 @@ class TestCheckMissedDosesAsync:
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -1195,11 +1208,12 @@ class TestCheckMissedDosesAsync:
         medication = create_mock_medication(
             schedules=[schedule],
             timezone="America/New_York",
-            start_date=datetime.utcnow() - timedelta(days=1),
+            start_date=datetime.now(UTC) - timedelta(days=1),
         )
         pet = create_mock_pet()
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
@@ -1246,7 +1260,7 @@ class TestNotificationTasksEdgeCases:
     async def test_send_reminders_handles_pet_not_found(self):
         """Should skip notification when pet is not found in database."""
         # Setup
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -1258,6 +1272,7 @@ class TestNotificationTasksEdgeCases:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(None)  # Pet not found
@@ -1289,10 +1304,11 @@ class TestNotificationTasksEdgeCases:
         # Setup
         medication = create_mock_medication(
             schedules=[],  # No schedules
-            start_date=datetime.utcnow() - timedelta(days=1),
+            start_date=datetime.now(UTC) - timedelta(days=1),
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
         meds_result = create_mock_db_result([medication], unique_method=True)
         mock_db.execute = AsyncMock(return_value=meds_result)
 
@@ -1319,7 +1335,7 @@ class TestNotificationTasksEdgeCases:
     async def test_check_missed_doses_handles_pet_not_found(self):
         """Should skip notification when pet is not found for missed dose check."""
         # Setup
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         two_hours_ago = now_utc - timedelta(hours=2)
 
         schedule = create_mock_schedule(
@@ -1333,6 +1349,7 @@ class TestNotificationTasksEdgeCases:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(None)  # Pet not found
 
@@ -1361,7 +1378,7 @@ class TestNotificationTasksEdgeCases:
     async def test_notification_custom_data_includes_correct_ids(self):
         """Should include medication_id, pet_id, and pet_name in notification data."""
         # Setup
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedule = create_mock_schedule(
             scheduled_hour=now.hour,
             scheduled_minute=now.minute,
@@ -1380,6 +1397,7 @@ class TestNotificationTasksEdgeCases:
         )
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # add() is sync
 
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)

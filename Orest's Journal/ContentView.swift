@@ -39,7 +39,7 @@ struct ContentView: View {
                     ProgressView("Setting up...")
                 } else if authManager.needsProfileSetup {
                     ProfileSetupView()
-                } else if !authManager.hasOrganization {
+                } else if !authManager.hasFamily {
                     FamilySetupView()
                 } else if !hasPet {
                     AddEditPetView(mode: .add) { _ in
@@ -64,8 +64,8 @@ struct ContentView: View {
                 hasPet = false
             }
         }
-        .onChange(of: authManager.hasOrganization) { _, hasOrg in
-            if hasOrg {
+        .onChange(of: authManager.hasFamily) { _, hasFamily in
+            if hasFamily {
                 Task {
                     await checkPetStatus()
                 }
@@ -83,7 +83,7 @@ struct ContentView: View {
     private func checkPetStatus() async {
         guard !isCheckingStatus else { return }
 
-        guard authManager.hasOrganization else {
+        guard authManager.hasFamily else {
             hasPet = false
             return
         }

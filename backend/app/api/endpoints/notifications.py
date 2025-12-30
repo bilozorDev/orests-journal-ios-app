@@ -199,6 +199,10 @@ async def get_notification_preferences(
             pet_added=True,
             pet_updated=True,
             pet_deleted=True,
+            medication_created=True,
+            medication_updated=True,
+            medication_archived=True,
+            dose_administered=True,
         )
 
     return NotificationPreferencesResponse.model_validate(prefs)

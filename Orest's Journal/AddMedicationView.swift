@@ -462,13 +462,13 @@ struct AddMedicationView: View {
                 update.notes = notes.isEmpty ? nil : notes
                 update.scheduledTimes = scheduledTimes
 
-                _ = try await dataService.updateMedication(id: existing.id, update, orgId: pet.orgId)
+                _ = try await dataService.updateMedication(id: existing.id, update, familyId: pet.familyId)
 
                 // Handle photo deletions (track failures)
                 var photoErrors: [String] = []
                 for photoId in photosToDelete {
                     do {
-                        try await dataService.deleteMedicationPhoto(medicationId: existing.id, photoId: photoId, orgId: pet.orgId)
+                        try await dataService.deleteMedicationPhoto(medicationId: existing.id, photoId: photoId, familyId: pet.familyId)
                     } catch {
                         photoErrors.append("Failed to delete photo")
                     }
@@ -477,7 +477,7 @@ struct AddMedicationView: View {
                 // Upload new photos (track failures)
                 for photo in newPhotos {
                     do {
-                        _ = try await dataService.uploadMedicationPhoto(medicationId: existing.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                        _ = try await dataService.uploadMedicationPhoto(medicationId: existing.id, imageData: photo.data, mimeType: photo.mimeType, familyId: pet.familyId)
                     } catch {
                         photoErrors.append("Failed to upload photo")
                     }
@@ -514,13 +514,13 @@ struct AddMedicationView: View {
                     scheduledTimes: scheduledTimes
                 )
 
-                let created = try await dataService.createMedication(medication, orgId: pet.orgId)
+                let created = try await dataService.createMedication(medication, familyId: pet.familyId)
 
                 // Upload photos (track failures)
                 var photoUploadErrors = 0
                 for photo in newPhotos {
                     do {
-                        _ = try await dataService.uploadMedicationPhoto(medicationId: created.id, imageData: photo.data, mimeType: photo.mimeType, orgId: pet.orgId)
+                        _ = try await dataService.uploadMedicationPhoto(medicationId: created.id, imageData: photo.data, mimeType: photo.mimeType, familyId: pet.familyId)
                     } catch {
                         photoUploadErrors += 1
                     }
@@ -559,7 +559,7 @@ struct AddMedicationView: View {
     AddMedicationView(
         pet: Pet(
             id: UUID(),
-            orgId: UUID().uuidString,
+            familyId: UUID().uuidString,
             name: "Buddy",
             kind: "dog",
             photoUrl: nil,

@@ -13,8 +13,8 @@ protocol APIClientProtocol {
     /// Auth token for API requests
     var authToken: String? { get set }
 
-    /// Current organization ID (family)
-    var currentOrgId: String? { get set }
+    /// Current family ID
+    var currentFamilyId: String? { get set }
 
     // MARK: - Generic Request Methods
 

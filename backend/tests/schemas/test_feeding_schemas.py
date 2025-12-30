@@ -3,7 +3,7 @@ Tests for Feeding Pydantic schemas.
 
 Validates feeding schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -40,7 +40,7 @@ class TestFeedingCreate:
 
     def test_feeding_create_with_all_fields(self):
         """Should create feeding with all optional fields."""
-        fed_time = datetime.utcnow() - timedelta(hours=2)
+        fed_time = datetime.now(UTC) - timedelta(hours=2)
 
         feeding = FeedingCreate(
             pet_id=uuid4(),
@@ -82,7 +82,7 @@ class TestFeedingCreate:
 
     def test_feeding_create_with_custom_timestamp(self):
         """Should accept custom fed_at timestamp."""
-        past_time = datetime.utcnow() - timedelta(hours=5)
+        past_time = datetime.now(UTC) - timedelta(hours=5)
 
         feeding = FeedingCreate(
             pet_id=uuid4(),
@@ -211,7 +211,7 @@ class TestFeedingUpdate:
 
     def test_feeding_update_fed_at(self):
         """Should allow updating fed_at timestamp."""
-        new_time = datetime.utcnow() - timedelta(hours=1)
+        new_time = datetime.now(UTC) - timedelta(hours=1)
 
         update = FeedingUpdate(fed_at=new_time)
 
@@ -248,11 +248,11 @@ class TestFeedingResponse:
             pet_id=uuid4(),
             food_id=uuid4(),
             fed_by=uuid4(),
-            fed_at=datetime.utcnow(),
+            fed_at=datetime.now(UTC),
             amount=150.0,
             amount_unit=ContainerUnit.GRAMS,
             calories=175.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.id is not None
@@ -272,11 +272,11 @@ class TestFeedingResponse:
             pet_id=uuid4(),
             food_id=uuid4(),
             fed_by=uuid4(),
-            fed_at=datetime.utcnow(),
+            fed_at=datetime.now(UTC),
             amount=150.0,
             amount_unit=ContainerUnit.GRAMS,
             calories=175.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.notes is None
@@ -288,12 +288,12 @@ class TestFeedingResponse:
             pet_id=uuid4(),
             food_id=uuid4(),
             fed_by=uuid4(),
-            fed_at=datetime.utcnow(),
+            fed_at=datetime.now(UTC),
             amount=150.0,
             amount_unit=ContainerUnit.GRAMS,
             calories=175.0,
             notes="Fed in the morning",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.notes == "Fed in the morning"
@@ -306,11 +306,11 @@ class TestFeedingResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=150.0,
                 amount_unit=unit,
                 calories=175.0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             assert response.amount_unit == unit
 
@@ -328,18 +328,18 @@ class TestFeedingResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=amount,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=calories,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             assert response.amount == amount
             assert response.calories == calories
 
     def test_feeding_response_fed_at_timestamp(self):
         """Response should preserve fed_at timestamp."""
-        fed_time = datetime.utcnow() - timedelta(hours=3)
+        fed_time = datetime.now(UTC) - timedelta(hours=3)
 
         response = FeedingResponse(
             id=uuid4(),
@@ -350,7 +350,7 @@ class TestFeedingResponse:
             amount=150.0,
             amount_unit=ContainerUnit.GRAMS,
             calories=175.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.fed_at == fed_time
@@ -383,22 +383,22 @@ class TestFeedingListResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=150.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=175.0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FeedingResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=100.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=116.5,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -420,33 +420,33 @@ class TestFeedingListResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=150.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=175.0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FeedingResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=100.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=116.5,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FeedingResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=75.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=87.5,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -470,22 +470,22 @@ class TestFeedingListResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=150.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=175.0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FeedingResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=100.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=116.5,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 
@@ -517,22 +517,22 @@ class TestFeedingListResponse:
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=150.0,
                 amount_unit=ContainerUnit.GRAMS,
                 calories=175.0,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
             FeedingResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
                 food_id=uuid4(),
                 fed_by=uuid4(),
-                fed_at=datetime.utcnow(),
+                fed_at=datetime.now(UTC),
                 amount=3.5,
                 amount_unit=ContainerUnit.OUNCES,
                 calories=116.5,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             ),
         ]
 

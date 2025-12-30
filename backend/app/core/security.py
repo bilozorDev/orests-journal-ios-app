@@ -1,7 +1,7 @@
 """
 Security utilities for JWT authentication.
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,14 +25,14 @@ def create_access_token(user_id: str, expires_delta: Optional[timedelta] = None)
     settings = get_settings()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(days=settings.jwt_expiration_days)
+        expire = datetime.now(UTC) + timedelta(days=settings.jwt_expiration_days)
 
     payload = {
         "sub": user_id,
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
     }
 
     return jwt.encode(payload, settings.jwt_secret_key, algorithm="HS256")

@@ -102,14 +102,14 @@ class StorageService:
         self,
         file: UploadFile,
         upload_type: str,
-        org_id: str,
+        family_id: str,
     ) -> str:
         """Upload an image to R2 storage.
 
         Args:
             file: The uploaded file
             upload_type: Type of upload (pet-photo, profile-photo, etc.)
-            org_id: Organization ID for folder scoping
+            family_id: Family ID for folder scoping
 
         Returns:
             Public URL of the uploaded image
@@ -153,7 +153,7 @@ class StorageService:
         # Generate unique key
         extension = ALLOWED_MIME_TYPES[content_type]
         file_id = str(uuid.uuid4())
-        key = f"{folder}/{org_id}/{file_id}.{extension}"
+        key = f"{folder}/{family_id}/{file_id}.{extension}"
 
         # Upload to R2 (run in thread pool to avoid blocking async event loop)
         try:

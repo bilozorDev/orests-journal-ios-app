@@ -162,7 +162,7 @@ struct MedicationPhoto: Codable, Identifiable {
 ### Phase 4: iOS API Client
 
 **File: `Orest's Journal/APIClient.swift`**
-- `getMedications(orgId:petId:activeOnly:)` - list medications
+- `getMedications(familyId:petId:activeOnly:)` - list medications
 - `getMedication(id:)` - get single medication with schedules
 - `createMedication(_:)` - create new medication
 - `updateMedication(id:_:)` - update medication

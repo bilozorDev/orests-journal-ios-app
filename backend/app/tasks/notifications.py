@@ -3,7 +3,7 @@ Celery tasks for medication reminders and notifications.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 from uuid import UUID
 
@@ -66,10 +66,10 @@ def run_async(coro):
         loop.close()
 
 
-async def get_family_device_tokens(db, org_id: UUID) -> list[str]:
+async def get_family_device_tokens(db, family_id: UUID) -> list[str]:
     """Get all active device tokens for family members."""
     # Get all family members
-    members_query = select(FamilyMember.user_id).where(FamilyMember.family_id == org_id)
+    members_query = select(FamilyMember.user_id).where(FamilyMember.family_id == family_id)
     members_result = await db.execute(members_query)
     user_ids = [m for m in members_result.scalars().all()]
 
@@ -151,7 +151,7 @@ async def _send_scheduled_reminders():
     engine, session_factory = get_task_session_factory()
     try:
         async with session_factory() as db:
-            now_utc = datetime.utcnow()
+            now_utc = datetime.now(UTC)
 
             # Get all active medications with reminders enabled
             # We filter by timezone in Python since schedules are stored in local time
@@ -234,7 +234,7 @@ async def _send_scheduled_reminders():
                     continue
 
                 # Get family device tokens
-                tokens = await get_family_device_tokens(db, pet.org_id)
+                tokens = await get_family_device_tokens(db, pet.family_id)
 
                 if not tokens:
                     logger.info(f"No device tokens for medication {med.id}")
@@ -283,7 +283,7 @@ async def _check_missed_doses():
     engine, session_factory = get_task_session_factory()
     try:
         async with session_factory() as db:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
 
             # Get all active medications with reminders enabled
             query = (
@@ -356,7 +356,7 @@ async def _check_missed_doses():
                         continue
 
                     # Get family device tokens
-                    tokens = await get_family_device_tokens(db, pet.org_id)
+                    tokens = await get_family_device_tokens(db, pet.family_id)
 
                     if not tokens:
                         continue

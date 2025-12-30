@@ -57,7 +57,7 @@ class PetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    org_id: UUID
+    family_id: UUID
     name: str
     kind: str
     photo_url: Optional[str] = None

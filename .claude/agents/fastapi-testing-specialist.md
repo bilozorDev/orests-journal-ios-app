@@ -24,7 +24,7 @@ This FastAPI backend uses:
 - **Redis** for caching
 - **Pydantic** schemas for request/response validation
 - **Clerk JWT + Sign in with Apple** for authentication
-- **Endpoints** under `/api/v1/` requiring `org_id` query param for family context
+- **Endpoints** under `/api/v1/` requiring `family_id` query param for family context
 
 ## Testing Patterns You Follow
 
@@ -36,9 +36,9 @@ from httpx import AsyncClient
 from app.main import app
 
 @pytest.mark.asyncio
-async def test_endpoint_success(async_client: AsyncClient, test_user, test_org):
+async def test_endpoint_success(async_client: AsyncClient, test_user, test_family):
     response = await async_client.post(
-        f"/api/v1/resource?org_id={test_org.id}",
+        f"/api/v1/resource?family_id={test_family.id}",
         json={"field": "value"},
         headers={"Authorization": f"Bearer {test_user.token}"}
     )

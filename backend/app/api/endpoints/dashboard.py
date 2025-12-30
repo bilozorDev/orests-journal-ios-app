@@ -31,7 +31,7 @@ router = APIRouter()
 @router.get("/pet/{pet_id}", response_model=DashboardResponse)
 async def get_dashboard_data(
     pet_id: UUID,
-    org_id: str,
+    family_id: str,
     response: Response,
     timezone: str = "UTC",
     db: AsyncSession = Depends(get_db),
@@ -118,11 +118,11 @@ async def get_dashboard_data(
 
     total_calories = sum(f.calories for f in feedings)
 
-    # 3. Get foods for the org (for name lookup in UI)
-    # Use pet.org_id from verified pet, not the untrusted org_id parameter
+    # 3. Get foods for the family (for name lookup in UI)
+    # Use pet.family_id from verified pet, not the untrusted family_id parameter
     foods_query = (
         select(PetFood)
-        .where(PetFood.org_id == pet.org_id)
+        .where(PetFood.family_id == pet.family_id)
         .order_by(PetFood.created_at.desc())
     )
     foods_result = await db.execute(foods_query)

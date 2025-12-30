@@ -105,15 +105,15 @@ When running in debug mode, visit:
 ## API Endpoints
 
 ### Pets
-- `GET /api/v1/pets?org_id=` - List pets
-- `POST /api/v1/pets?org_id=` - Create pet
+- `GET /api/v1/pets?family_id=` - List pets
+- `POST /api/v1/pets?family_id=` - Create pet
 - `GET /api/v1/pets/{id}` - Get pet
 - `PATCH /api/v1/pets/{id}` - Update pet
 - `DELETE /api/v1/pets/{id}` - Delete pet
 
 ### Foods
-- `GET /api/v1/foods?org_id=` - List foods
-- `POST /api/v1/foods?org_id=` - Create food
+- `GET /api/v1/foods?family_id=` - List foods
+- `POST /api/v1/foods?family_id=` - Create food
 - `PATCH /api/v1/foods/{id}` - Update food
 - `DELETE /api/v1/foods/{id}` - Delete food
 
@@ -125,7 +125,7 @@ When running in debug mode, visit:
 - `POST /api/v1/feedings/pet/{pet_id}/calorie-goal` - Set calorie goal
 
 ### Medications
-- `GET /api/v1/medications?org_id=` - List medications
+- `GET /api/v1/medications?family_id=` - List medications
 - `POST /api/v1/medications` - Create medication
 - `GET /api/v1/medications/pet/{pet_id}/active` - Active medications
 

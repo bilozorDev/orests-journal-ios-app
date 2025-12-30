@@ -136,7 +136,7 @@ async def verify_pet_access(
         )
 
     # Verify user belongs to the pet's family (RLS context already set)
-    await verify_family_access(db, user_id, pet.org_id)
+    await verify_family_access(db, user_id, pet.family_id)
 
     return pet
 
@@ -177,7 +177,7 @@ async def verify_food_access(
         )
 
     # Verify user belongs to the food's family
-    await verify_family_access(db, user_id, food.org_id)
+    await verify_family_access(db, user_id, food.family_id)
 
     return food
 
@@ -357,7 +357,7 @@ async def verify_health_category_access(
         )
 
     # Verify user has access to this family
-    await verify_family_access(db, user_id, str(category.org_id))
+    await verify_family_access(db, user_id, str(category.family_id))
 
     return category
 

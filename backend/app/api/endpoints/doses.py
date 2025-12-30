@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import UTC, datetime, timedelta, timezone as dt_timezone
 from typing import Dict
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -40,7 +40,7 @@ async def invalidate_dose_caches(db: AsyncSession, medication_id: UUID) -> None:
 
 async def notify_family_dose_administered(
     db: AsyncSession,
-    org_id: UUID,
+    family_id: UUID,
     exclude_user_id: UUID,
     user_name: str,
     pet_name: str,
@@ -50,7 +50,7 @@ async def notify_family_dose_administered(
 
     Args:
         db: Database session
-        org_id: The family/organization ID
+        family_id: The family ID
         exclude_user_id: User ID to exclude (the user who gave the dose)
         user_name: Name of the user who gave the dose
         pet_name: Name of the pet
@@ -58,7 +58,7 @@ async def notify_family_dose_administered(
     """
     try:
         tokens = await get_filtered_family_member_tokens(
-            db, org_id, exclude_user_id, "dose_administered"
+            db, family_id, exclude_user_id, "dose_administered"
         )
         if not tokens:
             return
@@ -111,7 +111,7 @@ async def record_dose(
 
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
-        given_at=dose_in.given_at or datetime.utcnow(),
+        given_at=dose_in.given_at or datetime.now(UTC),
         given_by=UUID(user_id),
         notes=dose_in.notes,
     )
@@ -126,7 +126,7 @@ async def record_dose(
     display_name = medication.friendly_name or medication.name
     await notify_family_dose_administered(
         db=db,
-        org_id=pet.org_id,
+        family_id=pet.family_id,
         exclude_user_id=UUID(user_id),
         user_name=user_name,
         pet_name=pet.name,

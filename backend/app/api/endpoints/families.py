@@ -1,7 +1,7 @@
 """
 Family management endpoints with invite code system and brute force protection.
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import List, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Request, status
@@ -113,7 +113,7 @@ async def check_rate_limit(
     Check if the user or IP has exceeded rate limits for invite attempts.
     Raises HTTPException if rate limited.
     """
-    window_start = datetime.utcnow() - RATE_LIMIT_WINDOW
+    window_start = datetime.now(UTC) - RATE_LIMIT_WINDOW
 
     # Check user-based rate limit
     if user_id:
@@ -264,7 +264,7 @@ async def check_user_lockout(db: AsyncSession, user_id: UUID) -> None:
         return
 
     if user.is_locked_out:
-        if user.lockout_expires_at and datetime.utcnow() >= user.lockout_expires_at:
+        if user.lockout_expires_at and datetime.now(UTC) >= user.lockout_expires_at:
             # Lockout expired - clear it
             user.is_locked_out = False
             user.lockout_expires_at = None
@@ -273,7 +273,7 @@ async def check_user_lockout(db: AsyncSession, user_id: UUID) -> None:
             await db.commit()
         else:
             # Still locked out
-            remaining = user.lockout_expires_at - datetime.utcnow() if user.lockout_expires_at else timedelta(0)
+            remaining = user.lockout_expires_at - datetime.now(UTC) if user.lockout_expires_at else timedelta(0)
             minutes_remaining = max(1, int(remaining.total_seconds() / 60))
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -296,7 +296,7 @@ async def check_exponential_backoff(db: AsyncSession, user_id: UUID) -> None:
     backoff_seconds = calculate_backoff_seconds(user.failed_invite_attempts)
 
     if user.last_failed_invite_at:
-        elapsed = (datetime.utcnow() - user.last_failed_invite_at).total_seconds()
+        elapsed = (datetime.now(UTC) - user.last_failed_invite_at).total_seconds()
         if elapsed < backoff_seconds:
             wait_remaining = int(backoff_seconds - elapsed)
             if wait_remaining >= 60:
@@ -346,12 +346,12 @@ async def handle_failed_invite_attempt(
 
     # Increment failed attempts
     user.failed_invite_attempts = (user.failed_invite_attempts or 0) + 1
-    user.last_failed_invite_at = datetime.utcnow()
+    user.last_failed_invite_at = datetime.now(UTC)
 
     # Check if we should trigger lockout
     if user.failed_invite_attempts >= LOCKOUT_THRESHOLD:
         user.is_locked_out = True
-        user.lockout_expires_at = datetime.utcnow() + LOCKOUT_DURATION
+        user.lockout_expires_at = datetime.now(UTC) + LOCKOUT_DURATION
 
         # Create security alert
         await create_security_alert(

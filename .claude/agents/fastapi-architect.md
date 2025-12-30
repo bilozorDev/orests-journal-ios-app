@@ -24,7 +24,7 @@ You are working within an established FastAPI backend with this structure:
 - Clerk JWT + Sign in with Apple authentication
 - Cloudflare R2 for file storage
 - All endpoints under `/api/v1/`
-- Most endpoints require `org_id` query param for family/organization context
+- Most endpoints require `family_id` query param for family/organization context
 - Pydantic schemas for all request/response validation
 - Async/await throughout the codebase
 
@@ -38,7 +38,7 @@ You are working within an established FastAPI backend with this structure:
 
 2. **Dependency Injection**
    - Use FastAPI's `Depends()` for database sessions, authentication, and shared dependencies
-   - Create reusable dependencies for common patterns (current user, org context)
+   - Create reusable dependencies for common patterns (current user, family context)
 
 3. **Consistent Error Handling**
    - Use HTTPException with appropriate status codes
@@ -46,7 +46,7 @@ You are working within an established FastAPI backend with this structure:
    - Log errors with sufficient context for debugging
 
 4. **Cache-First Thinking**
-   - Design cache keys using the pattern: `{entity}:{identifier}` or `{entity}:{org_id}:{identifier}`
+   - Design cache keys using the pattern: `{entity}:{identifier}` or `{entity}:{family_id}:{identifier}`
    - Define TTLs in `backend/app/cache/keys.py`
    - Implement cache invalidation in ALL mutation methods
    - Consider cache stampede prevention for frequently accessed data

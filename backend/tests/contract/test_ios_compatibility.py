@@ -10,7 +10,7 @@ These tests validate that API response schemas don't break the iOS app by:
 
 CRITICAL: Failures in these tests indicate breaking changes that will crash the iOS app.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -81,7 +81,7 @@ class TestMedicationContract:
                 medication_type=MedicationType.PILL,
                 # Missing start_date - REQUIRED field
                 times_per_day=1,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
 
         errors = exc_info.value.errors()
@@ -104,9 +104,9 @@ class TestMedicationContract:
             pet_id=uuid4(),
             name="Test Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=2,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         # Serialize to dict (as JSON would)
@@ -194,9 +194,9 @@ class TestMedicationContract:
             pet_id=uuid4(),
             name="Test",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             dosage=None,
             end_date=None,
             notes=None,
@@ -218,7 +218,7 @@ class TestMedicationContract:
             medication_id=uuid4(),
             photo_url="https://example.com/photo.jpg",
             sort_order=0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = photo.model_dump(mode='json')
@@ -251,10 +251,10 @@ class TestDoseContract:
         dose = DoseDetailResponse(
             id=uuid4(),
             medication_id=uuid4(),
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
             given_by="You",  # String, not UUID
             notes=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert isinstance(dose.given_by, str)
@@ -268,10 +268,10 @@ class TestDoseContract:
         dose = DoseDetailResponse(
             id=uuid4(),
             medication_id=uuid4(),
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
             given_by="Test User",
             notes="Test notes",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = dose.model_dump(mode='json')
@@ -299,8 +299,8 @@ class TestNotificationContract:
             device_name="iPhone 15 Pro",
             platform="ios",
             is_active=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         json_dict = token.model_dump(mode='json')
@@ -421,13 +421,13 @@ class TestPetContract:
         # Pet without date_of_birth
         pet = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Buddy",
             kind="dog",
             photo_url=None,
             current_weight=None,
             date_of_birth=None,  # Null
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=None,
         )
 
@@ -441,19 +441,19 @@ class TestPetContract:
 
         pet = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Buddy",
             kind="dog",
             photo_url="https://example.com/photo.jpg",
             current_weight=25.5,
             date_of_birth=date(2020, 6, 15),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=uuid4(),
         )
 
         json_dict = pet.model_dump(mode='json')
 
-        assert "org_id" in json_dict
+        assert "family_id" in json_dict
         assert "photo_url" in json_dict
         assert "current_weight" in json_dict
         assert "date_of_birth" in json_dict
@@ -461,7 +461,7 @@ class TestPetContract:
         assert "created_by" in json_dict
 
         # No camelCase
-        assert "orgId" not in json_dict
+        assert "familyId" not in json_dict
         assert "photoUrl" not in json_dict
         assert "currentWeight" not in json_dict
         assert "dateOfBirth" not in json_dict
@@ -639,22 +639,22 @@ class TestHealthEventContract:
 
         category = HealthCategoryResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Vomiting",
             name_normalized="vomiting",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=uuid4(),
         )
 
         json_dict = category.model_dump(mode='json')
 
-        assert "org_id" in json_dict
+        assert "family_id" in json_dict
         assert "name_normalized" in json_dict
         assert "created_at" in json_dict
         assert "created_by" in json_dict
 
         # No camelCase
-        assert "orgId" not in json_dict
+        assert "familyId" not in json_dict
         assert "nameNormalized" not in json_dict
         assert "createdAt" not in json_dict
         assert "createdBy" not in json_dict
@@ -667,7 +667,7 @@ class TestHealthEventContract:
             id=uuid4(),
             photo_url="https://example.com/photo.jpg",
             sort_order=0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = photo.model_dump(mode='json')
@@ -696,10 +696,10 @@ class TestHealthEventContract:
         event = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes=None,
             photos=[],  # Empty array
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = event.model_dump(mode='json')
@@ -712,23 +712,23 @@ class TestHealthEventContract:
         event_with_photos = HealthEventResponse(
             id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes="Test notes",
             photos=[
                 HealthEventPhotoResponse(
                     id=uuid4(),
                     photo_url="https://example.com/1.jpg",
                     sort_order=0,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(UTC),
                 ),
                 HealthEventPhotoResponse(
                     id=uuid4(),
                     photo_url="https://example.com/2.jpg",
                     sort_order=1,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(UTC),
                 ),
             ],
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict_with_photos = event_with_photos.model_dump(mode='json')
@@ -742,10 +742,10 @@ class TestHealthEventContract:
             id=uuid4(),
             pet_id=uuid4(),
             category_id=uuid4(),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
             notes="Test notes",
             photos=[],
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             created_by=uuid4(),
         )
 
@@ -843,7 +843,7 @@ class TestFoodContract:
 
         food = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Dry Food",
             category=FoodCategory.DRY,
             calories_per_kg=3500.0,
@@ -851,12 +851,12 @@ class TestFoodContract:
             container_size_unit=ContainerUnit.KILOGRAMS,
             image_url="https://example.com/food.jpg",
             is_archived=False,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = food.model_dump(mode='json')
 
-        assert "org_id" in json_dict
+        assert "family_id" in json_dict
         assert "calories_per_kg" in json_dict
         assert "container_size" in json_dict
         assert "container_size_unit" in json_dict
@@ -865,7 +865,7 @@ class TestFoodContract:
         assert "created_at" in json_dict
 
         # No camelCase
-        assert "orgId" not in json_dict
+        assert "familyId" not in json_dict
         assert "caloriesPerKg" not in json_dict
         assert "containerSize" not in json_dict
         assert "containerSizeUnit" not in json_dict
@@ -885,14 +885,14 @@ class TestFoodContract:
 
         food = FoodResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Wet Food",
             category=FoodCategory.WET,
             calories_per_kg=1200.0,
             container_size=400.0,
             container_size_unit=ContainerUnit.GRAMS,
             is_archived=False,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = food.model_dump(mode='json')
@@ -917,12 +917,12 @@ class TestFeedingContract:
             pet_id=uuid4(),
             food_id=uuid4(),
             fed_by=uuid4(),
-            fed_at=datetime.utcnow(),
+            fed_at=datetime.now(UTC),
             amount=100.0,
             amount_unit=ContainerUnit.GRAMS,
             calories=350.0,
             notes="Morning feeding",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = feeding.model_dump(mode='json')
@@ -979,10 +979,10 @@ class TestFeedingContract:
             id=uuid4(),
             pet_id=uuid4(),
             daily_calories=1200.0,
-            effective_from=datetime.utcnow(),
+            effective_from=datetime.now(UTC),
             effective_until=None,
             notes="Winter goal",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = goal.model_dump(mode='json')
@@ -1016,10 +1016,10 @@ class TestFeedingContract:
             id=uuid4(),
             pet_id=uuid4(),
             daily_calories=1200.0,
-            effective_from=datetime.utcnow(),
+            effective_from=datetime.now(UTC),
             effective_until=None,
             notes=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         json_dict = goal.model_dump(mode='json')

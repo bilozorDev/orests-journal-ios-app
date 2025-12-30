@@ -2,7 +2,7 @@
 Test fixtures and configuration for pytest.
 """
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -102,7 +102,7 @@ def create_mock_family(
         family.id = family_id
     family.name = name
     family.invite_code = invite_code
-    family.created_at = datetime.utcnow()
+    family.created_at = datetime.now(UTC)
     return family
 
 
@@ -132,14 +132,14 @@ def create_mock_membership(
         membership.family_id = UUID(TEST_FAMILY_ID)
 
     membership.role = role
-    membership.joined_at = datetime.utcnow()
+    membership.joined_at = datetime.now(UTC)
     return membership
 
 
 # Helper to create mock pet
 def create_mock_pet(
     pet_id: str = None,
-    org_id: str = None,
+    family_id: str = None,
     name: str = "Buddy",
     kind: str = "dog",
     date_of_birth=None,
@@ -157,17 +157,17 @@ def create_mock_pet(
     else:
         pet.id = uuid4()
 
-    if org_id:
-        pet.org_id = UUID(org_id) if isinstance(org_id, str) else org_id
+    if family_id:
+        pet.family_id = UUID(family_id) if isinstance(family_id, str) else family_id
     else:
-        pet.org_id = UUID(TEST_FAMILY_ID)
+        pet.family_id = UUID(TEST_FAMILY_ID)
 
     pet.name = name
     pet.kind = kind
     pet.date_of_birth = date_of_birth
     pet.photo_url = photo_url
     pet.current_weight = current_weight
-    pet.created_at = datetime.utcnow()
+    pet.created_at = datetime.now(UTC)
 
     if created_by:
         pet.created_by = UUID(created_by) if isinstance(created_by, str) else created_by
@@ -180,7 +180,7 @@ def create_mock_pet(
 # Helper to create mock food
 def create_mock_food(
     food_id: str = None,
-    org_id: str = TEST_FAMILY_ID,
+    family_id: str = TEST_FAMILY_ID,
     name: str = "Test Food",
     category: str = "dry",
     calories_per_kg: float = 3500.0,
@@ -196,7 +196,7 @@ def create_mock_food(
     food = SimpleNamespace()
     # Ensure UUID objects
     food.id = UUID(food_id) if food_id else uuid4()
-    food.org_id = UUID(org_id) if isinstance(org_id, str) else org_id
+    food.family_id = UUID(family_id) if isinstance(family_id, str) else family_id
     food.name = name
     food.category = category
     food.calories_per_kg = calories_per_kg
@@ -204,7 +204,7 @@ def create_mock_food(
     food.container_size_unit = container_size_unit
     food.image_url = image_url
     food.is_archived = is_archived
-    food.created_at = datetime.utcnow()
+    food.created_at = datetime.now(UTC)
     food.created_by = UUID(created_by) if created_by else None
     return food
 
@@ -227,12 +227,12 @@ def create_mock_feeding(
     feeding.pet_id = pet_id or str(uuid4())
     feeding.food_id = food_id or str(uuid4())
     feeding.fed_by = fed_by
-    feeding.fed_at = fed_at or datetime.utcnow()
+    feeding.fed_at = fed_at or datetime.now(UTC)
     feeding.amount = amount
     feeding.amount_unit = amount_unit
     feeding.calories = calories
     feeding.notes = notes
-    feeding.created_at = datetime.utcnow()
+    feeding.created_at = datetime.now(UTC)
     return feeding
 
 
@@ -255,11 +255,11 @@ def create_mock_calorie_goal(
     goal.id = UUID(goal_id) if goal_id else uuid4()
     goal.pet_id = UUID(pet_id) if pet_id else uuid4()
     goal.daily_calories = daily_calories
-    goal.effective_from = effective_from if effective_from is not None else datetime.utcnow()
+    goal.effective_from = effective_from if effective_from is not None else datetime.now(UTC)
     goal.effective_until = effective_until  # Can be None or datetime
     goal.notes = notes
     goal.created_by = UUID(created_by) if isinstance(created_by, str) else created_by
-    goal.created_at = datetime.utcnow()
+    goal.created_at = datetime.now(UTC)
     return goal
 
 
@@ -279,5 +279,5 @@ def create_mock_user(
     user.email = email
     user.first_name = first_name
     user.last_name = last_name
-    user.created_at = datetime.utcnow()
+    user.created_at = datetime.now(UTC)
     return user

@@ -12,7 +12,7 @@ from app.db import get_db
 
 
 def escape_like(pattern: str) -> str:
-    """Escape special LIKE characters in a pattern.
+    r"""Escape special LIKE characters in a pattern.
 
     Escapes %, _, and \ which have special meaning in SQL LIKE patterns.
     """
@@ -55,21 +55,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def invalidate_health_cache(pet_id: UUID, org_id: UUID) -> None:
+async def invalidate_health_cache(pet_id: UUID, family_id: UUID) -> None:
     """Invalidate health-related caches when data changes.
 
     Args:
         pet_id: The pet whose events were modified
-        org_id: The family org_id (for category cache)
+        family_id: The family ID (for category cache)
     """
     # Invalidate all cached event pages for this pet
     await cache_delete_pattern(f"health_events:{pet_id}:*")
     # Invalidate categories for this family (they might have changed)
-    await cache_delete(key_health_categories(str(org_id)))
+    await cache_delete(key_health_categories(str(family_id)))
 
 
-def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
-    """Validate that a photo URL belongs to the expected R2 storage and org.
+def validate_photo_url(photo_url: Optional[str], family_id: str) -> Optional[str]:
+    """Validate that a photo URL belongs to the expected R2 storage and family.
 
     Returns the validated URL or None if invalid/empty.
     Raises HTTPException if URL format is invalid.
@@ -95,7 +95,7 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
             detail="Invalid photo URL: must be from our storage service"
         )
 
-    # Extract and validate path: folder/org_id/filename
+    # Extract and validate path: folder/family_id/filename
     path = photo_url.replace(f"{public_url_base}/", "")
     path_parts = path.split("/")
 
@@ -105,13 +105,13 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
             detail="Invalid photo URL format"
         )
 
-    folder, url_org_id, filename = path_parts
+    folder, url_family_id, filename = path_parts
 
-    # Validate org_id matches (security check)
-    if url_org_id != org_id:
+    # Validate family_id matches (security check)
+    if url_family_id != family_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Photo URL belongs to a different organization"
+            detail="Photo URL belongs to a different family"
         )
 
     return photo_url
@@ -119,7 +119,7 @@ def validate_photo_url(photo_url: Optional[str], org_id: str) -> Optional[str]:
 
 async def notify_family_health_event(
     db: AsyncSession,
-    org_id: UUID,
+    family_id: UUID,
     exclude_user_id: UUID,
     pet_name: str,
     category_name: str,
@@ -128,13 +128,13 @@ async def notify_family_health_event(
 
     Args:
         db: Database session
-        org_id: The family/org ID
+        family_id: The family ID
         exclude_user_id: User who created the event (won't receive notification)
         pet_name: Name of the pet
         category_name: Name of the health category
     """
     # Use a generic notification type - we could add health_event_added to preferences later
-    tokens = await get_filtered_family_member_tokens(db, org_id, exclude_user_id, "pet_updated")
+    tokens = await get_filtered_family_member_tokens(db, family_id, exclude_user_id, "pet_updated")
     if not tokens:
         return
 
@@ -144,7 +144,7 @@ async def notify_family_health_event(
         body=f"{category_name} recorded",
         data={
             "type": "health_event_added",
-            "family_id": str(org_id),
+            "family_id": str(family_id),
             "pet_name": pet_name,
             "category": category_name,
         },
@@ -163,15 +163,15 @@ async def list_categories(
     pet = await verify_pet_access(db, user_id, pet_id)
 
     # Try cache first (categories are family-wide)
-    cache_key = key_health_categories(str(pet.org_id))
+    cache_key = key_health_categories(str(pet.family_id))
     cached = await cache_get(cache_key, HealthCategoryListResponse)
     if cached:
         return cached.categories
 
-    # Categories are family-wide, filter by org_id
+    # Categories are family-wide, filter by family_id
     query = (
         select(PetHealthCategory)
-        .where(PetHealthCategory.org_id == pet.org_id)
+        .where(PetHealthCategory.family_id == pet.family_id)
         .order_by(PetHealthCategory.name)
     )
     result = await db.execute(query)
@@ -214,7 +214,7 @@ async def delete_orphaned_category(db: AsyncSession, category_id: UUID) -> bool:
 
 async def get_or_create_category(
     db: AsyncSession,
-    org_id: UUID,
+    family_id: UUID,
     name: str,
     user_id: str,
 ) -> PetHealthCategory:
@@ -230,13 +230,13 @@ async def get_or_create_category(
     insert_stmt = (
         pg_insert(PetHealthCategory)
         .values(
-            org_id=org_id,
+            family_id=family_id,
             name=name.strip(),
             name_normalized=normalized,
             created_by=UUID(user_id),
         )
         .on_conflict_do_nothing(
-            index_elements=['org_id', 'name_normalized']
+            index_elements=['family_id', 'name_normalized']
         )
     )
     await db.execute(insert_stmt)
@@ -246,7 +246,7 @@ async def get_or_create_category(
     query = (
         select(PetHealthCategory)
         .where(
-            PetHealthCategory.org_id == org_id,
+            PetHealthCategory.family_id == family_id,
             PetHealthCategory.name_normalized == normalized,
         )
         .limit(1)
@@ -285,7 +285,7 @@ async def create_health_event(
 
     # Get or create category (categories are family-wide)
     category = await get_or_create_category(
-        db, pet.org_id, event_in.category_name, user_id
+        db, pet.family_id, event_in.category_name, user_id
     )
 
     # Create event with UTC-normalized timestamp
@@ -303,7 +303,7 @@ async def create_health_event(
     await db.commit()
 
     # Invalidate cache
-    await invalidate_health_cache(pet_id, pet.org_id)
+    await invalidate_health_cache(pet_id, pet.family_id)
 
     # Reload event with photos for response
     event_query = (
@@ -318,7 +318,7 @@ async def create_health_event(
     if event_in.notify_family:
         try:
             await notify_family_health_event(
-                db, pet.org_id, UUID(user_id), pet.name, event_in.category_name
+                db, pet.family_id, UUID(user_id), pet.name, event_in.category_name
             )
         except Exception as e:
             # Don't fail the create if notification fails
@@ -357,7 +357,7 @@ async def list_health_events(
             return cached
 
     # Get categories for this family (categories are family-wide)
-    cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
+    cat_query = select(PetHealthCategory).where(PetHealthCategory.family_id == pet.family_id)
     if category:
         # Fuzzy match: category name contains the search term (escape LIKE special chars)
         escaped_category = escape_like(category.lower().strip())
@@ -445,7 +445,7 @@ async def search_health_events(
     search_term = f"%{escaped_q}%"
 
     # Get categories for this family (categories are family-wide)
-    cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
+    cat_query = select(PetHealthCategory).where(PetHealthCategory.family_id == pet.family_id)
     if category:
         # Use fuzzy match for category filter (contains, not exact match)
         escaped_category = escape_like(category.lower().strip())
@@ -560,7 +560,7 @@ async def update_health_event(
     # Handle category change if provided (categories are family-wide)
     if event_in.category_name is not None:
         new_category = await get_or_create_category(
-            db, current_category.org_id, event_in.category_name, user_id
+            db, current_category.family_id, event_in.category_name, user_id
         )
         event.category_id = new_category.id
         current_category = new_category
@@ -583,7 +583,7 @@ async def update_health_event(
         await db.commit()
 
     # Invalidate cache
-    await invalidate_health_cache(event.pet_id, current_category.org_id)
+    await invalidate_health_cache(event.pet_id, current_category.family_id)
 
     # Reload event with photos for response
     event_query = (
@@ -624,7 +624,7 @@ async def upload_health_event_photo(
             detail="Maximum 3 photos per health event"
         )
 
-    # Get pet for org_id (events have pet_id directly)
+    # Get pet for family_id (events have pet_id directly)
     pet_query = select(Pet).where(Pet.id == event.pet_id)
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
@@ -633,7 +633,7 @@ async def upload_health_event_photo(
     photo_url = await storage_service.upload_image(
         file=file,
         upload_type="health-event-photo",
-        org_id=str(pet.org_id),
+        family_id=str(pet.family_id),
     )
 
     # Create photo record
@@ -647,7 +647,7 @@ async def upload_health_event_photo(
     await db.refresh(photo)
 
     # Invalidate cache (photos affect event list display)
-    await invalidate_health_cache(event.pet_id, pet.org_id)
+    await invalidate_health_cache(event.pet_id, pet.family_id)
 
     return HealthEventPhotoResponse.model_validate(photo)
 
@@ -694,11 +694,11 @@ async def delete_health_event_photo(
         # Log but don't fail - file is orphaned but can be cleaned up later
         logger.error(f"Failed to delete health event photo from R2: {e}")
 
-    # Invalidate cache (get pet for org_id)
+    # Invalidate cache (get pet for family_id)
     pet_query = select(Pet).where(Pet.id == event.pet_id)
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
-    await invalidate_health_cache(event.pet_id, pet.org_id)
+    await invalidate_health_cache(event.pet_id, pet.family_id)
 
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -715,7 +715,7 @@ async def delete_health_event(
     category_id = event.category_id
     pet_id = event.pet_id
 
-    # Get pet for org_id (needed for cache invalidation)
+    # Get pet for family_id (needed for cache invalidation)
     pet_query = select(Pet).where(Pet.id == pet_id)
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
@@ -746,4 +746,4 @@ async def delete_health_event(
     await db.commit()
 
     # Invalidate cache
-    await invalidate_health_cache(pet_id, pet.org_id)
+    await invalidate_health_cache(pet_id, pet.family_id)

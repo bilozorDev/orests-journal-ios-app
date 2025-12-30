@@ -4,7 +4,7 @@ Comprehensive integration tests for medication management endpoints.
 Tests cover:
 - Medication CRUD operations (list, create, get, update, delete)
 - Dose recording and management
-- Authorization checks (owner vs member, wrong org)
+- Authorization checks (owner vs member, wrong family)
 - Validation errors
 - Edge cases (archived medications, PRN vs scheduled, photo limits)
 
@@ -59,7 +59,7 @@ mock_db_session.execute = AsyncMock(
 
 Note: Tests that need updating will have a NOTE comment explaining the required changes.
 """
-from datetime import datetime, date, timedelta
+from datetime import UTC, datetime, date, timedelta
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
@@ -270,7 +270,7 @@ class TestListMedications:
         test_user_id: str,
         test_family_id: str,
     ):
-        """Should list all medications for org."""
+        """Should list all medications for family."""
         pet_id = str(uuid4())
 
         # Setup mocks
@@ -315,7 +315,7 @@ class TestListMedications:
         with patch("app.api.endpoints.medications.cache_get", return_value=None), \
              patch("app.api.endpoints.medications.cache_set"):
             response = await client.get(
-                f"/api/v1/medications?org_id={test_family_id}",
+                f"/api/v1/medications?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -337,7 +337,7 @@ class TestListMedications:
         auth_headers: dict,
         test_family_id: str,
     ):
-        """Should return 403 if user not member of org."""
+        """Should return 403 if user not member of family."""
         # Mock RLS call
         rls_result = MagicMock()
         rls_result.scalar_one_or_none.return_value = None
@@ -351,7 +351,7 @@ class TestListMedications:
         )
 
         response = await client.get(
-            f"/api/v1/medications?org_id={test_family_id}",
+            f"/api/v1/medications?family_id={test_family_id}",
             headers=auth_headers,
         )
 
@@ -366,7 +366,7 @@ class TestListMedications:
     ):
         """Should return 401 without auth token."""
         response = await client.get(
-            f"/api/v1/medications?org_id={test_family_id}",
+            f"/api/v1/medications?family_id={test_family_id}",
         )
 
         assert response.status_code == 401
@@ -412,7 +412,7 @@ class TestCreateMedication:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         pet_mock = MagicMock()
         pet_mock.scalar_one_or_none.return_value = mock_pet
@@ -472,7 +472,7 @@ class TestCreateMedication:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         pet_mock = MagicMock()
         pet_mock.scalar_one_or_none.return_value = mock_pet
@@ -531,7 +531,7 @@ class TestCreateMedication:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         pet_mock = MagicMock()
         pet_mock.scalar_one_or_none.return_value = mock_pet
@@ -590,7 +590,7 @@ class TestCreateMedication:
 
         mock_pet = create_mock_pet(
             pet_id=pet_id,
-            org_id=test_family_id,
+            family_id=test_family_id,
         )
         pet_mock = MagicMock()
         pet_mock.scalar_one_or_none.return_value = mock_pet
@@ -639,7 +639,7 @@ class TestGetMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -727,7 +727,7 @@ class TestGetMedication:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_get_medication_forbidden_wrong_org(
+    async def test_get_medication_forbidden_wrong_family(
         self,
         client: AsyncClient,
         mock_db_session: AsyncMock,
@@ -738,10 +738,10 @@ class TestGetMedication:
         """Should return 403 when user doesn't have access to medication."""
         medication_id = str(uuid4())
         pet_id = str(uuid4())
-        wrong_org_id = str(uuid4())
+        wrong_family_id = str(uuid4())
 
-        # Create mocks - medication exists but in different org
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=wrong_org_id)
+        # Create mocks - medication exists but in different family
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=wrong_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -807,7 +807,7 @@ class TestUpdateMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -873,7 +873,7 @@ class TestUpdateMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -937,7 +937,7 @@ class TestUpdateMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1055,7 +1055,7 @@ class TestDeleteMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1117,7 +1117,7 @@ class TestDeleteMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1175,7 +1175,7 @@ class TestDeleteMedication:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id, name="Buddy")
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id, name="Buddy")
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1249,7 +1249,7 @@ class TestMedicationPhotos:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1265,7 +1265,7 @@ class TestMedicationPhotos:
         photo_count_result = MagicMock()
         photo_count_result.scalar.return_value = 0
 
-        # Pet query for org_id
+        # Pet query for family_id
         pet_result2 = MagicMock()
         pet_result2.scalar_one.return_value = mock_pet
 
@@ -1320,7 +1320,7 @@ class TestMedicationPhotos:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1372,7 +1372,7 @@ class TestMedicationPhotos:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1436,7 +1436,7 @@ class TestMedicationPhotos:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1488,7 +1488,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1563,7 +1563,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1634,7 +1634,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1701,7 +1701,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1754,7 +1754,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,
@@ -1816,7 +1816,7 @@ class TestDoseManagement:
             user_id=test_user_id,
             family_id=test_family_id,
         )
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_medication = create_mock_medication(
             medication_id=medication_id,
             pet_id=pet_id,

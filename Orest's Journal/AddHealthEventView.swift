@@ -587,7 +587,7 @@ struct AddHealthEventView: View {
     AddHealthEventView(
         pet: Pet(
             id: UUID(),
-            orgId: UUID().uuidString,
+            familyId: UUID().uuidString,
             name: "Max",
             kind: "dog",
             photoUrl: nil,

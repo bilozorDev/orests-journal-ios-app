@@ -228,7 +228,7 @@ final class AuthManager {
 
             // Update API client with family ID and persist to Keychain
             if let family = currentFamily {
-                APIClient.shared.currentOrgId = family.id
+                APIClient.shared.currentFamilyId = family.id
                 saveFamilyIdToKeychain(family.id)
                 saveFamilyNameToKeychain(family.name)
             }
@@ -298,7 +298,7 @@ final class AuthManager {
         // Set up API client
         APIClient.shared.authToken = response.token
         if let family = currentFamily {
-            APIClient.shared.currentOrgId = family.id
+            APIClient.shared.currentFamilyId = family.id
             saveFamilyIdToKeychain(family.id)
             saveFamilyNameToKeychain(family.name)
         }
@@ -324,7 +324,7 @@ final class AuthManager {
         // Add to list and select it
         families.append(family)
         currentFamily = family
-        APIClient.shared.currentOrgId = family.id
+        APIClient.shared.currentFamilyId = family.id
         saveFamilyIdToKeychain(family.id)
         saveFamilyNameToKeychain(family.name)
 
@@ -347,7 +347,7 @@ final class AuthManager {
         // Add to list and select it
         families.append(response.family)
         currentFamily = response.family
-        APIClient.shared.currentOrgId = response.family.id
+        APIClient.shared.currentFamilyId = response.family.id
         saveFamilyIdToKeychain(response.family.id)
         saveFamilyNameToKeychain(response.family.name)
 
@@ -357,7 +357,7 @@ final class AuthManager {
     /// Select a family
     func selectFamily(_ family: AppFamily) {
         currentFamily = family
-        APIClient.shared.currentOrgId = family.id
+        APIClient.shared.currentFamilyId = family.id
         saveFamilyIdToKeychain(family.id)
         saveFamilyNameToKeychain(family.name)
     }
@@ -393,11 +393,11 @@ final class AuthManager {
             // Switch to any remaining family, or nil
             currentFamily = families.first
             if let family = currentFamily {
-                APIClient.shared.currentOrgId = family.id
+                APIClient.shared.currentFamilyId = family.id
                 saveFamilyIdToKeychain(family.id)
                 saveFamilyNameToKeychain(family.name)
             } else {
-                APIClient.shared.currentOrgId = nil
+                APIClient.shared.currentFamilyId = nil
                 deleteFamilyIdFromKeychain()
                 deleteFamilyNameFromKeychain()
             }
@@ -429,11 +429,11 @@ final class AuthManager {
             // Switch to any remaining family, or nil
             currentFamily = families.first
             if let family = currentFamily {
-                APIClient.shared.currentOrgId = family.id
+                APIClient.shared.currentFamilyId = family.id
                 saveFamilyIdToKeychain(family.id)
                 saveFamilyNameToKeychain(family.name)
             } else {
-                APIClient.shared.currentOrgId = nil
+                APIClient.shared.currentFamilyId = nil
                 deleteFamilyIdFromKeychain()
                 deleteFamilyNameFromKeychain()
             }
@@ -542,38 +542,6 @@ final class AuthManager {
         currentFamily?.id
     }
 
-    // MARK: - Legacy Compatibility
-
-    /// Legacy: organizations property (maps to families)
-    var organizations: [AppFamily] {
-        families
-    }
-
-    /// Legacy: currentOrganization property (maps to currentFamily)
-    var currentOrganization: AppFamily? {
-        currentFamily
-    }
-
-    /// Legacy: hasOrganization property (maps to hasFamily)
-    var hasOrganization: Bool {
-        hasFamily
-    }
-
-    /// Legacy: orgId property (maps to familyId)
-    var orgId: String? {
-        familyId
-    }
-
-    /// Legacy: createOrganization method (maps to createFamily)
-    func createOrganization(name: String) async throws -> AppFamily {
-        try await createFamily(name: name)
-    }
-
-    /// Legacy: selectOrganization method (maps to selectFamily)
-    func selectOrganization(_ org: AppFamily) {
-        selectFamily(org)
-    }
-
     // MARK: - Private Methods
 
     private func clearSession() {
@@ -590,7 +558,7 @@ final class AuthManager {
         currentFamily = nil
         isAuthenticated = false
         APIClient.shared.authToken = nil
-        APIClient.shared.currentOrgId = nil
+        APIClient.shared.currentFamilyId = nil
         NavigationManager.shared.reset()
         // Clear widget data
         WidgetDataManager.shared.clearWidgetData()

@@ -56,7 +56,7 @@ final class APIClient: APIClientProtocol {
     private let encoder: JSONEncoder
 
     var authToken: String?
-    var currentOrgId: String?
+    var currentFamilyId: String?
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -247,21 +247,21 @@ final class APIClient: APIClientProtocol {
     // MARK: - Pets
 
     func getPets() async throws -> [Pet] {
-        guard let orgId = currentOrgId else {
+        guard let familyId = currentFamilyId else {
             throw APIError.unauthorized
         }
         let response: PetListResponse = try await get("/pets", queryItems: [
-            URLQueryItem(name: "org_id", value: orgId)
+            URLQueryItem(name: "family_id", value: familyId)
         ])
         return response.pets
     }
 
     func createPet(_ pet: PetCreate) async throws -> Pet {
-        guard let orgId = currentOrgId else {
+        guard let familyId = currentFamilyId else {
             throw APIError.unauthorized
         }
         return try await post("/pets", body: pet, queryItems: [
-            URLQueryItem(name: "org_id", value: orgId)
+            URLQueryItem(name: "family_id", value: familyId)
         ])
     }
 
@@ -342,7 +342,7 @@ final class APIClient: APIClientProtocol {
         let response: FamilyMemberResponse = try await patch("/families/\(familyId)/members/\(userId)/role", body: RoleUpdateRequest(role: role))
         return FamilyMember(
             id: response.id,
-            orgId: familyId,
+            familyId: familyId,
             userId: response.userId,
             role: response.role,
             joinedAt: response.joinedAt,
@@ -494,13 +494,13 @@ final class APIClient: APIClientProtocol {
     // MARK: - Medications
 
     func getMedications(
-        orgId: UUID,
+        familyId: UUID,
         petId: UUID? = nil,
         activeOnly: Bool = false,
         includeArchived: Bool = false,
         timezone: String = TimeZone.current.identifier
     ) async throws -> MedicationListResponse {
-        var path = "/medications?org_id=\(orgId.uuidString.lowercased())&timezone=\(timezone)"
+        var path = "/medications?family_id=\(familyId.uuidString.lowercased())&timezone=\(timezone)"
         if let petId = petId {
             path += "&pet_id=\(petId.uuidString.lowercased())"
         }

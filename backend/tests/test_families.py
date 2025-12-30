@@ -546,7 +546,7 @@ class TestBruteForceProtection:
         test_user_id: str,
     ):
         """User must wait after a failed attempt due to backoff."""
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
         # Create mock user with 1 failed attempt that just happened
         mock_user = MagicMock()
@@ -554,7 +554,7 @@ class TestBruteForceProtection:
         mock_user.is_locked_out = False
         mock_user.lockout_expires_at = None
         mock_user.failed_invite_attempts = 1
-        mock_user.last_failed_invite_at = datetime.utcnow()  # Just happened
+        mock_user.last_failed_invite_at = datetime.now(UTC)  # Just happened
 
         # Mock lockout check - user not locked
         user_result = MagicMock()
@@ -581,15 +581,15 @@ class TestBruteForceProtection:
         test_user_id: str,
     ):
         """Account is locked after 10 consecutive failures."""
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
         # Create mock user that is locked out
         mock_user = MagicMock()
         mock_user.id = test_user_id
         mock_user.is_locked_out = True
-        mock_user.lockout_expires_at = datetime.utcnow() + timedelta(minutes=30)
+        mock_user.lockout_expires_at = datetime.now(UTC) + timedelta(minutes=30)
         mock_user.failed_invite_attempts = 10
-        mock_user.last_failed_invite_at = datetime.utcnow()
+        mock_user.last_failed_invite_at = datetime.now(UTC)
 
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = mock_user
@@ -616,15 +616,15 @@ class TestBruteForceProtection:
         test_family_id: str,
     ):
         """Expired lockout allows user to try again."""
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
         # Create mock user with expired lockout
         mock_user = MagicMock()
         mock_user.id = test_user_id
         mock_user.is_locked_out = True
-        mock_user.lockout_expires_at = datetime.utcnow() - timedelta(minutes=1)  # Expired
+        mock_user.lockout_expires_at = datetime.now(UTC) - timedelta(minutes=1)  # Expired
         mock_user.failed_invite_attempts = 10
-        mock_user.last_failed_invite_at = datetime.utcnow() - timedelta(hours=2)
+        mock_user.last_failed_invite_at = datetime.now(UTC) - timedelta(hours=2)
 
         # Family that will be found
         mock_family = create_mock_family(

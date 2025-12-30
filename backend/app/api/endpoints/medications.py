@@ -30,16 +30,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def invalidate_medication_caches(pet_id: UUID, org_id: str = None) -> None:
+async def invalidate_medication_caches(pet_id: UUID, family_id: str = None) -> None:
     """Invalidate dashboard and medication caches when medications change."""
     await cache_delete_pattern(f"dashboard:{pet_id}:*")
-    if org_id:
-        await cache_delete_pattern(f"medications:{org_id}:*")
+    if family_id:
+        await cache_delete_pattern(f"medications:{family_id}:*")
 
 
 async def notify_family_medication_change(
     db: AsyncSession,
-    org_id: UUID,
+    family_id: UUID,
     exclude_user_id: UUID,
     pet_name: str,
     medication_name: str,
@@ -49,7 +49,7 @@ async def notify_family_medication_change(
 
     Args:
         db: Database session
-        org_id: The family/organization ID
+        family_id: The family ID
         exclude_user_id: User ID to exclude (the user who made the change)
         pet_name: Name of the pet
         medication_name: Name of the medication
@@ -57,7 +57,7 @@ async def notify_family_medication_change(
     """
     try:
         tokens = await get_filtered_family_member_tokens(
-            db, org_id, exclude_user_id, notification_type
+            db, family_id, exclude_user_id, notification_type
         )
         if not tokens:
             return
@@ -133,7 +133,7 @@ def validate_medication_input(med_in: MedicationCreate | MedicationUpdate, is_cr
 
 @router.get("", response_model=MedicationListResponse)
 async def list_medications(
-    org_id: str,
+    family_id: str,
     response: Response,
     pet_id: Optional[UUID] = None,
     active_only: bool = False,
@@ -142,7 +142,7 @@ async def list_medications(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List medications for the organization, optionally filtered by pet.
+    """List medications for the family, optionally filtered by pet.
 
     Args:
         timezone: IANA timezone identifier (e.g., "America/Los_Angeles")
@@ -154,17 +154,17 @@ async def list_medications(
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=300"
 
     # Verify user belongs to this family
-    await verify_family_access(db, user_id, org_id)
+    await verify_family_access(db, user_id, family_id)
 
     # Try cache first (only for non-active queries which don't depend on timezone)
     if not active_only:
-        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only, include_archived)
+        cache_key = key_medications(family_id, str(pet_id) if pet_id else None, active_only, include_archived)
         cached = await cache_get(cache_key, MedicationListResponse)
         if cached:
             return cached
 
-    # First get pets for this org
-    pets_query = select(Pet.id).where(Pet.org_id == org_id)
+    # First get pets for this family
+    pets_query = select(Pet.id).where(Pet.family_id == family_id)
     pets_result = await db.execute(pets_query)
     pet_ids = [p for p in pets_result.scalars().all()]
 
@@ -222,7 +222,7 @@ async def list_medications(
 
     # Cache the response (only for non-active queries)
     if not active_only:
-        cache_key = key_medications(org_id, str(pet_id) if pet_id else None, active_only, include_archived)
+        cache_key = key_medications(family_id, str(pet_id) if pet_id else None, active_only, include_archived)
         await cache_set(cache_key, response_data, TTL_ACTIVE_MEDS)
 
     return response_data
@@ -286,13 +286,13 @@ async def create_medication(
             await db.refresh(sched)
 
     # Invalidate caches
-    await invalidate_medication_caches(med_in.pet_id, str(pet.org_id))
+    await invalidate_medication_caches(med_in.pet_id, str(pet.family_id))
 
     # Send notification to family members - use friendly_name if set
     display_name = medication.friendly_name or medication.name
     await notify_family_medication_change(
         db=db,
-        org_id=pet.org_id,
+        family_id=pet.family_id,
         exclude_user_id=UUID(user_id),
         pet_name=pet.name,
         medication_name=display_name,
@@ -361,7 +361,7 @@ async def update_medication(
     # Get pet for cache invalidation and notifications
     pet_result = await db.execute(select(Pet).where(Pet.id == medication.pet_id))
     pet = pet_result.scalar_one()
-    org_id = str(pet.org_id)
+    family_id = str(pet.family_id)
 
     update_data = med_in.model_dump(exclude_unset=True)
 
@@ -427,13 +427,13 @@ async def update_medication(
         scheduled_times = list(existing.scalars().all())
 
     # Invalidate caches
-    await invalidate_medication_caches(medication.pet_id, org_id)
+    await invalidate_medication_caches(medication.pet_id, family_id)
 
     # Send notification to family members - use friendly_name if set
     display_name = medication.friendly_name or medication.name
     await notify_family_medication_change(
         db=db,
-        org_id=pet.org_id,
+        family_id=pet.family_id,
         exclude_user_id=UUID(user_id),
         pet_name=pet.name,
         medication_name=display_name,
@@ -473,7 +473,7 @@ async def delete_medication(
     # Get pet for cache invalidation and notifications
     pet_result = await db.execute(select(Pet).where(Pet.id == pet_id))
     pet = pet_result.scalar_one()
-    org_id = str(pet.org_id)
+    family_id = str(pet.family_id)
 
     # Check if medication has any doses
     dose_count_query = select(func.count()).select_from(PetMedicationDose).where(
@@ -494,12 +494,12 @@ async def delete_medication(
         # Archive instead of delete to preserve history
         medication.is_archived = True
         await db.commit()
-        await invalidate_medication_caches(pet_id, org_id)
+        await invalidate_medication_caches(pet_id, family_id)
 
         # Send notification
         await notify_family_medication_change(
             db=db,
-            org_id=pet.org_id,
+            family_id=pet.family_id,
             exclude_user_id=UUID(user_id),
             pet_name=pet.name,
             medication_name=medication_name,
@@ -515,7 +515,7 @@ async def delete_medication(
         # Hard delete since no doses exist
         await db.delete(medication)
         await db.commit()
-        await invalidate_medication_caches(pet_id, org_id)
+        await invalidate_medication_caches(pet_id, family_id)
 
         # Delete photos from R2 AFTER DB commit succeeds
         for photo_url in photo_urls:
@@ -529,7 +529,7 @@ async def delete_medication(
         # Send notification
         await notify_family_medication_change(
             db=db,
-            org_id=pet.org_id,
+            family_id=pet.family_id,
             exclude_user_id=UUID(user_id),
             pet_name=pet.name,
             medication_name=medication_name,
@@ -619,7 +619,7 @@ async def upload_medication_photo(
             detail="Maximum 3 photos per medication"
         )
 
-    # Get pet for org_id
+    # Get pet for family_id
     pet_query = select(Pet).where(Pet.id == medication.pet_id)
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
@@ -628,7 +628,7 @@ async def upload_medication_photo(
     photo_url = await storage_service.upload_image(
         file=file,
         upload_type="medication-photo",
-        org_id=str(pet.org_id),
+        family_id=str(pet.family_id),
     )
 
     # Create photo record
@@ -642,7 +642,7 @@ async def upload_medication_photo(
     await db.refresh(photo)
 
     # Invalidate cache
-    await invalidate_medication_caches(medication.pet_id, str(pet.org_id))
+    await invalidate_medication_caches(medication.pet_id, str(pet.family_id))
 
     return MedicationPhotoResponse.model_validate(photo)
 
@@ -691,4 +691,4 @@ async def delete_medication_photo(
     pet_query = select(Pet).where(Pet.id == medication.pet_id)
     pet_result = await db.execute(pet_query)
     pet = pet_result.scalar_one()
-    await invalidate_medication_caches(medication.pet_id, str(pet.org_id))
+    await invalidate_medication_caches(medication.pet_id, str(pet.family_id))

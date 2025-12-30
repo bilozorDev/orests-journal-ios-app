@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
@@ -95,8 +95,7 @@ class MedicationResponse(BaseModel):
     @property
     def is_active(self) -> bool:
         """Check if medication is currently active."""
-        from datetime import datetime
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         if now < self.start_date:
             return False
         if self.end_date and now > self.end_date:

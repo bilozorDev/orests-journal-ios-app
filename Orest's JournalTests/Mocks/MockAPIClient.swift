@@ -12,7 +12,7 @@ import Foundation
 /// Allows stubbing responses and capturing requests for verification.
 final class MockAPIClient: APIClientProtocol {
     var authToken: String?
-    var currentOrgId: String?
+    var currentFamilyId: String?
 
     // MARK: - Stubbed Responses
 

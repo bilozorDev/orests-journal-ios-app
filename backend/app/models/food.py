@@ -26,7 +26,7 @@ class PetFood(Base):
     __tablename__ = "pet_foods"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(UUID(as_uuid=True), ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True)
+    family_id = Column(UUID(as_uuid=True), ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     category = Column(String(50), nullable=False)
     calories_per_kg = Column(Float, nullable=False)

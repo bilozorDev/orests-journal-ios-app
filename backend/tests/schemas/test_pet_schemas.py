@@ -3,7 +3,7 @@ Tests for Pet Pydantic schemas.
 
 Validates pet schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime, date, timedelta
+from datetime import UTC, datetime, date, timedelta
 from uuid import uuid4
 
 import pytest
@@ -341,18 +341,18 @@ class TestPetResponse:
 
     def test_pet_response_required_fields(self):
         """Response should require all non-nullable fields."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         response = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Orest",
             kind="dog",
             created_at=now,
         )
 
         assert response.id is not None
-        assert response.org_id is not None
+        assert response.family_id is not None
         assert response.name == "Orest"
         assert response.kind == "dog"
         assert response.created_at == now
@@ -361,10 +361,10 @@ class TestPetResponse:
         """Optional fields should default to None."""
         response = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Orest",
             kind="dog",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.photo_url is None
@@ -374,15 +374,15 @@ class TestPetResponse:
 
     def test_pet_response_with_all_fields(self):
         """Response should accept all fields."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         dob = date(2020, 5, 10)
         pet_id = uuid4()
-        org_id = uuid4()
+        family_id = uuid4()
         user_id = uuid4()
 
         response = PetResponse(
             id=pet_id,
-            org_id=org_id,
+            family_id=family_id,
             name="Orest",
             kind="dog",
             photo_url="https://example.com/orest.jpg",
@@ -393,7 +393,7 @@ class TestPetResponse:
         )
 
         assert response.id == pet_id
-        assert response.org_id == org_id
+        assert response.family_id == family_id
         assert response.name == "Orest"
         assert response.kind == "dog"
         assert response.photo_url == "https://example.com/orest.jpg"
@@ -412,35 +412,35 @@ class TestPetResponse:
         with pytest.raises(ValidationError) as exc_info:
             PetResponse(
                 id="not-a-uuid",
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name="Orest",
                 kind="dog",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
 
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("id",) for e in errors)
 
-    def test_pet_response_org_id_must_be_uuid(self):
-        """Org ID field must be a valid UUID."""
+    def test_pet_response_family_id_must_be_uuid(self):
+        """Family ID field must be a valid UUID."""
         with pytest.raises(ValidationError) as exc_info:
             PetResponse(
                 id=uuid4(),
-                org_id="not-a-uuid",
+                family_id="not-a-uuid",
                 name="Orest",
                 kind="dog",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
 
         errors = exc_info.value.errors()
-        assert any(e["loc"] == ("org_id",) for e in errors)
+        assert any(e["loc"] == ("family_id",) for e in errors)
 
     def test_pet_response_created_at_must_be_datetime(self):
         """Created_at must be a datetime object."""
         with pytest.raises(ValidationError) as exc_info:
             PetResponse(
                 id=uuid4(),
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name="Orest",
                 kind="dog",
                 created_at="not-a-datetime",
@@ -454,10 +454,10 @@ class TestPetResponse:
         with pytest.raises(ValidationError) as exc_info:
             PetResponse(
                 id=uuid4(),
-                org_id=uuid4(),
+                family_id=uuid4(),
                 name="Orest",
                 kind="dog",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
                 current_weight="heavy",
             )
 
@@ -467,18 +467,18 @@ class TestPetResponse:
     def test_pet_response_accepts_uuid_strings(self):
         """Response should accept UUID strings and convert them."""
         pet_id = uuid4()
-        org_id = uuid4()
+        family_id = uuid4()
 
         response = PetResponse(
             id=str(pet_id),
-            org_id=str(org_id),
+            family_id=str(family_id),
             name="Orest",
             kind="dog",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.id == pet_id
-        assert response.org_id == org_id
+        assert response.family_id == family_id
 
 
 class TestPetListResponse:
@@ -494,10 +494,10 @@ class TestPetListResponse:
         """Should accept list with single pet."""
         pet = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Orest",
             kind="dog",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         response = PetListResponse(pets=[pet])
@@ -506,27 +506,27 @@ class TestPetListResponse:
 
     def test_pet_list_response_multiple_pets(self):
         """Should accept list with multiple pets."""
-        org_id = uuid4()
-        now = datetime.utcnow()
+        family_id = uuid4()
+        now = datetime.now(UTC)
 
         pets = [
             PetResponse(
                 id=uuid4(),
-                org_id=org_id,
+                family_id=family_id,
                 name="Orest",
                 kind="dog",
                 created_at=now,
             ),
             PetResponse(
                 id=uuid4(),
-                org_id=org_id,
+                family_id=family_id,
                 name="Whiskers",
                 kind="cat",
                 created_at=now,
             ),
             PetResponse(
                 id=uuid4(),
-                org_id=org_id,
+                family_id=family_id,
                 name="Tweety",
                 kind="bird",
                 created_at=now,
@@ -541,11 +541,11 @@ class TestPetListResponse:
 
     def test_pet_list_response_preserves_order(self):
         """Should preserve order of pets in list."""
-        org_id = uuid4()
-        now = datetime.utcnow()
+        family_id = uuid4()
+        now = datetime.now(UTC)
 
         pets = [
-            PetResponse(id=uuid4(), org_id=org_id, name=f"Pet{i}", kind="dog", created_at=now)
+            PetResponse(id=uuid4(), family_id=family_id, name=f"Pet{i}", kind="dog", created_at=now)
             for i in range(10)
         ]
 
@@ -672,7 +672,7 @@ class TestHealthRecordResponse:
 
     def test_health_record_response_required_fields(self):
         """Response should require all non-nullable fields."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         record_id = uuid4()
         pet_id = uuid4()
 
@@ -691,7 +691,7 @@ class TestHealthRecordResponse:
         response = HealthRecordResponse(
             id=uuid4(),
             pet_id=uuid4(),
-            recorded_at=datetime.utcnow(),
+            recorded_at=datetime.now(UTC),
         )
 
         assert response.age_years is None
@@ -700,7 +700,7 @@ class TestHealthRecordResponse:
 
     def test_health_record_response_with_all_fields(self):
         """Response should accept all fields."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         record_id = uuid4()
         pet_id = uuid4()
 
@@ -730,7 +730,7 @@ class TestHealthRecordResponse:
             HealthRecordResponse(
                 id="not-a-uuid",
                 pet_id=uuid4(),
-                recorded_at=datetime.utcnow(),
+                recorded_at=datetime.now(UTC),
             )
 
         errors = exc_info.value.errors()
@@ -742,7 +742,7 @@ class TestHealthRecordResponse:
             HealthRecordResponse(
                 id=uuid4(),
                 pet_id="not-a-uuid",
-                recorded_at=datetime.utcnow(),
+                recorded_at=datetime.now(UTC),
             )
 
         errors = exc_info.value.errors()
@@ -768,7 +768,7 @@ class TestHealthRecordResponse:
         response = HealthRecordResponse(
             id=str(record_id),
             pet_id=str(pet_id),
-            recorded_at=datetime.utcnow(),
+            recorded_at=datetime.now(UTC),
         )
 
         assert response.id == record_id
@@ -780,7 +780,7 @@ class TestHealthRecordResponse:
             HealthRecordResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
-                recorded_at=datetime.utcnow(),
+                recorded_at=datetime.now(UTC),
                 age_years="five",
             )
 
@@ -793,7 +793,7 @@ class TestHealthRecordResponse:
             HealthRecordResponse(
                 id=uuid4(),
                 pet_id=uuid4(),
-                recorded_at=datetime.utcnow(),
+                recorded_at=datetime.now(UTC),
                 weight_pounds="fifty",
             )
 
@@ -839,10 +839,10 @@ class TestBoundaryValues:
     def test_pet_response_created_at_with_timezone(self):
         """Should handle datetime with timezone information."""
         # UTC datetime
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(UTC)
         response = PetResponse(
             id=uuid4(),
-            org_id=uuid4(),
+            family_id=uuid4(),
             name="Test",
             kind="dog",
             created_at=now_utc,

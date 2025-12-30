@@ -14,7 +14,7 @@ Test scenarios:
 - Cache behavior
 - User name formatting ("You" vs formatted name)
 """
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import UTC, datetime, timedelta, timezone as dt_timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
 
@@ -54,11 +54,11 @@ def create_mock_medication(
     medication.name = name
     medication.medication_type = medication_type
     medication.dosage = dosage
-    medication.start_date = start_date if start_date is not None else datetime.utcnow().date()
+    medication.start_date = start_date if start_date is not None else datetime.now(UTC).date()
     medication.end_date = end_date  # Can be None
     medication.times_per_day = times_per_day
     medication.is_as_needed = is_as_needed
-    medication.created_at = datetime.utcnow()
+    medication.created_at = datetime.now(UTC)
     medication.notes = None  # Add default notes field
     medication.photo_urls = []  # Add default photo_urls field
     return medication
@@ -76,10 +76,10 @@ def create_mock_dose(
     dose = SimpleNamespace()
     dose.id = UUID(dose_id) if dose_id else uuid4()
     dose.medication_id = UUID(medication_id) if medication_id else uuid4()
-    dose.given_at = given_at if given_at is not None else datetime.utcnow()
+    dose.given_at = given_at if given_at is not None else datetime.now(UTC)
     dose.given_by = UUID(given_by) if given_by else uuid4()
     dose.notes = notes
-    dose.created_at = datetime.utcnow()
+    dose.created_at = datetime.now(UTC)
     return dose
 
 
@@ -101,12 +101,12 @@ def create_mock_feeding_dashboard(
     feeding.food_id = UUID(food_id) if food_id else uuid4()
     # fed_by should be UUID object, not string
     feeding.fed_by = UUID(fed_by) if fed_by else uuid4()
-    feeding.fed_at = fed_at if fed_at is not None else datetime.utcnow()
+    feeding.fed_at = fed_at if fed_at is not None else datetime.now(UTC)
     feeding.amount = amount
     feeding.amount_unit = amount_unit
     feeding.calories = calories
     feeding.notes = notes
-    feeding.created_at = datetime.utcnow()
+    feeding.created_at = datetime.now(UTC)
     return feeding
 
 
@@ -175,7 +175,7 @@ class TestGetDashboardData:
         med_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock calorie goal
@@ -200,7 +200,7 @@ class TestGetDashboardData:
         feedings_result.scalars.return_value.all.return_value = [mock_feeding]
 
         # Mock foods
-        mock_food = create_mock_food(food_id=food_id, org_id=test_family_id)
+        mock_food = create_mock_food(food_id=food_id, family_id=test_family_id)
         foods_result = MagicMock()
         foods_result.scalars.return_value.all.return_value = [mock_food]
 
@@ -255,7 +255,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -301,7 +301,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock no calorie goal
@@ -338,7 +338,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -364,7 +364,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock expired calorie goal
@@ -405,7 +405,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -429,7 +429,7 @@ class TestGetDashboardData:
         other_user_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock no goal
@@ -488,7 +488,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -518,7 +518,7 @@ class TestGetDashboardData:
         med_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock no goal, feedings, foods
@@ -578,7 +578,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -603,7 +603,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty results
@@ -637,7 +637,7 @@ class TestGetDashboardData:
 
             # Make request with timezone parameter
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}&timezone=America/Los_Angeles",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}&timezone=America/Los_Angeles",
                 headers=auth_headers,
             )
 
@@ -657,7 +657,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty results
@@ -691,7 +691,7 @@ class TestGetDashboardData:
 
             # Make request with invalid timezone
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}&timezone=Invalid/Timezone",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}&timezone=Invalid/Timezone",
                 headers=auth_headers,
             )
 
@@ -711,7 +711,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification (still needed for security check)
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # RLS query #1 (verify_pet_access)
@@ -744,7 +744,7 @@ class TestGetDashboardData:
         with patch("app.api.endpoints.dashboard.cache_get", return_value=cached_data):
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -762,7 +762,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         response = await client.get(
-            f"/api/v1/dashboard/pet/{pet_id}?org_id={TEST_FAMILY_ID}",
+            f"/api/v1/dashboard/pet/{pet_id}?family_id={TEST_FAMILY_ID}",
         )
 
         assert response.status_code == 401
@@ -780,7 +780,7 @@ class TestGetDashboardData:
         other_family_id = str(uuid4())
 
         # Pet exists but user has no access
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=other_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=other_family_id)
 
         # RLS query #1 (verify_pet_access)
         rls_result1 = MagicMock()
@@ -803,7 +803,7 @@ class TestGetDashboardData:
         # Mock cache miss
         with patch("app.api.endpoints.dashboard.cache_get", return_value=None):
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={other_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={other_family_id}",
                 headers=auth_headers,
             )
 
@@ -818,19 +818,19 @@ class TestGetDashboardData:
     ):
         """Should return 422 for invalid pet_id UUID."""
         response = await client.get(
-            f"/api/v1/dashboard/pet/not-a-uuid?org_id={TEST_FAMILY_ID}",
+            f"/api/v1/dashboard/pet/not-a-uuid?family_id={TEST_FAMILY_ID}",
             headers=auth_headers,
         )
 
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_get_dashboard_missing_org_id(
+    async def test_get_dashboard_missing_family_id(
         self,
         client: AsyncClient,
         auth_headers: dict,
     ):
-        """Should return 422 when org_id parameter is missing."""
+        """Should return 422 when family_id parameter is missing."""
         pet_id = str(uuid4())
 
         response = await client.get(
@@ -853,7 +853,7 @@ class TestGetDashboardData:
         pet_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty results
@@ -887,7 +887,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -912,7 +912,7 @@ class TestGetDashboardData:
         med_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty results for goal, feedings, foods
@@ -963,7 +963,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 
@@ -991,7 +991,7 @@ class TestGetDashboardData:
         med2_id = str(uuid4())
 
         # Mock access verification
-        mock_pet = create_mock_pet(pet_id=pet_id, org_id=test_family_id)
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
         mock_membership = create_mock_membership(user_id=test_user_id, family_id=test_family_id)
 
         # Mock empty results for goal, feedings, foods
@@ -1062,7 +1062,7 @@ class TestGetDashboardData:
 
             # Make request
             response = await client.get(
-                f"/api/v1/dashboard/pet/{pet_id}?org_id={test_family_id}",
+                f"/api/v1/dashboard/pet/{pet_id}?family_id={test_family_id}",
                 headers=auth_headers,
             )
 

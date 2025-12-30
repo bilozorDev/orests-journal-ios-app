@@ -10,7 +10,7 @@ import Foundation
 /// Family member model matching API response structure
 struct FamilyMember: Codable, Identifiable {
     let id: String
-    let orgId: String
+    let familyId: String
     let userId: String
     let role: String
     let joinedAt: Date?

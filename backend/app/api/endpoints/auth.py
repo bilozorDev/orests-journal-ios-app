@@ -519,7 +519,7 @@ async def delete_account(
 
 # --- Test Login Endpoint (for UI testing) ---
 
-class TestLoginRequest(BaseModel):
+class DevLoginRequest(BaseModel):
     """Request body for test login (UI testing only)."""
     test_user_id: str = "ui-test-user"
     email: str = "uitest@example.com"
@@ -531,7 +531,7 @@ class TestLoginRequest(BaseModel):
 
 @router.post("/test-login", response_model=AuthResponse)
 async def test_login(
-    request: TestLoginRequest,
+    request: DevLoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """

@@ -12,7 +12,7 @@ struct EditDoseSheet: View {
 
     let dose: MedicationDose
     let medicationName: String
-    let orgId: String
+    let familyId: String
     var onDoseUpdated: (() -> Void)?
 
     @State private var givenAt: Date
@@ -20,10 +20,10 @@ struct EditDoseSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(dose: MedicationDose, medicationName: String, orgId: String, onDoseUpdated: (() -> Void)? = nil) {
+    init(dose: MedicationDose, medicationName: String, familyId: String, onDoseUpdated: (() -> Void)? = nil) {
         self.dose = dose
         self.medicationName = medicationName
-        self.orgId = orgId
+        self.familyId = familyId
         self.onDoseUpdated = onDoseUpdated
         _givenAt = State(initialValue: dose.givenAt)
         _notes = State(initialValue: dose.notes ?? "")
@@ -104,7 +104,7 @@ struct EditDoseSheet: View {
                 doseId: dose.id,
                 givenAt: givenAt,
                 notes: notesText,
-                orgId: orgId
+                familyId: familyId
             )
 
             // Haptic feedback on success

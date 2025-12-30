@@ -3,7 +3,7 @@ Tests for Medication Pydantic schemas.
 
 Validates medication schema behavior to prevent breaking changes to iOS app.
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -64,7 +64,7 @@ class TestMedicationCreate:
             pet_id=uuid4(),
             name="Prednisone",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
         )
 
         assert med.pet_id is not None
@@ -79,7 +79,7 @@ class TestMedicationCreate:
 
     def test_medication_create_with_all_fields(self):
         """Should create medication with all optional fields."""
-        start_date = datetime.utcnow()
+        start_date = datetime.now(UTC)
         end_date = start_date + timedelta(days=30)
 
         med = MedicationCreate(
@@ -117,7 +117,7 @@ class TestMedicationCreate:
                 pet_id=uuid4(),
                 name="Test",
                 medication_type=MedicationType.PILL,
-                start_date=datetime.utcnow(),
+                start_date=datetime.now(UTC),
                 interval_days=days,
             )
             assert med.interval_days == days
@@ -128,7 +128,7 @@ class TestMedicationCreate:
             pet_id=uuid4(),
             name="PRN Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             is_as_needed=True,
             interval_days=None,
         )
@@ -142,7 +142,7 @@ class TestMedicationCreate:
             pet_id=uuid4(),
             name="Test",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
         )
 
         assert med.times_per_day == 1
@@ -153,7 +153,7 @@ class TestMedicationCreate:
             pet_id=uuid4(),
             name="Test",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             scheduled_times=None,
         )
 
@@ -251,9 +251,9 @@ class TestMedicationResponse:
             pet_id=uuid4(),
             name="Test Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.id is not None
@@ -261,7 +261,7 @@ class TestMedicationResponse:
 
     def test_medication_response_is_active_property_before_start(self):
         """Medication should not be active before start date."""
-        future_start = datetime.utcnow() + timedelta(days=7)
+        future_start = datetime.now(UTC) + timedelta(days=7)
 
         response = MedicationResponse(
             id=uuid4(),
@@ -270,15 +270,15 @@ class TestMedicationResponse:
             medication_type=MedicationType.PILL,
             start_date=future_start,
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_active is False
 
     def test_medication_response_is_active_property_after_end(self):
         """Medication should not be active after end date."""
-        past_start = datetime.utcnow() - timedelta(days=30)
-        past_end = datetime.utcnow() - timedelta(days=1)
+        past_start = datetime.now(UTC) - timedelta(days=30)
+        past_end = datetime.now(UTC) - timedelta(days=1)
 
         response = MedicationResponse(
             id=uuid4(),
@@ -288,14 +288,14 @@ class TestMedicationResponse:
             start_date=past_start,
             end_date=past_end,
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_active is False
 
     def test_medication_response_is_active_property_ongoing(self):
         """Medication should be active when started and no end date."""
-        past_start = datetime.utcnow() - timedelta(days=7)
+        past_start = datetime.now(UTC) - timedelta(days=7)
 
         response = MedicationResponse(
             id=uuid4(),
@@ -305,15 +305,15 @@ class TestMedicationResponse:
             start_date=past_start,
             end_date=None,
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_active is True
 
     def test_medication_response_is_active_property_within_range(self):
         """Medication should be active between start and end dates."""
-        past_start = datetime.utcnow() - timedelta(days=7)
-        future_end = datetime.utcnow() + timedelta(days=7)
+        past_start = datetime.now(UTC) - timedelta(days=7)
+        future_end = datetime.now(UTC) + timedelta(days=7)
 
         response = MedicationResponse(
             id=uuid4(),
@@ -323,7 +323,7 @@ class TestMedicationResponse:
             start_date=past_start,
             end_date=future_end,
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_active is True
@@ -335,9 +335,9 @@ class TestMedicationResponse:
             pet_id=uuid4(),
             name="Test",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert response.is_as_needed is False
@@ -358,9 +358,9 @@ class TestMedicationWithSchedulesResponse:
             pet_id=uuid4(),
             name="Test Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=2,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             scheduled_times=[
                 ScheduledTimeResponse(
                     id=uuid4(),
@@ -390,23 +390,23 @@ class TestMedicationWithSchedulesResponse:
             pet_id=uuid4(),
             name="Test Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             photos=[
                 MedicationPhotoResponse(
                     id=uuid4(),
                     medication_id=med_id,
                     photo_url="https://example.com/1.jpg",
                     sort_order=0,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(UTC),
                 ),
                 MedicationPhotoResponse(
                     id=uuid4(),
                     medication_id=med_id,
                     photo_url="https://example.com/2.jpg",
                     sort_order=1,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(UTC),
                 ),
             ],
         )
@@ -422,9 +422,9 @@ class TestMedicationWithSchedulesResponse:
             pet_id=uuid4(),
             name="Test Med",
             medication_type=MedicationType.PILL,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(UTC),
             times_per_day=1,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             scheduled_times=[],
             photos=[],
         )
@@ -448,7 +448,7 @@ class TestDoseSchemas:
 
     def test_dose_create_with_custom_timestamp(self):
         """DoseCreate should accept custom given_at timestamp."""
-        past_time = datetime.utcnow() - timedelta(hours=2)
+        past_time = datetime.now(UTC) - timedelta(hours=2)
 
         dose = DoseCreate(
             medication_id=uuid4(),
@@ -462,10 +462,10 @@ class TestDoseSchemas:
         dose = DoseResponse(
             id=uuid4(),
             medication_id=uuid4(),
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
             given_by=uuid4(),
             notes="Test notes",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert dose.id is not None
@@ -477,10 +477,10 @@ class TestDoseSchemas:
         dose = DoseDetailResponse(
             id=uuid4(),
             medication_id=uuid4(),
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
             given_by="You",  # Formatted name, not UUID
             notes=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert dose.given_by == "You"
@@ -493,10 +493,10 @@ class TestDoseSchemas:
             medication_id=uuid4(),
             medication_name="Prednisone",
             pet_id=uuid4(),
-            given_at=datetime.utcnow(),
+            given_at=datetime.now(UTC),
             given_by="John Doe",
             notes=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         assert dose.medication_name == "Prednisone"

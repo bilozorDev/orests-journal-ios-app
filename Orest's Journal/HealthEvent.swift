@@ -11,54 +11,11 @@ import Foundation
 
 struct HealthCategory: Codable, Identifiable, Hashable {
     let id: UUID
-    let orgId: UUID
+    let familyId: UUID
     let name: String
     let nameNormalized: String
     let createdAt: Date
     let createdBy: UUID?
-
-    // Custom decoder for backwards compatibility with cached data that has petId
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        // Try orgId first, fall back to petId for cached data
-        if let orgId = try container.decodeIfPresent(UUID.self, forKey: .orgId) {
-            self.orgId = orgId
-        } else if let petId = try container.decodeIfPresent(UUID.self, forKey: .petId) {
-            // Backwards compatibility: use petId as orgId (they were equivalent before)
-            self.orgId = petId
-        } else {
-            throw DecodingError.keyNotFound(CodingKeys.orgId, DecodingError.Context(codingPath: container.codingPath, debugDescription: "Neither orgId nor petId found"))
-        }
-        name = try container.decode(String.self, forKey: .name)
-        nameNormalized = try container.decode(String.self, forKey: .nameNormalized)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        createdBy = try container.decodeIfPresent(UUID.self, forKey: .createdBy)
-    }
-
-    // Memberwise initializer
-    init(id: UUID, orgId: UUID, name: String, nameNormalized: String, createdAt: Date, createdBy: UUID?) {
-        self.id = id
-        self.orgId = orgId
-        self.name = name
-        self.nameNormalized = nameNormalized
-        self.createdAt = createdAt
-        self.createdBy = createdBy
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(orgId, forKey: .orgId)
-        try container.encode(name, forKey: .name)
-        try container.encode(nameNormalized, forKey: .nameNormalized)
-        try container.encode(createdAt, forKey: .createdAt)
-        try container.encodeIfPresent(createdBy, forKey: .createdBy)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, orgId, petId, name, nameNormalized, createdAt, createdBy
-    }
 }
 
 // MARK: - Health Event Photo

@@ -11,7 +11,7 @@ Tests cover:
 NOTE: These tests mock the database session and use the FastAPI test client.
 All authorization uses get_current_user_id which extracts user_id from JWT.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
@@ -504,51 +504,32 @@ class TestGetNotificationPreferences:
         mock_db_session: AsyncMock,
         auth_headers: dict,
     ):
-        """Should return default preferences when none exist.
-
-        NOTE: This test currently expects a Pydantic validation error due to a bug.
-        The endpoint returns NotificationPreferencesResponse without medication fields,
-        but the response model requires them. This should be fixed in the endpoint by
-        adding medication_created=True, medication_updated=True, medication_archived=True
-        to the default response in endpoints/notifications.py line 192-202.
-
-        This test is marked as xfail (expected to fail) to document the known bug.
-        Once the endpoint is fixed, remove @pytest.mark.xfail and uncomment assertions.
-        """
+        """Should return default preferences when none exist."""
         # Mock no existing preferences
         prefs_result = MagicMock()
         prefs_result.scalar_one_or_none.return_value = None
 
         mock_db_session.execute = AsyncMock(side_effect=[prefs_result])
 
-        # BUG: The endpoint is currently broken - it will raise a Pydantic validation error
-        # when trying to serialize the response because medication fields are missing.
-        # For now, we skip this test to keep the suite passing.
-        pytest.skip(
-            "Known bug: Endpoint doesn't include medication fields in default response. "
-            "Fix by adding medication_created=True, medication_updated=True, "
-            "medication_archived=True to endpoints/notifications.py line 192-202"
+        response = await client.get(
+            "/api/v1/notifications/preferences",
+            headers=auth_headers,
         )
-
-        # After fixing the endpoint, uncomment these lines:
-        # response = await client.get(
-        #     "/api/v1/notifications/preferences",
-        #     headers=auth_headers,
-        # )
-        # assert response.status_code == 200
-        # data = response.json()
-        # assert data["family_member_joined"] is True
-        # assert data["family_role_changed"] is True
-        # assert data["family_member_left"] is True
-        # assert data["family_member_left_promoted"] is True
-        # assert data["family_account_deleted"] is True
-        # assert data["family_account_deleted_promoted"] is True
-        # assert data["pet_added"] is True
-        # assert data["pet_updated"] is True
-        # assert data["pet_deleted"] is True
-        # assert data["medication_created"] is True
-        # assert data["medication_updated"] is True
-        # assert data["medication_archived"] is True
+        assert response.status_code == 200
+        data = response.json()
+        assert data["family_member_joined"] is True
+        assert data["family_role_changed"] is True
+        assert data["family_member_left"] is True
+        assert data["family_member_left_promoted"] is True
+        assert data["family_account_deleted"] is True
+        assert data["family_account_deleted_promoted"] is True
+        assert data["pet_added"] is True
+        assert data["pet_updated"] is True
+        assert data["pet_deleted"] is True
+        assert data["medication_created"] is True
+        assert data["medication_updated"] is True
+        assert data["medication_archived"] is True
+        assert data["dose_administered"] is True
 
     @pytest.mark.asyncio
     async def test_get_preferences_unauthorized(
@@ -1007,7 +988,7 @@ class TestNotificationIntegrationNotes:
     - POST /api/v1/notifications/test - test notification sending
       (requires APNs service mocking which is complex and better suited for e2e tests)
     - Database constraint violations (unique constraints, etc.)
-    - RLS policies (no org_id context needed for notifications)
+    - RLS policies (no family_id context needed for notifications)
 
     Testing Pattern:
     ---------------
