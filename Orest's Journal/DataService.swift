@@ -829,6 +829,24 @@ final class DataService {
             // Build dose info for all scheduled medications
             var allDoses: [WidgetDoseInfo] = []
 
+            // Get today's date range for filtering doses
+            let calendar = Calendar.current
+            let startOfDay = calendar.startOfDay(for: Date())
+
+            // Fetch today's doses for each medication
+            var todayDosesCache: [UUID: [WidgetDataManager.RecordedDoseInfo]] = [:]
+            for medication in medications {
+                if let recentDoses = try? await getDosesForMedication(medicationId: medication.id, limit: 20) {
+                    // Filter for today's doses only
+                    let todayDoses = recentDoses
+                        .filter { $0.givenAt >= startOfDay }
+                        .map { WidgetDataManager.RecordedDoseInfo(givenAt: $0.givenAt, givenBy: $0.givenBy) }
+                    if !todayDoses.isEmpty {
+                        todayDosesCache[medication.id] = todayDoses
+                    }
+                }
+            }
+
             for medication in medications {
                 #if DEBUG
                 let hasScheduledTimes = medication.scheduledTimes?.isEmpty == false
@@ -847,15 +865,19 @@ final class DataService {
                 // Find pet name for this medication
                 let petName = pets.first { $0.id == medication.petId }?.name ?? "Pet"
 
-                // Calculate next dose times
-                let doses = WidgetDataManager.calculateNextDoseTimes(
+                // Get today's doses for this medication
+                let todayDoses = todayDosesCache[medication.id] ?? []
+
+                // Calculate today's schedule with given/pending status
+                let doses = WidgetDataManager.calculateTodaySchedule(
                     for: medication,
                     petName: petName,
-                    maxCount: 3
+                    todayDoses: todayDoses,
+                    maxCount: 5
                 )
 
                 #if DEBUG
-                print("   ↳ Generated \(doses.count) dose times")
+                print("   ↳ Today's doses: \(todayDoses.count), Generated \(doses.count) schedule entries")
                 #endif
 
                 allDoses.append(contentsOf: doses)

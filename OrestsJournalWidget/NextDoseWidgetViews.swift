@@ -52,10 +52,18 @@ struct NextDoseWidgetEntryView: View {
 struct SmallWidgetView: View {
     let entry: NextDoseEntry
 
+    /// Get the next pending (not given) dose
+    private var nextPendingDose: WidgetDoseInfo? {
+        if let primary = entry.primaryDose, !primary.isGiven {
+            return primary
+        }
+        return entry.additionalDoses.first { !$0.isGiven }
+    }
+
     var body: some View {
-        if let dose = entry.primaryDose {
+        if let dose = nextPendingDose {
             VStack(alignment: .leading, spacing: 4) {
-                // Icon and countdown
+                // Icon and status
                 HStack {
                     Image(systemName: dose.iconName)
                         .font(.system(size: 24))
@@ -63,11 +71,22 @@ struct SmallWidgetView: View {
 
                     Spacer()
 
-                    // Countdown
-                    Text(dose.relativeTimeDescription)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(dose.isOverdue ? .red : .secondary)
+                    // Status badge or countdown
+                    if dose.isOverdue {
+                        Text("OVERDUE")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.red)
+                            .clipShape(Capsule())
+                    } else {
+                        Text(dose.relativeTimeDescription)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.blue)
+                    }
                 }
 
                 Spacer()
@@ -101,6 +120,19 @@ struct SmallWidgetView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(2)
+        } else if let dose = entry.primaryDose, dose.isGiven {
+            // All doses given - show completion state
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.green)
+                Text("All Done!")
+                    .font(.headline)
+                Text("Next dose tomorrow")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -110,28 +142,43 @@ struct SmallWidgetView: View {
 struct MediumWidgetView: View {
     let entry: NextDoseEntry
 
+    /// All doses sorted by time
+    private var allDoses: [WidgetDoseInfo] {
+        guard let primary = entry.primaryDose else { return [] }
+        return ([primary] + entry.additionalDoses).sorted { $0.scheduledTime < $1.scheduledTime }
+    }
+
+    /// Next pending dose
+    private var nextPendingDose: WidgetDoseInfo? {
+        allDoses.first { !$0.isGiven }
+    }
+
     var body: some View {
-        HStack(spacing: 16) {
-            // Primary dose (left side)
-            if let dose = entry.primaryDose {
+        HStack(spacing: 12) {
+            // Primary/Next dose (left side)
+            if let dose = nextPendingDose {
                 primaryDoseView(dose)
+                    .frame(maxWidth: .infinity)
+            } else if let firstDose = allDoses.first {
+                // All done - show last given
+                allDoneView(lastDose: firstDose)
                     .frame(maxWidth: .infinity)
             }
 
-            // Divider and additional doses (right side)
-            if !entry.additionalDoses.isEmpty {
+            // Divider and schedule (right side)
+            if allDoses.count > 1 {
                 Divider()
                     .padding(.vertical, 8)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Coming Up")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Today's Schedule")
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
 
-                    ForEach(entry.additionalDoses) { dose in
-                        additionalDoseRow(dose)
+                    ForEach(allDoses.prefix(3)) { dose in
+                        scheduleRow(dose)
                     }
 
                     Spacer()
@@ -140,6 +187,20 @@ struct MediumWidgetView: View {
             }
         }
         .padding(4)
+    }
+
+    private func allDoneView(lastDose: WidgetDoseInfo) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 36))
+                .foregroundStyle(.green)
+            Text("All Done!")
+                .font(.headline)
+            Text("Great job today")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func primaryDoseView(_ dose: WidgetDoseInfo) -> some View {
@@ -203,18 +264,32 @@ struct MediumWidgetView: View {
         }
     }
 
-    private func additionalDoseRow(_ dose: WidgetDoseInfo) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: dose.iconName)
-                .font(.system(size: 14))
-                .foregroundStyle(dose.isOverdue ? .red : .secondary)
-                .frame(width: 20)
+    private func scheduleRow(_ dose: WidgetDoseInfo) -> some View {
+        HStack(spacing: 6) {
+            // Status icon
+            if dose.isGiven {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.green)
+                    .frame(width: 18)
+            } else if dose.isOverdue {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.red)
+                    .frame(width: 18)
+            } else {
+                Image(systemName: "circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+            }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(dose.medicationName)
                     .font(.caption)
                     .fontWeight(.medium)
                     .lineLimit(1)
+                    .foregroundStyle(dose.isGiven ? .secondary : .primary)
 
                 Text(dose.formattedTime)
                     .font(.caption2)
@@ -231,22 +306,44 @@ struct MediumWidgetView: View {
 struct LargeWidgetView: View {
     let entry: NextDoseEntry
 
-    /// All doses including primary and additional
+    /// All doses sorted by scheduled time
     private var allDoses: [WidgetDoseInfo] {
         guard let primary = entry.primaryDose else { return [] }
-        return [primary] + entry.additionalDoses
+        return ([primary] + entry.additionalDoses).sorted { $0.scheduledTime < $1.scheduledTime }
+    }
+
+    /// Count of completed doses
+    private var completedCount: Int {
+        allDoses.filter { $0.isGiven }.count
+    }
+
+    /// Count of pending doses
+    private var pendingCount: Int {
+        allDoses.filter { !$0.isGiven }.count
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
+        VStack(alignment: .leading, spacing: 10) {
+            // Header with progress
             HStack {
                 Image(systemName: "pills.fill")
                     .font(.title2)
                     .foregroundStyle(.blue)
-                Text("Medication Schedule")
+                Text("Today's Schedule")
                     .font(.headline)
                 Spacer()
+
+                // Progress indicator
+                if !allDoses.isEmpty {
+                    Text("\(completedCount)/\(allDoses.count)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.fill.tertiary)
+                        .clipShape(Capsule())
+                }
             }
 
             Divider()
@@ -260,7 +357,7 @@ struct LargeWidgetView: View {
                         Image(systemName: "checkmark.circle")
                             .font(.largeTitle)
                             .foregroundStyle(.green)
-                        Text("All caught up!")
+                        Text("No medications scheduled")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -282,15 +379,15 @@ struct LargeWidgetView: View {
 
     private func doseRow(_ dose: WidgetDoseInfo) -> some View {
         HStack(spacing: 12) {
-            // Icon
+            // Status icon
             ZStack {
                 Circle()
-                    .fill(dose.isOverdue ? Color.red.opacity(0.15) : Color.blue.opacity(0.15))
+                    .fill(statusBackgroundColor(for: dose))
                     .frame(width: 40, height: 40)
 
-                Image(systemName: dose.iconName)
+                Image(systemName: statusIcon(for: dose))
                     .font(.system(size: 18))
-                    .foregroundStyle(dose.isOverdue ? .red : .blue)
+                    .foregroundStyle(statusColor(for: dose))
             }
 
             // Info
@@ -299,8 +396,18 @@ struct LargeWidgetView: View {
                     Text(dose.medicationName)
                         .font(.subheadline)
                         .fontWeight(.semibold)
+                        .foregroundStyle(dose.isGiven ? .secondary : .primary)
 
-                    if dose.isOverdue {
+                    if dose.isGiven {
+                        Text("GIVEN")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.green)
+                            .clipShape(Capsule())
+                    } else if dose.isOverdue {
                         Text("OVERDUE")
                             .font(.caption2)
                             .fontWeight(.bold)
@@ -323,6 +430,21 @@ struct LargeWidgetView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
+
+                // Show who gave it (for given doses)
+                if dose.isGiven, let givenBy = dose.givenBy {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.fill")
+                            .font(.caption2)
+                        Text("by \(givenBy)")
+                            .font(.caption2)
+                        if let givenTime = dose.formattedGivenTime {
+                            Text("at \(givenTime)")
+                                .font(.caption2)
+                        }
+                    }
+                    .foregroundStyle(.green)
+                }
             }
 
             Spacer()
@@ -332,11 +454,44 @@ struct LargeWidgetView: View {
                 Text(dose.formattedTime)
                     .font(.subheadline)
                     .fontWeight(.medium)
+                    .foregroundStyle(dose.isGiven ? .secondary : .primary)
 
-                Text(dose.relativeTimeDescription)
-                    .font(.caption)
-                    .foregroundStyle(dose.isOverdue ? .red : .blue)
+                if !dose.isGiven {
+                    Text(dose.relativeTimeDescription)
+                        .font(.caption)
+                        .foregroundStyle(dose.isOverdue ? .red : .blue)
+                }
             }
+        }
+    }
+
+    private func statusIcon(for dose: WidgetDoseInfo) -> String {
+        if dose.isGiven {
+            return "checkmark"
+        } else if dose.isOverdue {
+            return dose.iconName
+        } else {
+            return dose.iconName
+        }
+    }
+
+    private func statusColor(for dose: WidgetDoseInfo) -> Color {
+        if dose.isGiven {
+            return .green
+        } else if dose.isOverdue {
+            return .red
+        } else {
+            return .blue
+        }
+    }
+
+    private func statusBackgroundColor(for dose: WidgetDoseInfo) -> Color {
+        if dose.isGiven {
+            return .green.opacity(0.15)
+        } else if dose.isOverdue {
+            return .red.opacity(0.15)
+        } else {
+            return .blue.opacity(0.15)
         }
     }
 }
@@ -357,7 +512,10 @@ struct LargeWidgetView: View {
                     iconName: "pills.fill",
                     petName: "Orest",
                     scheduledTime: Date().addingTimeInterval(2 * 3600 + 30 * 60),
-                    isOverdue: false
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 )
             ],
             lastUpdated: Date()
@@ -379,7 +537,10 @@ struct LargeWidgetView: View {
                     iconName: "drop.fill",
                     petName: "Orest",
                     scheduledTime: Date().addingTimeInterval(-30 * 60),
-                    isOverdue: true
+                    isOverdue: true,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 )
             ],
             lastUpdated: Date()
@@ -387,7 +548,7 @@ struct LargeWidgetView: View {
     )
 }
 
-#Preview("Medium - Multiple", as: .systemMedium) {
+#Preview("Medium - Schedule", as: .systemMedium) {
     NextDoseWidget()
 } timeline: {
     NextDoseEntry(
@@ -400,8 +561,11 @@ struct LargeWidgetView: View {
                     dosage: "100mg",
                     iconName: "pills.fill",
                     petName: "Orest",
-                    scheduledTime: Date().addingTimeInterval(2 * 3600 + 30 * 60),
-                    isOverdue: false
+                    scheduledTime: Date().addingTimeInterval(-2 * 3600),
+                    isOverdue: false,
+                    isGiven: true,
+                    givenBy: "Alex",
+                    givenAt: Date().addingTimeInterval(-2 * 3600 + 5 * 60)
                 ),
                 WidgetDoseInfo(
                     medicationId: UUID(),
@@ -409,8 +573,11 @@ struct LargeWidgetView: View {
                     dosage: "2 drops",
                     iconName: "drop.fill",
                     petName: "Orest",
-                    scheduledTime: Date().addingTimeInterval(6 * 3600),
-                    isOverdue: false
+                    scheduledTime: Date().addingTimeInterval(2 * 3600),
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 ),
                 WidgetDoseInfo(
                     medicationId: UUID(),
@@ -418,8 +585,11 @@ struct LargeWidgetView: View {
                     dosage: nil,
                     iconName: "capsule.fill",
                     petName: "Orest",
-                    scheduledTime: Date().addingTimeInterval(8 * 3600),
-                    isOverdue: false
+                    scheduledTime: Date().addingTimeInterval(6 * 3600),
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 )
             ],
             lastUpdated: Date()
@@ -440,8 +610,11 @@ struct LargeWidgetView: View {
                     dosage: "100mg",
                     iconName: "pills.fill",
                     petName: "Orest",
-                    scheduledTime: Date().addingTimeInterval(-30 * 60),
-                    isOverdue: true
+                    scheduledTime: Date().addingTimeInterval(-4 * 3600),
+                    isOverdue: false,
+                    isGiven: true,
+                    givenBy: "Alex",
+                    givenAt: Date().addingTimeInterval(-4 * 3600 + 10 * 60)
                 ),
                 WidgetDoseInfo(
                     medicationId: UUID(),
@@ -449,8 +622,11 @@ struct LargeWidgetView: View {
                     dosage: "2 drops each eye",
                     iconName: "drop.fill",
                     petName: "Orest",
-                    scheduledTime: Date().addingTimeInterval(2 * 3600),
-                    isOverdue: false
+                    scheduledTime: Date().addingTimeInterval(-30 * 60),
+                    isOverdue: true,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 ),
                 WidgetDoseInfo(
                     medicationId: UUID(),
@@ -459,7 +635,47 @@ struct LargeWidgetView: View {
                     iconName: "capsule.fill",
                     petName: "Luna",
                     scheduledTime: Date().addingTimeInterval(4 * 3600),
-                    isOverdue: false
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
+                )
+            ],
+            lastUpdated: Date()
+        )
+    )
+}
+
+#Preview("Large - All Done", as: .systemLarge) {
+    NextDoseWidget()
+} timeline: {
+    NextDoseEntry(
+        date: Date(),
+        widgetData: WidgetData(
+            nextDoses: [
+                WidgetDoseInfo(
+                    medicationId: UUID(),
+                    medicationName: "Gabapentin",
+                    dosage: "100mg",
+                    iconName: "pills.fill",
+                    petName: "Orest",
+                    scheduledTime: Date().addingTimeInterval(-4 * 3600),
+                    isOverdue: false,
+                    isGiven: true,
+                    givenBy: "Alex",
+                    givenAt: Date().addingTimeInterval(-4 * 3600 + 5 * 60)
+                ),
+                WidgetDoseInfo(
+                    medicationId: UUID(),
+                    medicationName: "Eye Drops",
+                    dosage: "2 drops each eye",
+                    iconName: "drop.fill",
+                    petName: "Orest",
+                    scheduledTime: Date().addingTimeInterval(-1 * 3600),
+                    isOverdue: false,
+                    isGiven: true,
+                    givenBy: "Sarah",
+                    givenAt: Date().addingTimeInterval(-1 * 3600 + 15 * 60)
                 )
             ],
             lastUpdated: Date()

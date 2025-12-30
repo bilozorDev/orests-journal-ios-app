@@ -103,7 +103,10 @@ struct NextDoseProvider: AppIntentTimelineProvider {
             iconName: "pills.fill",
             petName: "Orest",
             scheduledTime: Date().addingTimeInterval(2 * 3600 + 30 * 60),
-            isOverdue: false
+            isOverdue: false,
+            isGiven: false,
+            givenBy: nil,
+            givenAt: nil
         )
         let sampleDose2 = WidgetDoseInfo(
             medicationId: UUID(),
@@ -112,7 +115,10 @@ struct NextDoseProvider: AppIntentTimelineProvider {
             iconName: "drop.fill",
             petName: "Orest",
             scheduledTime: Date().addingTimeInterval(6 * 3600),
-            isOverdue: false
+            isOverdue: false,
+            isGiven: false,
+            givenBy: nil,
+            givenAt: nil
         )
         return WidgetData(
             nextDoses: [sampleDose, sampleDose2],
@@ -166,7 +172,10 @@ struct OrestsJournalWidgetBundle: WidgetBundle {
                     iconName: "pills.fill",
                     petName: "Orest",
                     scheduledTime: Date().addingTimeInterval(2 * 3600 + 30 * 60),
-                    isOverdue: false
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 )
             ],
             lastUpdated: Date()
@@ -188,7 +197,10 @@ struct OrestsJournalWidgetBundle: WidgetBundle {
                     iconName: "pills.fill",
                     petName: "Orest",
                     scheduledTime: Date().addingTimeInterval(2 * 3600 + 30 * 60),
-                    isOverdue: false
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 ),
                 WidgetDoseInfo(
                     medicationId: UUID(),
@@ -197,7 +209,10 @@ struct OrestsJournalWidgetBundle: WidgetBundle {
                     iconName: "drop.fill",
                     petName: "Orest",
                     scheduledTime: Date().addingTimeInterval(6 * 3600),
-                    isOverdue: false
+                    isOverdue: false,
+                    isGiven: false,
+                    givenBy: nil,
+                    givenAt: nil
                 )
             ],
             lastUpdated: Date()

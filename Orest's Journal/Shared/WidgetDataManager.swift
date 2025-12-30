@@ -53,6 +53,11 @@ struct WidgetDoseInfo: Codable, Identifiable {
     let scheduledTime: Date
     let isOverdue: Bool
 
+    // Completion status
+    let isGiven: Bool
+    let givenBy: String?
+    let givenAt: Date?
+
     /// Time until dose (negative if overdue)
     var timeUntil: TimeInterval {
         scheduledTime.timeIntervalSinceNow
@@ -65,8 +70,31 @@ struct WidgetDoseInfo: Codable, Identifiable {
         return formatter.string(from: scheduledTime)
     }
 
+    /// Formatted given time string
+    var formattedGivenTime: String? {
+        guard let givenAt else { return nil }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: givenAt)
+    }
+
     /// Relative time description (e.g., "in 2h 30m" or "30m ago")
     var relativeTimeDescription: String {
+        // If given, show when it was given
+        if isGiven, let givenAt {
+            let interval = Date().timeIntervalSince(givenAt)
+            let hours = Int(interval) / 3600
+            let minutes = (Int(interval) % 3600) / 60
+
+            if hours > 0 {
+                return "\(hours)h \(minutes)m ago"
+            } else if minutes > 0 {
+                return "\(minutes)m ago"
+            } else {
+                return "just now"
+            }
+        }
+
         let interval = timeUntil
         let absInterval = abs(interval)
 
@@ -180,28 +208,47 @@ final class WidgetDataManager {
 
     // MARK: - Helpers for Main App
 
+    /// Information about a recorded dose for matching with scheduled times
+    struct RecordedDoseInfo {
+        let givenAt: Date
+        let givenBy: String
+    }
+
     /// Build widget dose info from medication and scheduled time
     static func buildDoseInfo(
         medication: Medication,
         petName: String,
-        scheduledTime: Date
+        scheduledTime: Date,
+        recordedDose: RecordedDoseInfo? = nil
     ) -> WidgetDoseInfo {
-        WidgetDoseInfo(
+        let isGiven = recordedDose != nil
+        let isOverdue = !isGiven && scheduledTime < Date()
+
+        return WidgetDoseInfo(
             medicationId: medication.id,
             medicationName: medication.name,
             dosage: medication.dosage,
             iconName: medication.medicationType.icon,
             petName: petName,
             scheduledTime: scheduledTime,
-            isOverdue: scheduledTime < Date()
+            isOverdue: isOverdue,
+            isGiven: isGiven,
+            givenBy: recordedDose?.givenBy,
+            givenAt: recordedDose?.givenAt
         )
     }
 
-    /// Calculate next scheduled times for a medication today/tomorrow
-    static func calculateNextDoseTimes(
+    /// Calculate scheduled times for a medication today, marking given doses
+    /// - Parameters:
+    ///   - medication: The medication to calculate doses for
+    ///   - petName: Name of the pet
+    ///   - todayDoses: Doses recorded today for this medication
+    ///   - maxCount: Maximum number of doses to return
+    static func calculateTodaySchedule(
         for medication: Medication,
         petName: String,
-        maxCount: Int = 3
+        todayDoses: [RecordedDoseInfo] = [],
+        maxCount: Int = 5
     ) -> [WidgetDoseInfo] {
         guard !medication.isAsNeeded,
               !medication.isArchived,
@@ -215,30 +262,37 @@ final class WidgetDataManager {
         let now = Date()
         var doses: [WidgetDoseInfo] = []
 
-        // Check today and tomorrow
-        for dayOffset in 0...1 {
-            guard let targetDate = calendar.date(byAdding: .day, value: dayOffset, to: now) else {
+        // Only show today's schedule
+        let today = now
+
+        for scheduledTime in scheduledTimes {
+            var components = calendar.dateComponents([.year, .month, .day], from: today)
+            components.hour = scheduledTime.scheduledHour
+            components.minute = scheduledTime.scheduledMinute
+
+            guard let doseTime = calendar.date(from: components) else {
                 continue
             }
 
-            for scheduledTime in scheduledTimes {
-                var components = calendar.dateComponents([.year, .month, .day], from: targetDate)
-                components.hour = scheduledTime.scheduledHour
-                components.minute = scheduledTime.scheduledMinute
+            // Check if this scheduled time was satisfied by a recorded dose
+            // Match if dose was given within 2 hours before to 1 hour after scheduled time
+            let matchingDose = todayDoses.first { recordedDose in
+                let windowStart = doseTime.addingTimeInterval(-2 * 3600)
+                let windowEnd = doseTime.addingTimeInterval(1 * 3600)
+                return recordedDose.givenAt >= windowStart && recordedDose.givenAt <= windowEnd
+            }
 
-                guard let doseTime = calendar.date(from: components) else {
-                    continue
-                }
-
-                // Include if in the future or within last hour (to show overdue)
-                let hourAgo = now.addingTimeInterval(-3600)
-                if doseTime > hourAgo {
-                    doses.append(buildDoseInfo(
-                        medication: medication,
-                        petName: petName,
-                        scheduledTime: doseTime
-                    ))
-                }
+            // Include all today's doses (past and future)
+            // For past doses: show as given or overdue
+            // For future doses: show as upcoming
+            let sixHoursAgo = now.addingTimeInterval(-6 * 3600)
+            if doseTime > sixHoursAgo {
+                doses.append(buildDoseInfo(
+                    medication: medication,
+                    petName: petName,
+                    scheduledTime: doseTime,
+                    recordedDose: matchingDose
+                ))
             }
         }
 
