@@ -41,12 +41,13 @@ struct AddHealthEventView: View {
     @State private var showCategorySuggestions = false
     @State private var familyMemberCount = 1
     @State private var showCamera = false
+    @State private var showDiscardConfirmation = false
 
     private let dataService = DataService.shared
     private let authManager = AuthManager.shared
     private let imageCompressor = ImageCompressor.shared
 
-    private let maxPhotos = 3
+    private let maxPhotos = AppConstants.maxHealthEventPhotos
 
     private var isEditing: Bool { existingEvent != nil }
 
@@ -56,6 +57,27 @@ struct AddHealthEventView: View {
 
     private var canAddMorePhotos: Bool {
         totalPhotoCount < maxPhotos
+    }
+
+    /// Number of remaining photo slots available
+    private var remainingPhotoSlots: Int {
+        max(1, maxPhotos - totalPhotoCount)
+    }
+
+    /// Check if there are unsaved changes
+    private var hasUnsavedChanges: Bool {
+        if isEditing {
+            guard let existing = existingEvent else { return false }
+            return categoryName != existing.category.name ||
+                   notes != (existing.event.notes ?? "") ||
+                   occurredAt != existing.event.occurredAt ||
+                   !newPhotos.isEmpty ||
+                   !photosToDelete.isEmpty
+        } else {
+            return !categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                   !notes.isEmpty ||
+                   !newPhotos.isEmpty
+        }
     }
 
     init(pet: Pet, existingEvent: HealthEventWithCategory? = nil, onSave: @escaping (HealthEvent) -> Void) {
@@ -78,8 +100,16 @@ struct AddHealthEventView: View {
 
                 // Date section
                 Section("Date") {
-                    DatePicker("When", selection: $occurredAt, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
-                        .accessibilityIdentifier(AccessibilityIdentifier.healthDatePicker)
+                    DatePicker(
+                        "When",
+                        selection: Binding(
+                            get: { min(occurredAt, Date()) },
+                            set: { occurredAt = min($0, Date()) }
+                        ),
+                        in: ...Date(),
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .accessibilityIdentifier(AccessibilityIdentifier.healthDatePicker)
                 }
 
                 // Notes section
@@ -118,7 +148,11 @@ struct AddHealthEventView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        dismiss()
+                        if hasUnsavedChanges {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
+                        }
                     }
                     .accessibilityIdentifier(AccessibilityIdentifier.cancelHealthEventButton)
                 }
@@ -133,6 +167,18 @@ struct AddHealthEventView: View {
                     .accessibilityIdentifier(AccessibilityIdentifier.saveHealthEventButton)
                 }
             }
+            .confirmationDialog(
+                "Discard Changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard Changes", role: .destructive) {
+                    dismiss()
+                }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("You have unsaved changes. Are you sure you want to discard them?")
+            }
             .task {
                 await loadCategories()
                 await loadFamilyMemberCount()
@@ -146,7 +192,7 @@ struct AddHealthEventView: View {
             .photosPicker(
                 isPresented: $showPhotosPicker,
                 selection: $selectedPhotos,
-                maxSelectionCount: min(3, maxPhotos - totalPhotoCount),
+                maxSelectionCount: remainingPhotoSlots,
                 matching: .images
             )
             .alert("Error", isPresented: $showError) {
@@ -454,18 +500,25 @@ struct AddHealthEventView: View {
         let trimmedCategory = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCategory.isEmpty else { return }
 
+        // Normalize notes: convert whitespace-only to nil
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedNotes: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
+
         isSaving = true
         defer { isSaving = false }
 
         do {
             if let existing = existingEvent {
-                // Update existing event
+                // Update existing event - only send notes if changed
+                let existingNotes = existing.event.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let notesChanged = normalizedNotes != existingNotes
+
                 let updatedEvent = try await dataService.updateHealthEvent(
                     eventId: existing.id,
                     petId: pet.id,
                     categoryName: trimmedCategory != existing.category.name ? trimmedCategory : nil,
                     occurredAt: occurredAt != existing.event.occurredAt ? occurredAt : nil,
-                    notes: notes != (existing.event.notes ?? "") ? notes : nil
+                    notes: notesChanged ? (normalizedNotes ?? "") : nil
                 )
 
                 // Delete photos marked for removal
@@ -494,7 +547,7 @@ struct AddHealthEventView: View {
                     petId: pet.id,
                     categoryName: trimmedCategory,
                     occurredAt: occurredAt,
-                    notes: notes.isEmpty ? nil : notes,
+                    notes: normalizedNotes,
                     notifyFamily: notifyFamily
                 )
 
@@ -509,6 +562,11 @@ struct AddHealthEventView: View {
                 }
 
                 onSave(newEvent)
+            }
+
+            // Haptic feedback on success
+            await MainActor.run {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             }
 
             dismiss()

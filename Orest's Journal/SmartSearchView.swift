@@ -7,6 +7,9 @@
 
 import SwiftUI
 import FoundationModels
+import os.log
+
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orests-journal", category: "SmartSearch")
 
 // MARK: - LLM Query Schema (iOS 26+)
 
@@ -669,9 +672,7 @@ class SmartSearchManager {
             let history = try JSONDecoder().decode([SmartSearchHistory].self, from: data)
             return history
         } catch {
-            #if DEBUG
-            print("Failed to decode search history: \(error)")
-            #endif
+            logger.warning("Failed to decode search history: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -700,9 +701,7 @@ class SmartSearchManager {
             let data = try JSONEncoder().encode(history)
             UserDefaults.standard.set(data, forKey: key)
         } catch {
-            #if DEBUG
-            print("Failed to encode search history: \(error)")
-            #endif
+            logger.warning("Failed to encode search history: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -861,9 +860,7 @@ class SmartSearchManager {
         if #available(iOS 26.0, *), availability == .available {
             do {
                 let parsed = try await parseQueryWithLLM(query, petName: petName)
-                #if DEBUG
-                print("✅ LLM parsed query: category=\(parsed.category ?? "nil"), timeAmount=\(parsed.timeAmount.map(String.init) ?? "nil"), timeUnit=\(parsed.timeUnit ?? "nil"), specialTimeRange=\(parsed.specialTimeRange ?? "nil"), intent=\(parsed.intent)")
-                #endif
+                logger.debug("LLM parsed query: category=\(parsed.category ?? "nil", privacy: .public), intent=\(parsed.intent, privacy: .public)")
                 return await searchWithParsedQuery(
                     parsed,
                     petId: petId,
@@ -871,15 +868,11 @@ class SmartSearchManager {
                     dataService: dataService
                 )
             } catch {
-                #if DEBUG
-                print("❌ LLM parsing failed, falling back to regex: \(error)")
-                #endif
+                logger.warning("LLM parsing failed, falling back to regex: \(error.localizedDescription, privacy: .public)")
                 // Fall through to regex fallback
             }
         } else {
-            #if DEBUG
-            print("⚠️ LLM not available (iOS 26 required or not enabled), using regex fallback")
-            #endif
+            logger.info("LLM not available, using regex fallback")
         }
 
         // Fallback: Load all events and filter locally with regex
@@ -887,9 +880,7 @@ class SmartSearchManager {
             let allEvents = try await dataService.getHealthEvents(for: petId)
             return await searchWithRegex(query: query, events: allEvents, petName: petName)
         } catch {
-            #if DEBUG
-            print("Failed to load events for search: \(error)")
-            #endif
+            logger.error("Failed to load events for search: \(error.localizedDescription, privacy: .public)")
             return (response: "Failed to search events.", relevantEvents: [])
         }
     }
@@ -911,9 +902,7 @@ class SmartSearchManager {
         )
 
         // Fetch filtered events from backend
-        #if DEBUG
-        print("🔍 Calling backend with: category=\(parsed.category ?? "nil"), since=\(since?.description ?? "nil")")
-        #endif
+        logger.debug("Calling backend search with category=\(parsed.category ?? "nil", privacy: .public)")
         do {
             let events = try await dataService.searchHealthEvents(
                 for: petId,
@@ -921,9 +910,7 @@ class SmartSearchManager {
                 since: since,
                 limit: 100
             )
-            #if DEBUG
-            print("📦 Backend returned \(events.count) events")
-            #endif
+            logger.debug("Backend returned \(events.count, privacy: .public) events")
 
             // Generate response based on intent
             let response = generateResponse(
@@ -944,9 +931,7 @@ class SmartSearchManager {
 
             return (response, resultEvents)
         } catch {
-            #if DEBUG
-            print("Backend search failed: \(error)")
-            #endif
+            logger.error("Backend search failed: \(error.localizedDescription, privacy: .public)")
             return (response: "Failed to search events.", relevantEvents: [])
         }
     }

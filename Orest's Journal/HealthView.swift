@@ -357,6 +357,7 @@ struct HealthView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("All categories")
+                .accessibilityHint("Double-tap to show all health events")
                 .accessibilityAddTraits(selectedCategory == nil ? .isSelected : [])
 
                 ForEach(categories) { category in
@@ -377,6 +378,7 @@ struct HealthView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Filter by \(category.name)")
+                    .accessibilityHint("Double-tap to show only \(category.name) events")
                     .accessibilityAddTraits(selectedCategory?.id == category.id ? .isSelected : [])
                 }
             }

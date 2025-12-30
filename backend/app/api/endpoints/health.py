@@ -420,13 +420,22 @@ async def list_health_events(
 async def search_health_events(
     pet_id: UUID,
     q: str = Query(..., min_length=1, description="Search query"),
-    category: Optional[str] = Query(default=None, description="Filter by category name"),
+    category: Optional[str] = Query(default=None, description="Filter by category name (fuzzy match)"),
+    since: Optional[datetime] = Query(default=None, description="Filter events after this datetime (ISO8601)"),
+    until: Optional[datetime] = Query(default=None, description="Filter events before this datetime (ISO8601)"),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Search health events by keyword in notes and category names."""
+    """Search health events by keyword in notes and category names.
+
+    Supports filtering by:
+    - q: Search term (matches notes and category names)
+    - category: Filter by category name (fuzzy match, case-insensitive)
+    - since: Only return events that occurred after this datetime
+    - until: Only return events that occurred before this datetime
+    """
     # Verify user has access to this pet through family membership
     pet = await verify_pet_access(db, user_id, pet_id)
 
@@ -437,7 +446,11 @@ async def search_health_events(
     # Get categories for this family (categories are family-wide)
     cat_query = select(PetHealthCategory).where(PetHealthCategory.org_id == pet.org_id)
     if category:
-        cat_query = cat_query.where(PetHealthCategory.name_normalized == category.lower().strip())
+        # Use fuzzy match for category filter (contains, not exact match)
+        escaped_category = escape_like(category.lower().strip())
+        cat_query = cat_query.where(
+            PetHealthCategory.name_normalized.ilike(f"%{escaped_category}%", escape="\\")
+        )
     cat_result = await db.execute(cat_query)
     categories = {c.id: c for c in cat_result.scalars().all()}
 
@@ -450,16 +463,31 @@ async def search_health_events(
         if q.lower() in c.name_normalized
     ]
 
+    # Build text search condition, handling empty category matches properly
+    if matching_category_ids:
+        text_search_condition = or_(
+            func.lower(PetHealthEvent.notes).like(search_term, escape="\\"),
+            PetHealthEvent.category_id.in_(matching_category_ids),
+        )
+    else:
+        # Only search in notes if no category matches the search term
+        text_search_condition = func.lower(PetHealthEvent.notes).like(search_term, escape="\\")
+
     event_query = (
         select(PetHealthEvent)
         .options(selectinload(PetHealthEvent.photos))
         .where(PetHealthEvent.pet_id == pet_id)
-        .where(
-            or_(
-                func.lower(PetHealthEvent.notes).like(search_term, escape="\\"),
-                PetHealthEvent.category_id.in_(matching_category_ids) if matching_category_ids else False,
-            )
-        )
+        .where(text_search_condition)
+    )
+
+    # Apply time filters
+    if since:
+        event_query = event_query.where(PetHealthEvent.occurred_at >= to_utc_naive(since))
+    if until:
+        event_query = event_query.where(PetHealthEvent.occurred_at <= to_utc_naive(until))
+
+    event_query = (
+        event_query
         .order_by(PetHealthEvent.occurred_at.desc())
         .offset(offset)
         .limit(limit)

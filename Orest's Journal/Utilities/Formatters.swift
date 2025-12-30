@@ -29,6 +29,13 @@ enum Formatters {
         return formatter
     }()
 
+    /// ISO8601 date formatter for API requests
+    static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     static func formatWeight(_ weight: Double) -> String {
         Formatters.weight.string(from: NSNumber(value: weight)) ?? "\(weight)"
     }

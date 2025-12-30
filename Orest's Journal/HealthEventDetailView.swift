@@ -188,16 +188,34 @@ struct HealthEventDetailView: View {
             selectedPhotoIndex = index
             showFullScreenPhoto = true
         } label: {
-            AsyncImage(url: URL(string: photo.photoUrl)) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-            } placeholder: {
-                Rectangle()
-                    .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                    .overlay {
-                        ProgressView()
-                    }
+            AsyncImage(url: URL(string: photo.photoUrl)) { phase in
+                switch phase {
+                case .empty:
+                    Rectangle()
+                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .overlay {
+                            ProgressView()
+                        }
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    Rectangle()
+                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .overlay {
+                            VStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("Failed to load")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                @unknown default:
+                    EmptyView()
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 200)
@@ -220,16 +238,28 @@ struct HealthEventDetailView: View {
                     selectedPhotoIndex = index
                     showFullScreenPhoto = true
                 } label: {
-                    AsyncImage(url: URL(string: photo.photoUrl)) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                            .overlay {
-                                ProgressView()
-                            }
+                    AsyncImage(url: URL(string: photo.photoUrl)) { phase in
+                        switch phase {
+                        case .empty:
+                            Rectangle()
+                                .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                                .overlay {
+                                    ProgressView()
+                                }
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            Rectangle()
+                                .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                                .overlay {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .foregroundColor(.secondary)
+                                }
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
                     .frame(height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -309,9 +339,17 @@ struct HealthEventDetailView: View {
         isDeleting = true
         do {
             try await dataService.deleteHealthEvent(eventId: event.id, petId: pet.id)
+            // Haptic feedback on successful delete
+            await MainActor.run {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
             onDelete()
             dismiss()
         } catch {
+            // Haptic feedback on error
+            await MainActor.run {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
             errorMessage = error.localizedDescription
             showError = true
         }
@@ -341,16 +379,10 @@ struct FullScreenPhotoGalleryView: View {
 
                 TabView(selection: $currentIndex) {
                     ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        AsyncImage(url: URL(string: photo.photoUrl)) { image in
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        } placeholder: {
-                            ProgressView()
-                                .tint(.white)
-                        }
-                        .tag(index)
-                        .accessibilityLabel("Photo \(index + 1) of \(photos.count)")
+                        ZoomablePhotoView(photoUrl: photo.photoUrl)
+                            .tag(index)
+                            .accessibilityLabel("Photo \(index + 1) of \(photos.count)")
+                            .accessibilityHint(photos.count > 1 ? "Swipe left or right for other photos. Pinch to zoom." : "Pinch to zoom")
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .automatic : .never))
@@ -373,7 +405,101 @@ struct FullScreenPhotoGalleryView: View {
                             .font(.title2)
                             .foregroundStyle(.white.opacity(0.7))
                     }
-                    .accessibilityLabel("Close")
+                    .accessibilityLabel("Close gallery")
+                }
+            }
+        }
+        .accessibilityAction(.escape) {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - Zoomable Photo View
+
+struct ZoomablePhotoView: View {
+    let photoUrl: String
+
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    private let minScale: CGFloat = 1.0
+    private let maxScale: CGFloat = 4.0
+
+    var body: some View {
+        GeometryReader { geometry in
+            AsyncImage(url: URL(string: photoUrl)) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView()
+                        .tint(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    let delta = value / lastScale
+                                    lastScale = value
+                                    scale = min(max(scale * delta, minScale), maxScale)
+                                }
+                                .onEnded { _ in
+                                    lastScale = 1.0
+                                    // Reset offset when zooming out to 1x
+                                    if scale <= minScale {
+                                        withAnimation(.spring()) {
+                                            offset = .zero
+                                            lastOffset = .zero
+                                        }
+                                    }
+                                }
+                        )
+                        .simultaneousGesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    if scale > 1 {
+                                        offset = CGSize(
+                                            width: lastOffset.width + value.translation.width,
+                                            height: lastOffset.height + value.translation.height
+                                        )
+                                    }
+                                }
+                                .onEnded { _ in
+                                    lastOffset = offset
+                                }
+                        )
+                        .gesture(
+                            TapGesture(count: 2)
+                                .onEnded {
+                                    withAnimation(.spring()) {
+                                        if scale > 1 {
+                                            scale = 1.0
+                                            offset = .zero
+                                            lastOffset = .zero
+                                        } else {
+                                            scale = 2.0
+                                        }
+                                    }
+                                }
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                case .failure:
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundColor(.white.opacity(0.7))
+                        Text("Failed to load photo")
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                @unknown default:
+                    EmptyView()
                 }
             }
         }

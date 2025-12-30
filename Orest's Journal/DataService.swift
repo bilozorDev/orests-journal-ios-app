@@ -540,9 +540,21 @@ final class DataService {
         NavigationManager.shared.requestTabRefresh(.health)
     }
 
-    func searchHealthEvents(petId: UUID, query: String, category: String? = nil) async throws -> [HealthEventWithCategory] {
+    func searchHealthEvents(
+        petId: UUID,
+        query: String,
+        category: String? = nil,
+        since: Date? = nil,
+        until: Date? = nil
+    ) async throws -> [HealthEventWithCategory] {
         // Search is always fresh, no caching
-        return try await api.searchHealthEvents(petId: petId, query: query, category: category)
+        return try await api.searchHealthEvents(
+            petId: petId,
+            query: query,
+            category: category,
+            since: since,
+            until: until
+        )
     }
 
     // MARK: - Medications Cache
