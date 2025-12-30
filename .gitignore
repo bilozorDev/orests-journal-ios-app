@@ -68,6 +68,11 @@ Pods/
 *.log
 logs/
 
+# Test coverage
+coverage.xml
+htmlcov/
+.coverage
+
 # Credentials
 *.pem
 *.key
