@@ -30,6 +30,7 @@ class PetHealthEvent(Base):
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)  # Covered by composite index ix_pet_health_events_pet_occurred
     category_id = Column(UUID(as_uuid=True), ForeignKey("pet_health_categories.id", ondelete="CASCADE"), nullable=False)
     occurred_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    duration_minutes = Column(Integer, nullable=True)  # Optional duration for behavioral events
     notes = Column(Text, nullable=True)
     embedding = Column(Vector(1536), nullable=True)  # OpenAI embedding dimension
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

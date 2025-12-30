@@ -12,6 +12,43 @@ enum HealthCategoryHelper {
     /// Get the SF Symbol name for a category based on its normalized name.
     static func icon(for categoryNormalized: String) -> String {
         switch categoryNormalized {
+        // Behavioral categories
+        case "anxiety", "anxious", "stress", "stressed", "nervous":
+            return "brain.head.profile"
+        case "aggression", "aggressive", "snapping", "growling":
+            return "exclamationmark.bubble"
+        case "barking", "howling", "whining", "vocalization":
+            return "waveform"
+        case "appetite", "eating", "not eating", "picky eating", "appetite change":
+            return "fork.knife"
+        case "drinking", "water", "thirsty", "drinking more", "drinking less":
+            return "drop.fill"
+        case "energy", "energy level", "tired", "hyperactive", "lethargy", "lethargic":
+            return "bolt"
+        case "sleep", "sleeping", "restless", "insomnia", "napping":
+            return "moon.zzz"
+        case "scratching", "itching", "itchy":
+            return "hand.raised"
+        case "licking", "excessive licking", "chewing":
+            return "mouth"
+        case "hiding", "withdrawn", "anti-social":
+            return "eye.slash"
+        case "mood", "mood change", "behavior change":
+            return "face.smiling"
+        case "bathroom", "potty", "accident", "peeing", "pooping":
+            return "leaf"
+        case "limping", "mobility", "stiff", "difficulty walking":
+            return "figure.walk"
+        case "shaking", "trembling", "tremors":
+            return "waveform.path.ecg"
+        case "panting", "breathing", "heavy breathing", "coughing":
+            return "lungs"
+        case "playing", "play", "playful":
+            return "gamecontroller"
+        case "social", "social behavior", "interaction":
+            return "person.2"
+
+        // Medical categories
         case "vet visit", "vet", "veterinary":
             return "stethoscope"
         case "vaccination", "vaccine", "shot":

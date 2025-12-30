@@ -295,6 +295,7 @@ async def create_health_event(
         pet_id=pet_id,
         category_id=category.id,
         occurred_at=occurred_at,
+        duration_minutes=event_in.duration_minutes,
         notes=event_in.notes if event_in.notes else None,
         created_by=UUID(user_id),
     )
@@ -567,6 +568,9 @@ async def update_health_event(
     # Update other fields
     if event_in.occurred_at is not None:
         event.occurred_at = to_utc_naive(event_in.occurred_at)
+
+    if event_in.duration_minutes is not None:
+        event.duration_minutes = event_in.duration_minutes if event_in.duration_minutes > 0 else None
 
     if event_in.notes is not None:
         event.notes = event_in.notes if event_in.notes else None

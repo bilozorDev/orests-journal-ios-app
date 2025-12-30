@@ -93,9 +93,9 @@ struct AddHealthEventView: View {
                 Section {
                     categoryField
                 } header: {
-                    Text("Category")
+                    Text("What happened?")
                 } footer: {
-                    Text("e.g., Vet Visit, Vaccination, Blood Work")
+                    Text("e.g., Anxiety, Not Eating, Limping, Vet Visit")
                 }
 
                 // Date section
@@ -113,10 +113,14 @@ struct AddHealthEventView: View {
                 }
 
                 // Notes section
-                Section("Notes") {
+                Section {
                     TextEditor(text: $notes)
                         .frame(minHeight: 100)
                         .accessibilityIdentifier(AccessibilityIdentifier.healthNotesField)
+                } header: {
+                    Text("Details")
+                } footer: {
+                    Text("Describe what you observed - duration, severity, triggers, etc.")
                 }
 
                 // Photo section
@@ -143,7 +147,7 @@ struct AddHealthEventView: View {
                     }
                 }
             }
-            .navigationTitle(isEditing ? "Edit Health Event" : "Add Health Event")
+            .navigationTitle(isEditing ? "Edit Entry" : "New Journal Entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -244,7 +248,7 @@ struct AddHealthEventView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(Color.accentColor.opacity(0.15))
-                                    .foregroundStyle(.accentColor)
+                                    .foregroundStyle(Color.accentColor)
                                     .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
@@ -307,7 +311,7 @@ struct AddHealthEventView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 100)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .foregroundStyle(.accentColor)
+            .foregroundStyle(Color.accentColor)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -327,7 +331,7 @@ struct AddHealthEventView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 100)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .foregroundStyle(.accentColor)
+            .foregroundStyle(Color.accentColor)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)

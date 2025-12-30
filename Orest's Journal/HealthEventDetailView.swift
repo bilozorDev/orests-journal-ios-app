@@ -50,7 +50,7 @@ struct HealthEventDetailView: View {
             .padding()
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("Health Event")
+        .navigationTitle("Journal Entry")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -70,7 +70,7 @@ struct HealthEventDetailView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel("More actions")
-                .accessibilityHint("Edit or delete this event")
+                .accessibilityHint("Edit or delete this entry")
             }
         }
         .sheet(isPresented: $showEditSheet) {
@@ -91,7 +91,7 @@ struct HealthEventDetailView: View {
             )
         }
         .confirmationDialog(
-            "Delete Health Event",
+            "Delete Entry",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -102,7 +102,7 @@ struct HealthEventDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to delete this health event? This action cannot be undone.")
+            Text("Are you sure you want to delete this journal entry? This action cannot be undone.")
         }
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
@@ -136,7 +136,7 @@ struct HealthEventDetailView: View {
                 Text(event.category.name)
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Health Event")
+                Text("Journal Entry")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

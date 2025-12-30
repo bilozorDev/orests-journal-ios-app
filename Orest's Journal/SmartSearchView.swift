@@ -200,7 +200,7 @@ struct SmartSearchView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(selectedPet?.id == pet.id ? Color.accentColor.opacity(0.15) : Color(uiColor: .secondarySystemGroupedBackground))
-                        .foregroundStyle(selectedPet?.id == pet.id ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet?.id == pet.id ? Color.accentColor : Color.primary)
                         .clipShape(Capsule())
                         .overlay {
                             Capsule()
@@ -262,9 +262,9 @@ struct SmartSearchView: View {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
                     .font(.title3)
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
 
-                Text("Ask questions in natural language, like \"how many vet visits this year?\"")
+                Text("Ask questions in natural language, like \"any anxiety episodes this week?\"")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -284,7 +284,7 @@ struct SmartSearchView: View {
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
 
                 TextField("Ask about \(searchPlaceholderText)...", text: $query)
                     .textFieldStyle(.plain)
@@ -378,7 +378,7 @@ struct SmartSearchView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(Color.accentColor.opacity(0.1))
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                                 .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -390,10 +390,10 @@ struct SmartSearchView: View {
 
     private var exampleQueryList: [String] {
         [
-            "How many vet visits this year?",
-            "When was the last vaccination?",
-            "Any health issues last month?",
-            "Show all blood work results"
+            "When did they last vomit?",
+            "Any anxiety episodes this week?",
+            "How many times not eating?",
+            "Show all limping entries"
         ]
     }
 
@@ -446,7 +446,7 @@ struct SmartSearchView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "sparkles")
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                         Text("Answer")
                             .font(.headline)
                         Spacer()
@@ -566,7 +566,7 @@ struct SmartSearchResultRow: View {
                 if let petName = petName {
                     Text(petName)
                         .font(.subheadline)
-                        .foregroundStyle(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                 }
 
                 HStack(spacing: 4) {
@@ -772,30 +772,33 @@ class SmartSearchManager {
     @MainActor
     func parseQueryWithLLM(_ query: String, petName: String) async throws -> ParsedHealthQuery {
         let session = LanguageModelSession(instructions: """
-            You are a query parser for a pet health tracking app. Extract structured data from health queries.
+            You are a query parser for a pet behavior journal app. Extract structured data from behavior and health queries.
 
             IMPORTANT RULES:
-            1. ALWAYS extract the health category if mentioned (vomit, vet visit, vaccination, hot spot, diarrhea, etc.)
+            1. ALWAYS extract the category if mentioned. Categories include:
+               - Behavioral: anxiety, stress, aggression, barking, not eating, appetite, energy, lethargy, scratching, limping, hiding, mood, sleep
+               - Symptoms: vomiting, vomit, diarrhea, coughing, panting, shaking
+               - Medical: vet visit, vaccination, medication
             2. ALWAYS extract time information if mentioned (e.g. "last 30 minutes" = timeAmount:30, timeUnit:"minute")
             3. For "how many" questions, intent is "count"
             4. For "when was the last" questions, intent is "last"
             5. Otherwise, intent is "all"
 
             Examples:
+            Query: "any anxiety episodes this week"
+            Result: category="anxiety", specialTimeRange="this_week", intent="all"
+
             Query: "how many times did \(petName) vomit in the last 30 minutes"
             Result: category="vomit", timeAmount=30, timeUnit="minute", intent="count"
 
-            Query: "when was the last vet visit"
-            Result: category="vet visit", timeAmount=nil, timeUnit=nil, intent="last"
+            Query: "when was the last time they weren't eating"
+            Result: category="not eating", timeAmount=nil, timeUnit=nil, intent="last"
 
-            Query: "show all vaccinations this year"
-            Result: category="vaccination", specialTimeRange="this_year", intent="all"
+            Query: "show all limping entries"
+            Result: category="limping", specialTimeRange=nil, intent="all"
 
-            Query: "any hot spots today"
-            Result: category="hot spot", specialTimeRange="today", intent="all"
-
-            Query: "vomit events from the last 2 hours"
-            Result: category="vomit", timeAmount=2, timeUnit="hour", intent="all"
+            Query: "any scratching or itching today"
+            Result: category="scratching", specialTimeRange="today", intent="all"
             """)
 
         let response = try await session.respond(
@@ -1033,9 +1036,9 @@ class SmartSearchManager {
         else {
             relevantEvents = filterEventsByQuery(events: events, query: lowercaseQuery)
             if relevantEvents.isEmpty {
-                response = "No health events found matching your search."
+                response = "No journal entries found matching your search."
             } else {
-                response = "Found \(relevantEvents.count) health event\(relevantEvents.count == 1 ? "" : "s") matching your search."
+                response = "Found \(relevantEvents.count) journal entr\(relevantEvents.count == 1 ? "y" : "ies") matching your search."
             }
         }
 
@@ -1204,6 +1207,45 @@ class SmartSearchManager {
 
     private func extractCategory(from query: String) -> String? {
         let categories = [
+            // Behavioral categories
+            "anxiety": "anxiety",
+            "anxious": "anxiety",
+            "stress": "stress",
+            "nervous": "anxiety",
+            "aggression": "aggression",
+            "aggressive": "aggression",
+            "barking": "barking",
+            "howling": "barking",
+            "whining": "barking",
+            "not eating": "not eating",
+            "appetite": "appetite",
+            "picky": "appetite",
+            "energy": "energy",
+            "tired": "energy",
+            "lethargy": "lethargy",
+            "lethargic": "lethargy",
+            "scratching": "scratching",
+            "itching": "scratching",
+            "itchy": "scratching",
+            "limping": "limping",
+            "mobility": "limping",
+            "hiding": "hiding",
+            "withdrawn": "hiding",
+            "mood": "mood",
+            "behavior": "behavior",
+            "sleep": "sleep",
+            "restless": "sleep",
+            "drinking": "drinking",
+            "thirsty": "drinking",
+            "shaking": "shaking",
+            "trembling": "shaking",
+            "panting": "panting",
+            "breathing": "panting",
+            "coughing": "coughing",
+            "bathroom": "bathroom",
+            "accident": "bathroom",
+
+            // Medical/symptom categories
             "vet visit": "vet visit",
             "vet": "vet",
             "vaccination": "vaccination",

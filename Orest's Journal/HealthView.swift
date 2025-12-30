@@ -55,7 +55,7 @@ struct HealthView: View {
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Health")
+            .navigationTitle("Journal")
             .toolbar {
                 if !pets.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -70,7 +70,7 @@ struct HealthView: View {
                             Image(systemName: "plus")
                         }
                         .accessibilityIdentifier(AccessibilityIdentifier.addHealthEventButton)
-                        .accessibilityLabel("Add health event")
+                        .accessibilityLabel("Add journal entry")
                     }
                 }
             }
@@ -134,7 +134,7 @@ struct HealthView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Which pet is this health event for?")
+                Text("Which pet is this journal entry for?")
             }
             .task {
                 await loadInitialData()
@@ -229,7 +229,7 @@ struct HealthView: View {
                                 ? Color.accentColor.opacity(0.15)
                                 : Color(uiColor: .secondarySystemGroupedBackground)
                         )
-                        .foregroundStyle(selectedPet == nil ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet == nil ? Color.accentColor : Color.primary)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -268,7 +268,7 @@ struct HealthView: View {
                                 ? Color.accentColor.opacity(0.15)
                                 : Color(uiColor: .secondarySystemGroupedBackground)
                         )
-                        .foregroundStyle(selectedPet?.id == pet.id ? .accentColor : .primary)
+                        .foregroundStyle(selectedPet?.id == pet.id ? Color.accentColor : Color.primary)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -298,7 +298,7 @@ struct HealthView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search health events", text: $searchText)
+                TextField("Search journal entries", text: $searchText)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier(AccessibilityIdentifier.healthSearchField)
                 if !searchText.isEmpty {
@@ -321,7 +321,7 @@ struct HealthView: View {
             } label: {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18))
-                    .foregroundStyle(.accentColor)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 40, height: 40)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -357,7 +357,7 @@ struct HealthView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("All categories")
-                .accessibilityHint("Double-tap to show all health events")
+                .accessibilityHint("Double-tap to show all entries")
                 .accessibilityAddTraits(selectedCategory == nil ? .isSelected : [])
 
                 ForEach(categories) { category in
@@ -448,7 +448,7 @@ struct HealthView: View {
             Text("No Pets")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Add a pet to start tracking health events")
+            Text("Add a pet to start journaling their behavior")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -469,10 +469,10 @@ struct HealthView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 48))
                     .foregroundStyle(.secondary)
-                Text("No Matching Events")
+                Text("No Matching Entries")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("No events match your search criteria")
+                Text("No entries match your search criteria")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -493,16 +493,17 @@ struct HealthView: View {
                 .padding(.top, 8)
             } else {
                 // Truly no events
-                Image(systemName: "heart.text.square")
+                Image(systemName: "book.closed")
                     .font(.system(size: 48))
                     .foregroundStyle(.secondary)
-                Text("No Health Events")
+                Text("No Entries Yet")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Tap + to record a health event")
+                Text("Start tracking behavior, symptoms, or anything you want to remember for vet visits")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal)
 
                 Button {
                     if selectedPet != nil {
@@ -512,7 +513,7 @@ struct HealthView: View {
                         showPetPickerForAdd = true
                     }
                 } label: {
-                    Label("Add Health Event", systemImage: "plus")
+                    Label("Add Entry", systemImage: "plus")
                         .font(.headline)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
@@ -786,7 +787,7 @@ struct HealthEventRow: View {
                 if let petName = petName {
                     Text(petName)
                         .font(.subheadline)
-                        .foregroundStyle(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                 }
 
                 HStack(spacing: 4) {

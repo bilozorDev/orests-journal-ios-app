@@ -77,18 +77,20 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     let petId: UUID?
     let categoryId: UUID
     let occurredAt: Date
+    let durationMinutes: Int?
     let notes: String?
     let photos: [HealthEventPhoto]
     let createdAt: Date
     let createdBy: UUID?
 
-    // Custom decoder to handle backwards compatibility with cached data missing 'photos' or 'petId'
+    // Custom decoder to handle backwards compatibility with cached data missing 'photos', 'petId', or 'durationMinutes'
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         petId = try container.decodeIfPresent(UUID.self, forKey: .petId)
         categoryId = try container.decode(UUID.self, forKey: .categoryId)
         occurredAt = try container.decode(Date.self, forKey: .occurredAt)
+        durationMinutes = try container.decodeIfPresent(Int.self, forKey: .durationMinutes)
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
         photos = try container.decodeIfPresent([HealthEventPhoto].self, forKey: .photos) ?? []
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -96,11 +98,12 @@ struct HealthEvent: Codable, Identifiable, Hashable {
     }
 
     // Memberwise initializer for creating instances directly
-    init(id: UUID, petId: UUID?, categoryId: UUID, occurredAt: Date, notes: String?, photos: [HealthEventPhoto], createdAt: Date, createdBy: UUID?) {
+    init(id: UUID, petId: UUID?, categoryId: UUID, occurredAt: Date, durationMinutes: Int? = nil, notes: String?, photos: [HealthEventPhoto], createdAt: Date, createdBy: UUID?) {
         self.id = id
         self.petId = petId
         self.categoryId = categoryId
         self.occurredAt = occurredAt
+        self.durationMinutes = durationMinutes
         self.notes = notes
         self.photos = photos
         self.createdAt = createdAt
@@ -128,12 +131,14 @@ struct HealthEventListResponse: Codable {
 struct HealthEventCreate: Encodable {
     let categoryName: String
     let occurredAt: Date?
+    let durationMinutes: Int?
     let notes: String?
     let notifyFamily: Bool
 
-    init(categoryName: String, occurredAt: Date? = nil, notes: String? = nil, notifyFamily: Bool = false) {
+    init(categoryName: String, occurredAt: Date? = nil, durationMinutes: Int? = nil, notes: String? = nil, notifyFamily: Bool = false) {
         self.categoryName = categoryName
         self.occurredAt = occurredAt
+        self.durationMinutes = durationMinutes
         self.notes = notes
         self.notifyFamily = notifyFamily
     }
@@ -142,5 +147,6 @@ struct HealthEventCreate: Encodable {
 struct HealthEventUpdate: Encodable {
     var categoryName: String?
     var occurredAt: Date?
+    var durationMinutes: Int?
     var notes: String?
 }
