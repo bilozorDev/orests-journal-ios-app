@@ -15,13 +15,15 @@ struct PendingDose: Codable, Identifiable {
     let medicationId: UUID
     let givenAt: Date
     let notes: String?
+    let orgId: String
     let queuedAt: Date
 
-    init(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil) {
+    init(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, orgId: String) {
         self.id = UUID()
         self.medicationId = medicationId
         self.givenAt = givenAt
         self.notes = notes
+        self.orgId = orgId
         self.queuedAt = Date()
     }
 }
@@ -66,11 +68,12 @@ final class OfflineDoseQueue: ObservableObject {
     // MARK: - Queue Management
 
     /// Queue a dose for later sync (when offline)
-    func queueDose(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil) {
+    func queueDose(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, orgId: String) {
         let pendingDose = PendingDose(
             medicationId: medicationId,
             givenAt: givenAt,
-            notes: notes
+            notes: notes,
+            orgId: orgId
         )
         pendingDoses.append(pendingDose)
         saveToDisk()
@@ -112,6 +115,7 @@ final class OfflineDoseQueue: ObservableObject {
         // Create a snapshot to avoid race conditions if array is modified during iteration
         let dosesToSync = pendingDoses
         var successfullySubmitted: Set<UUID> = []
+        var orgsToInvalidate: Set<String> = []
 
         for dose in dosesToSync {
             // Check if task was cancelled
@@ -125,6 +129,7 @@ final class OfflineDoseQueue: ObservableObject {
                 )
                 _ = try await APIClient.shared.recordDose(doseCreate)
                 successfullySubmitted.insert(dose.id)
+                orgsToInvalidate.insert(dose.orgId.lowercased())
             } catch {
                 // If we get an auth error or server error, stop syncing
                 // If it's just this dose failing (e.g., medication deleted), continue
@@ -135,10 +140,15 @@ final class OfflineDoseQueue: ObservableObject {
             }
         }
 
-        // Remove successfully submitted doses
+        // Remove successfully submitted doses and invalidate caches
         if !successfullySubmitted.isEmpty {
             pendingDoses.removeAll { successfullySubmitted.contains($0.id) }
             saveToDisk()
+
+            // Invalidate medication caches for affected orgs
+            for orgId in orgsToInvalidate {
+                DataService.shared.invalidateMedicationsCache(for: orgId)
+            }
         }
     }
 

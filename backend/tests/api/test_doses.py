@@ -489,7 +489,7 @@ class TestDoseAdministrationNotifications:
             call_kwargs = mock_send.call_args.kwargs
             assert call_kwargs["device_tokens"] == ["token1", "token2"]
             assert call_kwargs["title"] == f"Dose Recorded: {pet_name}"
-            assert call_kwargs["body"] == f"John D. gave {medication_name}"
+            assert call_kwargs["body"] == f"John D. gave {pet_name} {medication_name}"
             assert call_kwargs["data"]["type"] == "dose_administered"
             assert call_kwargs["data"]["pet_name"] == pet_name
             assert call_kwargs["data"]["medication_name"] == medication_name
@@ -853,7 +853,7 @@ class TestDoseAdministrationNotifications:
             mock_send.assert_called_once()
             call_kwargs = mock_send.call_args.kwargs
             # format_user_name("Alexander", "Johnson") should return "Alexander J."
-            assert call_kwargs["body"] == "Alexander J. gave Prednisone"
+            assert call_kwargs["body"] == "Alexander J. gave Buddy Prednisone"
 
     @pytest.mark.asyncio
     async def test_record_dose_notification_error_does_not_fail_dose_creation(

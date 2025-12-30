@@ -145,6 +145,7 @@ struct RecordDoseSheet: View {
 
     private func recordDose() async {
         isSaving = true
+        defer { isSaving = false }
         errorMessage = nil
 
         do {
@@ -174,7 +175,6 @@ struct RecordDoseSheet: View {
 
         } catch {
             errorMessage = error.localizedDescription
-            isSaving = false
         }
     }
 }

@@ -63,9 +63,7 @@ struct ScheduledTime: Codable, Identifiable, Hashable {
         guard let date = calendar.date(from: components) else {
             return "\(scheduledHour):\(String(format: "%02d", scheduledMinute))"
         }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return Formatters.shortTime.string(from: date)
     }
 }
 

@@ -64,7 +64,7 @@ async def notify_family_dose_administered(
             return
 
         title = f"Dose Recorded: {pet_name}"
-        body = f"{user_name} gave {medication_name}"
+        body = f"{user_name} gave {pet_name} {medication_name}"
 
         await apns_service.send_to_multiple(
             device_tokens=tokens,
@@ -99,6 +99,8 @@ async def record_dose(
     )
     med_result = await db.execute(med_query)
     med_row = med_result.first()
+    if not med_row:
+        raise HTTPException(status_code=404, detail="Medication not found")
     medication = med_row[0]
     pet = med_row[1]
 
@@ -357,7 +359,7 @@ async def update_dose(
 async def list_all_doses(
     pet_id: UUID,
     limit: int = Query(default=50, le=100),
-    offset: int = Query(default=0),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):

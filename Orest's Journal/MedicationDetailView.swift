@@ -372,6 +372,8 @@ struct MedicationDetailView: View {
                 .foregroundColor(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
+            .accessibilityLabel("Record dose of \(medication.name)")
+            .accessibilityHint("Double tap to record a new dose")
 
             if let lastDose = lastDose {
                 HStack {

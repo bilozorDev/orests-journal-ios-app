@@ -721,7 +721,8 @@ final class DataService {
             await offlineQueue.queueDose(
                 medicationId: medicationId,
                 givenAt: givenAt ?? Date(),
-                notes: notes
+                notes: notes,
+                orgId: orgId
             )
             return nil
         }

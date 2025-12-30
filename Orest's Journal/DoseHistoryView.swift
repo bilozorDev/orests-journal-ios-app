@@ -13,6 +13,7 @@ struct DoseHistoryView: View {
     let orgId: String
 
     @State private var doses: [MedicationDose] = []
+    @State private var groupedDosesCache: [(String, [MedicationDose])] = []
     @State private var isLoading = true
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
@@ -84,7 +85,7 @@ struct DoseHistoryView: View {
 
     private var doseList: some View {
         List {
-            ForEach(groupedDoses, id: \.0) { section in
+            ForEach(groupedDosesCache, id: \.0) { section in
                 Section(header: Text(section.0)) {
                     ForEach(section.1) { dose in
                         DoseRow(dose: dose)
@@ -134,8 +135,8 @@ struct DoseHistoryView: View {
         .listStyle(.insetGrouped)
     }
 
-    /// Group doses by date section (Today, Yesterday, This Week, Earlier)
-    private var groupedDoses: [(String, [MedicationDose])] {
+    /// Updates the cached grouped doses array
+    private func updateGroupedDosesCache() {
         let calendar = Calendar.current
         let now = Date()
         let today = calendar.startOfDay(for: now)
@@ -164,7 +165,7 @@ struct DoseHistoryView: View {
         // Define section order
         let sectionOrder = ["Today", "Yesterday", "This Week"]
 
-        return groups.sorted { lhs, rhs in
+        groupedDosesCache = groups.sorted { lhs, rhs in
             let lhsIndex = sectionOrder.firstIndex(of: lhs.key) ?? Int.max
             let rhsIndex = sectionOrder.firstIndex(of: rhs.key) ?? Int.max
 
@@ -197,6 +198,7 @@ struct DoseHistoryView: View {
             doses = response.doses
             totalDoses = response.total
             currentOffset = response.doses.count
+            updateGroupedDosesCache()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -218,6 +220,7 @@ struct DoseHistoryView: View {
             )
             doses.append(contentsOf: response.doses)
             currentOffset += response.doses.count
+            updateGroupedDosesCache()
         } catch {
             // Silently fail for pagination - user can retry
             #if DEBUG
@@ -231,6 +234,7 @@ struct DoseHistoryView: View {
             try await DataService.shared.deleteDose(doseId: dose.id, orgId: orgId)
             doses.removeAll { $0.id == dose.id }
             totalDoses -= 1
+            updateGroupedDosesCache()
         } catch {
             errorMessage = error.localizedDescription
         }
