@@ -105,14 +105,23 @@ struct SmallWidgetView: View {
                         .lineLimit(1)
                 }
 
-                // Time
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                    Text(dose.formattedTime)
-                        .font(.caption)
+                // Time and action button
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text(dose.formattedTime)
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    // Interactive button (iOS 17+)
+                    if #available(iOS 17.0, *) {
+                        RecordDoseButton(dose: dose, style: .compact)
+                    }
                 }
-                .foregroundStyle(.secondary)
 
                 // Pet name
                 Text(dose.petName)
@@ -245,7 +254,7 @@ struct MediumWidgetView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Time info
+            // Time info and action
             HStack(spacing: 12) {
                 Label(dose.formattedTime, systemImage: "clock")
                     .font(.caption)
@@ -255,6 +264,17 @@ struct MediumWidgetView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundStyle(dose.isOverdue ? .red : .blue)
+
+                Spacer()
+
+                // Interactive button (iOS 17+)
+                if #available(iOS 17.0, *) {
+                    RecordDoseButton(dose: dose, style: .standard)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.green.opacity(0.15))
+                        .clipShape(Capsule())
+                }
             }
 
             // Pet name
@@ -449,8 +469,8 @@ struct LargeWidgetView: View {
 
             Spacer()
 
-            // Time
-            VStack(alignment: .trailing, spacing: 2) {
+            // Time and action
+            VStack(alignment: .trailing, spacing: 4) {
                 Text(dose.formattedTime)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -460,6 +480,15 @@ struct LargeWidgetView: View {
                     Text(dose.relativeTimeDescription)
                         .font(.caption)
                         .foregroundStyle(dose.isOverdue ? .red : .blue)
+
+                    // Interactive button (iOS 17+)
+                    if #available(iOS 17.0, *) {
+                        RecordDoseButton(dose: dose, style: .standard)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.green.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
                 }
             }
         }

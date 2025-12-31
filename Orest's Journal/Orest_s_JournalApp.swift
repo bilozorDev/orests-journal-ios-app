@@ -29,6 +29,10 @@ struct Orest_s_JournalApp: App {
             case .active:
                 // Prefetch data when app becomes active
                 DataService.shared.prefetchDataOnForeground()
+                // Process any pending doses from widget interactions
+                Task {
+                    await PendingDoseProcessor.shared.processPendingDoses()
+                }
             case .background:
                 // Schedule background refresh when entering background
                 BackgroundTaskManager.shared.scheduleAppRefresh()
@@ -64,6 +68,8 @@ struct Orest_s_JournalApp: App {
             if let medicationIdString = pathComponents.first,
                let medicationId = UUID(uuidString: medicationIdString) {
                 Task { @MainActor in
+                    // Process any pending dose from widget for this medication
+                    await PendingDoseProcessor.shared.processDoseForMedication(medicationId)
                     DataService.shared.invalidateAllMedicationsCaches()
                     NavigationManager.shared.navigate(to: .medicationDetail(medicationId: medicationId))
                 }

@@ -336,7 +336,7 @@ struct SettingsView: View {
             // Clear path first then push family
             navigationPath = NavigationPath()
             navigationPath.append(SettingsDestination.family)
-        case .medications, .recordDose:
+        case .medications, .recordDose, .medicationDetail:
             // Handled by MedicationsView
             break
         }

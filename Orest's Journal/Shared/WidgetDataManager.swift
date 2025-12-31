@@ -28,6 +28,27 @@ enum AppGroup {
 private enum WidgetDataKey {
     static let nextDoses = "widget_next_doses"
     static let lastUpdated = "widget_last_updated"
+    static let pendingDoseQueue = "pending_dose_queue"
+}
+
+// MARK: - Widget Pending Dose Model (shared between app and widget)
+
+/// A dose waiting to be recorded by the main app (from widget interaction)
+/// Named differently from OfflineDoseQueue's PendingDose to avoid conflicts
+struct WidgetPendingDose: Codable, Identifiable {
+    let id: UUID
+    let medicationId: UUID
+    let medicationName: String
+    let petName: String
+    let requestedAt: Date
+
+    init(medicationId: UUID, medicationName: String, petName: String) {
+        self.id = UUID()
+        self.medicationId = medicationId
+        self.medicationName = medicationName
+        self.petName = petName
+        self.requestedAt = Date()
+    }
 }
 
 // MARK: - Widget Formatters
