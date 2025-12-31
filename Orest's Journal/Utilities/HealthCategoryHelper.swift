@@ -89,7 +89,9 @@ enum HealthCategoryHelper {
     static func color(for categoryNormalized: String) -> Color {
         let hash = djb2Hash(categoryNormalized)
         let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
-        return colors[Int(hash) % colors.count]
+        // Use modulo on UInt first to avoid overflow when converting to Int
+        let index = Int(hash % UInt(colors.count))
+        return colors[index]
     }
 
     /// djb2 hash algorithm - deterministic and stable across app launches

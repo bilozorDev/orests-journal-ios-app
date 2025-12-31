@@ -6,13 +6,16 @@
 //
 
 import SwiftUI
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 import os.log
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orests-journal", category: "SmartSearch")
 
 // MARK: - LLM Query Schema (iOS 26+)
 
+#if canImport(FoundationModels)
 /// Structured query representation for LLM-based parsing
 @available(iOS 26.0, *)
 @Generable
@@ -32,6 +35,7 @@ struct ParsedHealthQuery {
     @Guide(description: "Query intent: 'count' for how many, 'last' for most recent, 'all' for listing all matching")
     var intent: String
 }
+#endif
 
 struct SmartSearchView: View {
     let pets: [Pet]
@@ -711,6 +715,7 @@ class SmartSearchManager {
 
     @MainActor
     func checkAvailability() async {
+        #if canImport(FoundationModels)
         // iOS 26+: Use Foundation Models framework for proper availability check
         if #available(iOS 26.0, *) {
             switch SystemLanguageModel.default.availability {
@@ -741,6 +746,18 @@ class SmartSearchManager {
             // iOS < 18.1: Apple Intelligence not available
             availability = .deviceNotEligible
         }
+        #else
+        // FoundationModels not available - use device eligibility check
+        if #available(iOS 18.1, *) {
+            if checkDeviceEligibility() {
+                availability = .available
+            } else {
+                availability = .deviceNotEligible
+            }
+        } else {
+            availability = .deviceNotEligible
+        }
+        #endif
     }
 
     /// Manual device eligibility check for iOS 18.1 - 25.x
@@ -771,6 +788,7 @@ class SmartSearchManager {
 
     // MARK: - LLM Query Parsing (iOS 26+)
 
+    #if canImport(FoundationModels)
     /// Parse a natural language query using on-device LLM
     @available(iOS 26.0, *)
     @MainActor
@@ -812,6 +830,7 @@ class SmartSearchManager {
 
         return response.content
     }
+    #endif
 
     /// Convert parsed query to a cutoff date for filtering
     func buildTimeFilter(from timeAmount: Int?, timeUnit: String?, specialTimeRange: String?) -> Date? {
@@ -863,6 +882,7 @@ class SmartSearchManager {
         petName: String,
         dataService: DataService
     ) async -> (response: String?, relevantEvents: [HealthEventWithCategory]) {
+        #if canImport(FoundationModels)
         // iOS 26+: Try LLM parsing + backend filtering
         if #available(iOS 26.0, *), availability == .available {
             do {
@@ -881,6 +901,9 @@ class SmartSearchManager {
         } else {
             logger.info("LLM not available, using regex fallback")
         }
+        #else
+        logger.info("FoundationModels not available, using regex fallback")
+        #endif
 
         // Fallback: Load all events and filter locally with regex
         do {
@@ -892,6 +915,7 @@ class SmartSearchManager {
         }
     }
 
+    #if canImport(FoundationModels)
     /// Process search with LLM-parsed query using backend filtering
     @available(iOS 26.0, *)
     @MainActor
@@ -997,6 +1021,7 @@ class SmartSearchManager {
 
         return ""
     }
+    #endif
 
     /// Legacy regex-based search for iOS < 26 or as fallback
     @MainActor

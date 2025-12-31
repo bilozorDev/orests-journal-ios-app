@@ -109,9 +109,15 @@ async def record_dose(
     current_user = user_result.scalar_one()
     user_name = format_user_name(current_user.first_name, current_user.last_name)
 
+    # Determine given_at time - strip timezone for naive timestamp column
+    given_at = dose_in.given_at or datetime.now(UTC)
+    if given_at.tzinfo is not None:
+        # Convert to UTC and strip timezone info for naive timestamp storage
+        given_at = given_at.astimezone(UTC).replace(tzinfo=None)
+
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
-        given_at=dose_in.given_at or datetime.now(UTC),
+        given_at=given_at,
         given_by=UUID(user_id),
         notes=dose_in.notes,
     )
