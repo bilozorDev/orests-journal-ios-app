@@ -492,6 +492,9 @@ struct AddMedicationView: View {
                     petName: pet.name
                 )
 
+                // Refresh widget data with new schedule
+                await dataService.syncMedicationsToWidget()
+
                 // Warn user if some photos failed but medication was saved
                 if !photoErrors.isEmpty {
                     await MainActor.run {
@@ -542,6 +545,9 @@ struct AddMedicationView: View {
                         petName: pet.name
                     )
                 }
+
+                // Refresh widget data with new medication
+                await dataService.syncMedicationsToWidget()
 
                 // Warn user if some photos failed but medication was created
                 if photoUploadErrors > 0 {
