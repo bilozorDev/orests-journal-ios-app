@@ -22,6 +22,11 @@ struct RecordDoseSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showSuccess = false
+    @State private var showDuplicateWarning = false
+    @State private var lastDoseTime: Date?
+
+    /// Time window in seconds to consider as duplicate dose (5 minutes)
+    private let duplicateThresholdSeconds: TimeInterval = 5 * 60
 
     var body: some View {
         NavigationStack {
@@ -120,6 +125,21 @@ struct RecordDoseSheet: View {
                     successOverlay
                 }
             }
+            .alert("Recent Dose Detected", isPresented: $showDuplicateWarning) {
+                Button("Cancel", role: .cancel) {}
+                Button("Record Anyway") {
+                    Task {
+                        await performDoseRecording()
+                    }
+                }
+            } message: {
+                if let lastTime = lastDoseTime {
+                    let minutes = Int(Date().timeIntervalSince(lastTime) / 60)
+                    Text("A dose was recorded \(minutes < 1 ? "less than a minute" : "\(minutes) minute\(minutes == 1 ? "" : "s")") ago. Are you sure you want to record another dose?")
+                } else {
+                    Text("A dose was recorded recently. Are you sure you want to record another dose?")
+                }
+            }
         }
     }
 
@@ -143,7 +163,37 @@ struct RecordDoseSheet: View {
         .transition(.scale.combined(with: .opacity))
     }
 
+    /// Check for recent dose and record if safe, or show warning
     private func recordDose() async {
+        isSaving = true
+        errorMessage = nil
+
+        // Check for recent dose
+        do {
+            if let lastDose = try await DataService.shared.getLastDose(medicationId: medication.id) {
+                let timeSinceLastDose = Date().timeIntervalSince(lastDose.givenAt)
+
+                if timeSinceLastDose < duplicateThresholdSeconds {
+                    // Show warning dialog
+                    lastDoseTime = lastDose.givenAt
+                    isSaving = false
+                    showDuplicateWarning = true
+                    return
+                }
+            }
+        } catch {
+            // If we can't check last dose, proceed anyway (fail open)
+            #if DEBUG
+            print("Failed to check last dose: \(error)")
+            #endif
+        }
+
+        // No recent dose, proceed with recording
+        await performDoseRecording()
+    }
+
+    /// Actually perform the dose recording
+    private func performDoseRecording() async {
         isSaving = true
         defer { isSaving = false }
         errorMessage = nil

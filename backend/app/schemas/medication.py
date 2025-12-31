@@ -116,6 +116,7 @@ class MedicationListItemResponse(MedicationResponse):
 
 class MedicationListResponse(BaseModel):
     medications: list[MedicationListItemResponse]
+    total: int = 0
 
 
 # Dose Schemas

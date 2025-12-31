@@ -1,7 +1,8 @@
 import uuid
 import secrets
 import string
-from datetime import datetime
+from datetime import UTC, datetime
+
 from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
@@ -27,7 +28,7 @@ class User(Base):
     email = Column(String(255), nullable=True)
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Brute force protection
     is_locked_out = Column(Boolean, default=False, nullable=False)
@@ -48,7 +49,7 @@ class Family(Base):
     name = Column(String(255), nullable=False)
     invite_code = Column(String(8), unique=True, nullable=False, index=True, default=generate_invite_code)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     creator = relationship("User", back_populates="created_families", foreign_keys=[created_by])
@@ -63,7 +64,7 @@ class FamilyMember(Base):
     family_id = Column(UUID(as_uuid=True), ForeignKey("families.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(50), default="member", nullable=False)  # 'admin' or 'member'
-    joined_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    joined_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     family = relationship("Family", back_populates="members")
@@ -83,7 +84,7 @@ class InviteAttemptLog(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     ip_address = Column(String(45), nullable=True)  # IPv6 max length
     attempted_code = Column(String(8), nullable=False)
-    attempted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    attempted_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
     was_successful = Column(Boolean, default=False, nullable=False)
 
 
@@ -97,5 +98,5 @@ class SecurityAlert(Base):
     ip_address = Column(String(45), nullable=True)
     description = Column(String(500), nullable=False)
     alert_metadata = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
     is_reviewed = Column(Boolean, default=False, nullable=False, index=True)

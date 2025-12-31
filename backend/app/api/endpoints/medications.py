@@ -3,7 +3,7 @@ from datetime import datetime, timezone as dt_timezone
 from typing import Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException, Response, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, File, UploadFile
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -139,6 +139,8 @@ async def list_medications(
     active_only: bool = False,
     include_archived: bool = False,
     timezone: str = "UTC",
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -149,6 +151,8 @@ async def list_medications(
                   Used to determine "today" for active medication filtering.
         include_archived: If True, include archived medications in the response.
                          Default is False (archived medications are excluded).
+        limit: Maximum number of medications to return (default 100, max 500).
+        offset: Number of medications to skip (for pagination).
     """
     # Set cache control header for client-side caching
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=300"
@@ -158,7 +162,14 @@ async def list_medications(
 
     # Try cache first (only for non-active queries which don't depend on timezone)
     if not active_only:
-        cache_key = key_medications(family_id, str(pet_id) if pet_id else None, active_only, include_archived)
+        cache_key = key_medications(
+            family_id,
+            str(pet_id) if pet_id else None,
+            active_only,
+            include_archived,
+            offset,
+            limit,
+        )
         cached = await cache_get(cache_key, MedicationListResponse)
         if cached:
             return cached
@@ -169,17 +180,17 @@ async def list_medications(
     pet_ids = [p for p in pets_result.scalars().all()]
 
     if not pet_ids:
-        return MedicationListResponse(medications=[])
+        return MedicationListResponse(medications=[], total=0)
 
-    # Build medication query
-    query = select(PetMedication).where(PetMedication.pet_id.in_(pet_ids))
+    # Build base filter conditions
+    base_conditions = [PetMedication.pet_id.in_(pet_ids)]
 
     # Filter out archived medications unless explicitly requested
     if not include_archived:
-        query = query.where(PetMedication.is_archived == False)
+        base_conditions.append(PetMedication.is_archived == False)
 
     if pet_id:
-        query = query.where(PetMedication.pet_id == pet_id)
+        base_conditions.append(PetMedication.pet_id == pet_id)
 
     if active_only:
         # Parse timezone, fallback to UTC if invalid
@@ -193,19 +204,27 @@ async def list_medications(
         now_local = now_utc.astimezone(tz)
         today_date = now_local.date()
 
-        query = query.where(
-            and_(
-                PetMedication.start_date <= today_date,
-                or_(
-                    PetMedication.end_date.is_(None),
-                    PetMedication.end_date >= today_date,
-                ),
+        base_conditions.append(PetMedication.start_date <= today_date)
+        base_conditions.append(
+            or_(
+                PetMedication.end_date.is_(None),
+                PetMedication.end_date >= today_date,
             )
         )
+
+    # Get total count for pagination
+    count_query = select(func.count()).select_from(PetMedication).where(and_(*base_conditions))
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+
+    # Build medication query with pagination
+    query = select(PetMedication).where(and_(*base_conditions))
 
     # Eager load schedules to avoid N+1 queries
     query = query.options(selectinload(PetMedication.schedules))
     query = query.order_by(PetMedication.created_at.desc())
+    query = query.offset(offset).limit(limit)
+
     result = await db.execute(query)
     medications = result.scalars().all()
 
@@ -218,11 +237,18 @@ async def list_medications(
         ]
         response_items.append(item)
 
-    response_data = MedicationListResponse(medications=response_items)
+    response_data = MedicationListResponse(medications=response_items, total=total)
 
     # Cache the response (only for non-active queries)
     if not active_only:
-        cache_key = key_medications(family_id, str(pet_id) if pet_id else None, active_only, include_archived)
+        cache_key = key_medications(
+            family_id,
+            str(pet_id) if pet_id else None,
+            active_only,
+            include_archived,
+            offset,
+            limit,
+        )
         await cache_set(cache_key, response_data, TTL_ACTIVE_MEDS)
 
     return response_data
@@ -541,6 +567,96 @@ async def delete_medication(
             archived=False,
             message="Medication deleted successfully."
         )
+
+
+@router.post("/{medication_id}/unarchive", response_model=MedicationResponse)
+async def unarchive_medication(
+    medication_id: UUID,
+    family_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Restore an archived medication.
+
+    Args:
+        medication_id: UUID of the medication to unarchive
+        family_id: The family ID (required for authorization)
+    """
+    # Verify user has access to this medication through family membership
+    medication = await verify_medication_access(db, user_id, medication_id)
+
+    if not medication.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Medication is not archived"
+        )
+
+    # Get pet for cache invalidation and notifications
+    pet_result = await db.execute(select(Pet).where(Pet.id == medication.pet_id))
+    pet = pet_result.scalar_one()
+
+    # Unarchive the medication
+    medication.is_archived = False
+    await db.commit()
+
+    # Invalidate caches
+    await invalidate_medication_caches(medication.pet_id, str(pet.family_id))
+
+    # Load scheduled times for response
+    await db.refresh(medication, ["scheduled_times", "photos"])
+
+    # Build response with scheduled times
+    scheduled_times = [
+        ScheduledTimeResponse(
+            id=st.id,
+            scheduled_hour=st.scheduled_hour,
+            scheduled_minute=st.scheduled_minute
+        )
+        for st in (medication.scheduled_times or [])
+    ]
+
+    # Build photos list
+    photos = [
+        MedicationPhotoResponse(
+            id=photo.id,
+            medication_id=photo.medication_id,
+            photo_url=photo.photo_url,
+            created_at=photo.created_at
+        )
+        for photo in (medication.photos or [])
+    ]
+
+    # Send notification to family members
+    await notify_family_medication_change(
+        db=db,
+        family_id=pet.family_id,
+        exclude_user_id=UUID(user_id),
+        pet_name=pet.name,
+        medication_name=medication.friendly_name or medication.name,
+        notification_type="medication_updated",
+    )
+
+    return MedicationResponse(
+        id=medication.id,
+        pet_id=medication.pet_id,
+        name=medication.name,
+        friendly_name=medication.friendly_name,
+        medication_type=medication.medication_type,
+        dosage=medication.dosage,
+        interval_days=medication.interval_days,
+        is_as_needed=medication.is_as_needed,
+        start_date=medication.start_date,
+        end_date=medication.end_date,
+        times_per_day=medication.times_per_day,
+        notes=medication.notes,
+        reminders_enabled=medication.reminders_enabled,
+        timezone=medication.timezone,
+        is_archived=medication.is_archived,
+        created_by=medication.created_by,
+        created_at=medication.created_at,
+        scheduled_times=scheduled_times,
+        photos=photos,
+    )
 
 
 @router.get("/pet/{pet_id}/active", response_model=MedicationListResponse)

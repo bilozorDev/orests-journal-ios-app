@@ -8,6 +8,7 @@
 import Foundation
 import UserNotifications
 import UIKit
+import WidgetKit
 
 @MainActor
 @Observable
@@ -226,10 +227,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             // Pet changes from other family members - refresh pets list
             DataService.shared.invalidatePetsCache()
             NavigationManager.shared.requestFamilyRefresh()
-        case "medication_created", "medication_updated", "medication_archived", "dose_administered":
+        case "medication_created", "medication_updated", "medication_archived":
             // Medication changes from other family members - refresh medications list
             DataService.shared.invalidateAllMedicationsCaches()
             NavigationManager.shared.requestTabRefresh(.medication)
+        case "dose_administered":
+            // Dose administered by family member - refresh medications and widget
+            DataService.shared.invalidateAllMedicationsCaches()
+            NavigationManager.shared.requestTabRefresh(.medication)
+            // Refresh widget to show updated dose status
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
         default:
             break
         }
@@ -273,15 +280,37 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private func handleNotificationTap(type: String, userInfo: [AnyHashable: Any]) {
         switch type {
         case "medication_reminder", "missed_dose":
-            // Navigate to medication tab for reminders
-            Task { @MainActor in
-                NavigationManager.shared.selectedTab = .medication
+            // Navigate to specific medication if ID is provided
+            if let medicationIdString = userInfo["medication_id"] as? String,
+               let url = URL(string: "orestsjournal://medication/\(medicationIdString)") {
+                UIApplication.shared.open(url)
+            } else {
+                // Fallback to medications tab
+                Task { @MainActor in
+                    NavigationManager.shared.selectedTab = .medication
+                }
             }
-        case "medication_created", "medication_updated", "medication_archived", "dose_administered":
-            // Navigate to medication tab for CRUD and dose notifications
-            Task { @MainActor in
-                NavigationManager.shared.selectedTab = .medication
-                NavigationManager.shared.requestTabRefresh(.medication)
+        case "medication_created", "medication_updated", "medication_archived":
+            // Navigate to specific medication if ID is provided
+            if let medicationIdString = userInfo["medication_id"] as? String,
+               let url = URL(string: "orestsjournal://medication/\(medicationIdString)") {
+                UIApplication.shared.open(url)
+            } else {
+                Task { @MainActor in
+                    NavigationManager.shared.selectedTab = .medication
+                    NavigationManager.shared.requestTabRefresh(.medication)
+                }
+            }
+        case "dose_administered":
+            // Navigate to specific medication if ID is provided
+            if let medicationIdString = userInfo["medication_id"] as? String,
+               let url = URL(string: "orestsjournal://medication/\(medicationIdString)") {
+                UIApplication.shared.open(url)
+            } else {
+                Task { @MainActor in
+                    NavigationManager.shared.selectedTab = .medication
+                    NavigationManager.shared.requestTabRefresh(.medication)
+                }
             }
         case "member_joined", "role_changed", "member_left", "member_left_promoted", "account_deleted", "account_deleted_promoted":
             // Use deep link URL - onOpenURL fires after app is fully ready

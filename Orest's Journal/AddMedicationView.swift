@@ -486,6 +486,12 @@ struct AddMedicationView: View {
                 // Fetch updated medication with photos
                 let refreshed = try await dataService.getMedication(id: existing.id)
 
+                // Update local reminders (schedule if enabled, cancel if disabled)
+                await LocalMedicationReminderManager.shared.updateReminders(
+                    for: refreshed,
+                    petName: pet.name
+                )
+
                 // Warn user if some photos failed but medication was saved
                 if !photoErrors.isEmpty {
                     await MainActor.run {
@@ -528,6 +534,14 @@ struct AddMedicationView: View {
 
                 // Fetch with photos
                 let refreshed = try await dataService.getMedication(id: created.id)
+
+                // Schedule local reminders if enabled
+                if refreshed.remindersEnabled {
+                    await LocalMedicationReminderManager.shared.scheduleReminders(
+                        for: refreshed,
+                        petName: pet.name
+                    )
+                }
 
                 // Warn user if some photos failed but medication was created
                 if photoUploadErrors > 0 {

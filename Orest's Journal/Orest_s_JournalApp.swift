@@ -58,6 +58,26 @@ struct Orest_s_JournalApp: App {
                 }
                 NavigationManager.shared.navigate(to: .familyManagement)
             }
+        case "medication":
+            // Navigate to specific medication: orestsjournal://medication/{id}
+            let pathComponents = url.pathComponents.filter { $0 != "/" }
+            if let medicationIdString = pathComponents.first,
+               let medicationId = UUID(uuidString: medicationIdString) {
+                Task { @MainActor in
+                    DataService.shared.invalidateAllMedicationsCaches()
+                    NavigationManager.shared.navigate(to: .medicationDetail(medicationId: medicationId))
+                }
+            } else {
+                // No specific medication, just go to medications tab
+                Task { @MainActor in
+                    NavigationManager.shared.navigate(to: .medications)
+                }
+            }
+        case "medications":
+            // Navigate to medications tab: orestsjournal://medications
+            Task { @MainActor in
+                NavigationManager.shared.navigate(to: .medications)
+            }
         default:
             break
         }

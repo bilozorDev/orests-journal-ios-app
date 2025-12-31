@@ -685,6 +685,14 @@ final class DataService {
         return result
     }
 
+    func unarchiveMedication(id: UUID, familyId: String) async throws -> Medication {
+        let result = try await api.unarchiveMedication(id: id, familyId: familyId)
+        invalidateMedicationsCache(for: familyId.lowercased())
+        NavigationManager.shared.requestTabRefresh(.medication)
+        Task { [self] in await syncMedicationsToWidget() }
+        return result
+    }
+
     func uploadMedicationPhoto(medicationId: UUID, imageData: Data, mimeType: String = "image/jpeg", familyId: String) async throws -> MedicationPhoto {
         let result = try await api.uploadMedicationPhoto(medicationId: medicationId, imageData: imageData, mimeType: mimeType)
         invalidateMedicationsCache(for: familyId.lowercased())

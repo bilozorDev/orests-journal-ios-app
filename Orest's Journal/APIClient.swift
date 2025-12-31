@@ -529,6 +529,10 @@ final class APIClient: APIClientProtocol {
         return try await deleteWithResponse("/medications/\(id.uuidString.lowercased())")
     }
 
+    func unarchiveMedication(id: UUID, familyId: String) async throws -> Medication {
+        return try await post("/medications/\(id.uuidString.lowercased())/unarchive?family_id=\(familyId)")
+    }
+
     func getActiveMedicationsForPet(petId: UUID, timezone: String = TimeZone.current.identifier) async throws -> MedicationListResponse {
         return try await get("/medications/pet/\(petId.uuidString.lowercased())/active?timezone=\(timezone)")
     }

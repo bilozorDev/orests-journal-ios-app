@@ -19,6 +19,7 @@ enum Tab: Int {
 enum AppDestination: Equatable {
     case familyManagement
     case medications
+    case medicationDetail(medicationId: UUID)
     case recordDose
 }
 
@@ -40,6 +41,8 @@ final class NavigationManager {
             selectedTab = .settings
             familyRefreshTrigger += 1
         case .medications:
+            selectedTab = .medication
+        case .medicationDetail:
             selectedTab = .medication
         case .recordDose:
             selectedTab = .medication

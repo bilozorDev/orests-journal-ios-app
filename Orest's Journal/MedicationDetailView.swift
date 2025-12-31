@@ -17,9 +17,11 @@ struct MedicationDetailView: View {
 
     @State private var showEditSheet = false
     @State private var showDeleteConfirmation = false
+    @State private var showRestoreConfirmation = false
     @State private var showFullScreenPhoto = false
     @State private var selectedPhotoIndex = 0
     @State private var isDeleting = false
+    @State private var isRestoring = false
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -74,8 +76,17 @@ struct MedicationDetailView: View {
         .navigationTitle("Medication")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !medication.isArchived {
-                ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
+                if medication.isArchived {
+                    Button {
+                        showRestoreConfirmation = true
+                    } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(isRestoring)
+                    .accessibilityLabel("Restore medication")
+                    .accessibilityHint("Unarchive this medication to make it active again")
+                } else {
                     Menu {
                         Button {
                             showEditSheet = true
@@ -140,6 +151,20 @@ struct MedicationDetailView: View {
         } message: {
             Text("Are you sure you want to delete this medication? If it has recorded doses, it will be archived instead.")
         }
+        .confirmationDialog(
+            "Restore Medication",
+            isPresented: $showRestoreConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore") {
+                Task {
+                    await restoreMedication()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will restore the medication and make it active again. You can continue recording doses for it.")
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK") {}
         } message: {
@@ -150,6 +175,14 @@ struct MedicationDetailView: View {
                 Color.black.opacity(0.3)
                     .ignoresSafeArea()
                 ProgressView("Deleting...")
+                    .padding()
+                    .background(Color(uiColor: .systemBackground))
+                    .cornerRadius(10)
+            }
+            if isRestoring {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                ProgressView("Restoring...")
                     .padding()
                     .background(Color(uiColor: .systemBackground))
                     .cornerRadius(10)
@@ -528,6 +561,9 @@ struct MedicationDetailView: View {
         do {
             _ = try await dataService.deleteMedication(id: medication.id, familyId: pet.familyId)
 
+            // Cancel any local reminders for this medication
+            await LocalMedicationReminderManager.shared.cancelReminders(for: medication.id)
+
             await MainActor.run {
                 isDeleting = false
                 onDelete()
@@ -536,6 +572,31 @@ struct MedicationDetailView: View {
         } catch {
             await MainActor.run {
                 isDeleting = false
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+        }
+    }
+
+    private func restoreMedication() async {
+        isRestoring = true
+
+        do {
+            let restored = try await dataService.unarchiveMedication(id: medication.id, familyId: pet.familyId)
+
+            // Schedule local reminders if enabled
+            if restored.remindersEnabled {
+                await LocalMedicationReminderManager.shared.scheduleReminders(for: restored, petName: pet.name)
+            }
+
+            await MainActor.run {
+                isRestoring = false
+                medication = restored
+                onUpdate(restored)
+            }
+        } catch {
+            await MainActor.run {
+                isRestoring = false
                 errorMessage = error.localizedDescription
                 showError = true
             }

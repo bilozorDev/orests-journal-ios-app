@@ -18,7 +18,8 @@ from app.schemas.medication import (
     DoseCreate, DoseUpdate, DoseResponse, DoseDetailResponse, DoseListResponse,
     AllDoseDetailResponse, AllDosesListResponse,
 )
-from app.cache.helpers import cache_delete_pattern
+from app.cache.helpers import cache_delete_pattern, cache_get, cache_set, cache_delete
+from app.cache.keys import key_today_doses, key_last_dose, TTL_DOSE_COUNTS, TTL_LAST_DOSE
 from app.services.family_notifications import get_filtered_family_member_tokens
 from app.services.apns import apns_service
 
@@ -28,7 +29,7 @@ router = APIRouter()
 
 
 async def invalidate_dose_caches(db: AsyncSession, medication_id: UUID) -> None:
-    """Invalidate dashboard caches when doses change."""
+    """Invalidate dashboard and dose-specific caches when doses change."""
     # Get the pet_id from the medication
     result = await db.execute(
         select(PetMedication.pet_id).where(PetMedication.id == medication_id)
@@ -36,6 +37,11 @@ async def invalidate_dose_caches(db: AsyncSession, medication_id: UUID) -> None:
     pet_id = result.scalar_one_or_none()
     if pet_id:
         await cache_delete_pattern(f"dashboard:{pet_id}:*")
+
+    # Invalidate medication-specific dose caches
+    med_id_str = str(medication_id)
+    await cache_delete(key_last_dose(med_id_str))
+    await cache_delete_pattern(f"today_doses:{med_id_str}:*")
 
 
 async def notify_family_dose_administered(
@@ -103,6 +109,13 @@ async def record_dose(
         raise HTTPException(status_code=404, detail="Medication not found")
     medication = med_row[0]
     pet = med_row[1]
+
+    # Check if medication is archived
+    if medication.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot record doses for an archived medication. Unarchive it first."
+        )
 
     # Get current user for notification
     user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
@@ -223,8 +236,10 @@ async def get_today_doses(
     # Parse timezone, fallback to UTC if invalid
     try:
         tz = ZoneInfo(timezone)
+        tz_str = timezone
     except Exception:
         tz = ZoneInfo("UTC")
+        tz_str = "UTC"
 
     # Get current time in UTC and convert to user's timezone
     now_utc = datetime.now(dt_timezone.utc)
@@ -232,6 +247,14 @@ async def get_today_doses(
 
     # Calculate today's boundaries in user's local timezone
     today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_date_str = today_local.date().isoformat()
+
+    # Check cache first
+    cache_key = key_today_doses(str(medication_id), today_date_str, tz_str)
+    cached = await cache_get(cache_key, DoseListResponse)
+    if cached:
+        return cached
+
     tomorrow_local = today_local + timedelta(days=1)
 
     # Convert back to naive UTC datetimes for database queries
@@ -269,7 +292,12 @@ async def get_today_doses(
         }
         dose_responses.append(DoseDetailResponse.model_validate(dose_dict))
 
-    return DoseListResponse(doses=dose_responses)
+    response = DoseListResponse(doses=dose_responses)
+
+    # Cache the result
+    await cache_set(cache_key, response, TTL_DOSE_COUNTS)
+
+    return response
 
 
 @router.get("/medication/{medication_id}/last", response_model=DoseDetailResponse)
@@ -281,6 +309,12 @@ async def get_last_dose(
     """Get the most recent dose for a medication."""
     # Verify user has access to this medication through family membership
     await verify_medication_access(db, user_id, medication_id)
+
+    # Check cache first
+    cache_key = key_last_dose(str(medication_id))
+    cached = await cache_get(cache_key, DoseDetailResponse)
+    if cached:
+        return cached
 
     query = (
         select(PetMedicationDose)
@@ -307,7 +341,12 @@ async def get_last_dose(
         "notes": dose.notes,
         "created_at": dose.created_at,
     }
-    return DoseDetailResponse.model_validate(dose_dict)
+    response = DoseDetailResponse.model_validate(dose_dict)
+
+    # Cache the result
+    await cache_set(cache_key, response, TTL_LAST_DOSE)
+
+    return response
 
 
 @router.delete("/{dose_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -379,11 +418,17 @@ async def list_all_doses(
     await verify_pet_access(db, user_id, pet_id)
 
     # Get all medication IDs for this pet (including archived for history)
-    meds_query = select(PetMedication.id, PetMedication.name).where(
-        PetMedication.pet_id == pet_id
-    )
+    meds_query = select(
+        PetMedication.id,
+        PetMedication.name,
+        PetMedication.friendly_name,
+    ).where(PetMedication.pet_id == pet_id)
     meds_result = await db.execute(meds_query)
-    medications = {row.id: row.name for row in meds_result.all()}
+    # Use friendly_name if set, otherwise use name
+    medications = {
+        row.id: row.friendly_name or row.name
+        for row in meds_result.all()
+    }
     medication_ids = list(medications.keys())
 
     if not medication_ids:

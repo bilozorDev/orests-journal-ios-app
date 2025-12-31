@@ -33,6 +33,12 @@ struct MedicationsView: View {
     @State private var showRecordDoseSheet = false
     @State private var showMedicationPicker = false
 
+    // Deep link navigation
+    @State private var isLoadingDeepLink = false
+
+    // Search
+    @State private var searchText = ""
+
     @AppStorage("medication_selected_pet_id") private var savedPetId: String = ""
 
     private let dataService = DataService.shared
@@ -51,6 +57,18 @@ struct MedicationsView: View {
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
+            .overlay {
+                if isLoadingDeepLink {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                        ProgressView("Loading medication...")
+                            .padding()
+                            .background(Color(uiColor: .systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
             .navigationTitle("Medications")
             .toolbar {
                 if !pets.isEmpty {
@@ -176,6 +194,7 @@ struct MedicationsView: View {
             } message: {
                 Text("Which medication do you want to record a dose for?")
             }
+            .searchable(text: $searchText, prompt: "Search medications")
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
             } message: {
@@ -433,9 +452,52 @@ struct MedicationsView: View {
             // Already on medications tab, just clear
             navigationManager.clearPendingDestination()
 
+        case .medicationDetail(let medicationId):
+            // Navigate to specific medication from deep link
+            Task {
+                await navigateToMedication(id: medicationId)
+            }
+            navigationManager.clearPendingDestination()
+
         default:
             // Not for us
             break
+        }
+    }
+
+    /// Navigate to a specific medication by ID (for deep links)
+    private func navigateToMedication(id medicationId: UUID) async {
+        // First check if medication is already in our list
+        if let medication = medications.first(where: { $0.id == medicationId }) {
+            navigationPath.append(MedicationDestination.medicationDetail(medication))
+            return
+        }
+
+        // Load the medication from API
+        isLoadingDeepLink = true
+        defer { isLoadingDeepLink = false }
+
+        do {
+            let medication = try await dataService.getMedication(id: medicationId)
+
+            // Make sure we have the pet loaded
+            if pets.isEmpty {
+                pets = try await dataService.getPets(forceRefresh: true)
+            }
+
+            // Navigate to the medication detail
+            navigationPath.append(MedicationDestination.medicationDetail(medication))
+
+            // Also add it to our list if not already there
+            if !medications.contains(where: { $0.id == medication.id }) {
+                medications.insert(medication, at: 0)
+            }
+        } catch {
+            #if DEBUG
+            print("Failed to load medication for deep link: \(error)")
+            #endif
+            errorMessage = "Unable to load medication"
+            showError = true
         }
     }
 
@@ -495,11 +557,20 @@ struct MedicationsView: View {
     // MARK: - Computed Properties
 
     private var displayedMedications: [Medication] {
-        if showArchived {
-            return medications
-        } else {
-            return medications.filter { !$0.isArchived }
+        var result = showArchived ? medications : medications.filter { !$0.isArchived }
+
+        // Apply search filter if search text is not empty
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter { medication in
+                medication.displayName.lowercased().contains(query) ||
+                medication.name.lowercased().contains(query) ||
+                (medication.dosage?.lowercased().contains(query) ?? false) ||
+                (medication.notes?.lowercased().contains(query) ?? false)
+            }
         }
+
+        return result
     }
 
     private var activeMedications: [Medication] {

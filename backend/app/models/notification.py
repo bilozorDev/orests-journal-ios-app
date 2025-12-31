@@ -1,8 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
+
 from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from sqlalchemy.schema import UniqueConstraint
 
 from app.db.session import Base
 
@@ -17,8 +20,8 @@ class UserDeviceToken(Base):
     device_name = Column(String(255), nullable=True)
     platform = Column(String(20), default="ios", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     user = relationship("User", backref="device_tokens")
@@ -37,14 +40,16 @@ class MedicationSchedule(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     scheduled_hour = Column(Integer, nullable=False)  # 0-23
     scheduled_minute = Column(Integer, default=0, nullable=False)  # 0-59
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     medication = relationship("PetMedication", back_populates="schedules")
 
     __table_args__ = (
-        # Unique constraint on medication_id + hour + minute
-        {"sqlite_autoincrement": True},
+        UniqueConstraint(
+            "medication_id", "scheduled_hour", "scheduled_minute",
+            name="uq_medication_schedule_time"
+        ),
     )
 
 
@@ -74,8 +79,8 @@ class NotificationPreference(Base):
     medication_archived = Column(Boolean, default=True, nullable=False)
     dose_administered = Column(Boolean, default=True, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     user = relationship("User", backref="notification_preferences")
@@ -89,13 +94,15 @@ class NotificationLog(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     notification_type = Column(String(50), nullable=False)  # 'reminder' or 'missed_dose'
     scheduled_time = Column(DateTime, nullable=False)  # The expected dose time
-    sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    sent_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     recipient_count = Column(Integer, default=0, nullable=False)
 
     # Relationships
     medication = relationship("PetMedication", back_populates="notification_logs")
 
     __table_args__ = (
-        # Unique constraint on medication_id + type + scheduled_time
-        {"sqlite_autoincrement": True},
+        UniqueConstraint(
+            "medication_id", "notification_type", "scheduled_time",
+            name="uq_notification_log_type_time"
+        ),
     )

@@ -50,16 +50,33 @@ def key_last_dose(medication_id: str) -> str:
     return f"last_dose:{medication_id}"
 
 
+def key_today_doses(medication_id: str, date: str, timezone: str) -> str:
+    """Cache key for today's doses for a medication.
+
+    Args:
+        medication_id: The medication UUID
+        date: The local date string (YYYY-MM-DD)
+        timezone: The IANA timezone (e.g., America/Los_Angeles)
+    """
+    return f"today_doses:{medication_id}:{date}:{timezone}"
+
+
 def key_feeding_history(pet_id: str, offset: int, limit: int) -> str:
     """Cache key for paginated feeding history."""
     return f"feeding_history:{pet_id}:{offset}:{limit}"
 
 
-def key_medications(family_id: str, pet_id: str = None, active_only: bool = False, include_archived: bool = False) -> str:
+def key_medications(
+    family_id: str,
+    pet_id: str = None,
+    active_only: bool = False,
+    include_archived: bool = False,
+    offset: int = 0,
+    limit: int = 100,
+) -> str:
     """Cache key for medications list."""
-    if pet_id:
-        return f"medications:{family_id}:{pet_id}:{active_only}:{include_archived}"
-    return f"medications:{family_id}:all:{active_only}:{include_archived}"
+    pet_part = pet_id if pet_id else "all"
+    return f"medications:{family_id}:{pet_part}:{active_only}:{include_archived}:{offset}:{limit}"
 
 
 def key_all_doses(family_id: str, pet_id: str = None, offset: int = 0, limit: int = 50) -> str:

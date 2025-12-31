@@ -2259,3 +2259,254 @@ class TestDeleteDose:
         )
 
         assert response.status_code == 401
+
+
+# ============== PRN Medication Dose Recording Tests ==============
+
+class TestPRNMedicationDoseRecording:
+    """Tests for recording doses for PRN (as-needed) medications."""
+
+    @pytest.mark.asyncio
+    async def test_record_dose_prn_medication_success(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should successfully record a dose for a PRN medication without schedule restrictions."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        # Mock a PRN (as-needed) medication
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_medication.is_as_needed = True
+        mock_medication.times_per_day = None  # PRN medications don't have fixed times
+        medication_result = MagicMock()
+        medication_result.scalar_one_or_none.return_value = mock_medication
+
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
+
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+
+        rls_result2 = MagicMock()
+        rls_result2.scalar_one_or_none.return_value = None
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = mock_membership
+
+        med_pet_result = MagicMock()
+        med_pet_result.first.return_value = (mock_medication, mock_pet)
+
+        mock_user = create_mock_user(user_id=test_user_id)
+        user_result = MagicMock()
+        user_result.scalar_one.return_value = mock_user
+
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = UUID(pet_id)
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                medication_result,
+                rls_result,
+                pet_result,
+                rls_result2,
+                membership_result,
+                med_pet_result,
+                user_result,
+                pet_id_result,
+            ]
+        )
+
+        mock_db_session.add = MagicMock()
+        def refresh_dose(obj):
+            obj.id = uuid4()
+            obj.created_at = datetime.now(UTC)
+        mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"), \
+             patch("app.api.endpoints.doses.cache_delete"), \
+             patch("app.api.endpoints.doses.get_filtered_family_member_tokens", new_callable=AsyncMock) as mock_get_tokens:
+
+            mock_get_tokens.return_value = []
+
+            response = await client.post(
+                "/api/v1/doses",
+                json={
+                    "medication_id": medication_id,
+                    "notes": "Given for pain relief",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["medication_id"] == medication_id
+        assert data["notes"] == "Given for pain relief"
+
+    @pytest.mark.asyncio
+    async def test_record_multiple_prn_doses_same_day(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should allow multiple PRN doses on the same day (no daily limit enforced)."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+        )
+        mock_medication.is_as_needed = True
+        medication_result = MagicMock()
+        medication_result.scalar_one_or_none.return_value = mock_medication
+
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
+
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+
+        rls_result2 = MagicMock()
+        rls_result2.scalar_one_or_none.return_value = None
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = mock_membership
+
+        med_pet_result = MagicMock()
+        med_pet_result.first.return_value = (mock_medication, mock_pet)
+
+        mock_user = create_mock_user(user_id=test_user_id)
+        user_result = MagicMock()
+        user_result.scalar_one.return_value = mock_user
+
+        pet_id_result = MagicMock()
+        pet_id_result.scalar_one_or_none.return_value = UUID(pet_id)
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                medication_result,
+                rls_result,
+                pet_result,
+                rls_result2,
+                membership_result,
+                med_pet_result,
+                user_result,
+                pet_id_result,
+            ]
+        )
+
+        mock_db_session.add = MagicMock()
+        dose_count = [0]
+        def refresh_dose(obj):
+            dose_count[0] += 1
+            obj.id = uuid4()
+            obj.created_at = datetime.now(UTC)
+        mock_db_session.refresh = AsyncMock(side_effect=refresh_dose)
+
+        with patch("app.api.endpoints.doses.cache_delete_pattern"), \
+             patch("app.api.endpoints.doses.cache_delete"), \
+             patch("app.api.endpoints.doses.get_filtered_family_member_tokens", new_callable=AsyncMock) as mock_get_tokens:
+
+            mock_get_tokens.return_value = []
+
+            # Second dose should also succeed
+            response = await client.post(
+                "/api/v1/doses",
+                json={
+                    "medication_id": medication_id,
+                    "notes": "Second dose today",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 201
+
+
+# ============== Archived Medication Dose Tests ==============
+
+class TestArchivedMedicationDoses:
+    """Tests for dose recording attempts on archived medications."""
+
+    @pytest.mark.asyncio
+    async def test_record_dose_archived_medication_fails(
+        self,
+        client: AsyncClient,
+        mock_db_session: AsyncMock,
+        auth_headers: dict,
+        test_user_id: str,
+        test_family_id: str,
+    ):
+        """Should fail to record a dose for an archived medication."""
+        medication_id = str(uuid4())
+        pet_id = str(uuid4())
+
+        # Mock an archived medication
+        mock_medication = create_mock_medication(
+            medication_id=medication_id,
+            pet_id=pet_id,
+            is_archived=True,
+        )
+        medication_result = MagicMock()
+        medication_result.scalar_one_or_none.return_value = mock_medication
+
+        rls_result = MagicMock()
+        rls_result.scalar_one_or_none.return_value = None
+
+        mock_pet = create_mock_pet(pet_id=pet_id, family_id=test_family_id)
+        pet_result = MagicMock()
+        pet_result.scalar_one_or_none.return_value = mock_pet
+
+        rls_result2 = MagicMock()
+        rls_result2.scalar_one_or_none.return_value = None
+
+        mock_membership = create_mock_membership(
+            user_id=test_user_id,
+            family_id=test_family_id,
+        )
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = mock_membership
+
+        # Mock the medication+pet join query (happens after authorization)
+        med_pet_result = MagicMock()
+        med_pet_result.first.return_value = (mock_medication, mock_pet)
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                medication_result,  # verify_medication_access
+                rls_result,         # verify_pet_access RLS
+                pet_result,         # verify_pet_access pet query
+                rls_result2,        # verify_family_access RLS
+                membership_result,  # verify_family_access membership query
+                med_pet_result,     # medication+pet join query
+            ]
+        )
+
+        response = await client.post(
+            "/api/v1/doses",
+            json={"medication_id": medication_id},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "archived" in response.json()["detail"].lower()
