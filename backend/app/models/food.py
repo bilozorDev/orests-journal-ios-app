@@ -36,7 +36,7 @@ class PetFood(Base):
     image_url = Column(String(500), nullable=True)
     is_archived = Column(Boolean, nullable=False, server_default='false', default=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     feedings = relationship("PetFeeding", back_populates="food", cascade="all, delete-orphan")
@@ -50,12 +50,12 @@ class PetFeeding(Base):
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     food_id = Column(UUID(as_uuid=True), ForeignKey("pet_foods.id", ondelete="CASCADE"), nullable=False)
     fed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    fed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    fed_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     amount = Column(Float, nullable=False)
     amount_unit = Column(String(10), nullable=False, server_default='g')
     calories = Column(Float, nullable=False)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     pet = relationship("Pet", back_populates="feedings")
@@ -69,11 +69,11 @@ class PetCalorieGoal(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     pet_id = Column(UUID(as_uuid=True), ForeignKey("pets.id", ondelete="CASCADE"), nullable=False)
     daily_calories = Column(Float, nullable=False)
-    effective_from = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    effective_from = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     effective_until = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     pet = relationship("Pet", back_populates="calorie_goals")

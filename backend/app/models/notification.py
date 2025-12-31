@@ -20,8 +20,8 @@ class UserDeviceToken(Base):
     device_name = Column(String(255), nullable=True)
     platform = Column(String(20), default="ios", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), onupdate=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     user = relationship("User", backref="device_tokens")
@@ -40,7 +40,7 @@ class MedicationSchedule(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     scheduled_hour = Column(Integer, nullable=False)  # 0-23
     scheduled_minute = Column(Integer, default=0, nullable=False)  # 0-59
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     medication = relationship("PetMedication", back_populates="schedules")
@@ -79,8 +79,8 @@ class NotificationPreference(Base):
     medication_archived = Column(Boolean, default=True, nullable=False)
     dose_administered = Column(Boolean, default=True, nullable=False)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), onupdate=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     user = relationship("User", backref="notification_preferences")
@@ -94,7 +94,7 @@ class NotificationLog(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     notification_type = Column(String(50), nullable=False)  # 'reminder' or 'missed_dose'
     scheduled_time = Column(DateTime, nullable=False)  # The expected dose time
-    sent_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    sent_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     recipient_count = Column(Integer, default=0, nullable=False)
 
     # Relationships

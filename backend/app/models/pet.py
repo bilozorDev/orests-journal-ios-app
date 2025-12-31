@@ -20,7 +20,7 @@ class Pet(Base):
     current_weight = Column(Float, nullable=True)
     date_of_birth = Column(Date, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     health_records = relationship("HealthRecord", back_populates="pet", cascade="all, delete-orphan")
@@ -38,7 +38,7 @@ class HealthRecord(Base):
     age_years = Column(Float, nullable=True)
     weight_pounds = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
-    recorded_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    recorded_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     pet = relationship("Pet", back_populates="health_records")

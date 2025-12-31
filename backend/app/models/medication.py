@@ -39,7 +39,7 @@ class PetMedication(Base):
     timezone = Column(String(50), default="UTC", nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     pet = relationship("Pet", back_populates="medications")
@@ -56,7 +56,7 @@ class PetMedicationPhoto(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     photo_url = Column(String(512), nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     medication = relationship("PetMedication", back_populates="photos")
@@ -67,10 +67,10 @@ class PetMedicationDose(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
-    given_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    given_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     given_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     # Relationships
     medication = relationship("PetMedication", back_populates="doses")
