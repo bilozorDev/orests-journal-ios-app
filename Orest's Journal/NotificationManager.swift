@@ -228,15 +228,17 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             DataService.shared.invalidatePetsCache()
             NavigationManager.shared.requestFamilyRefresh()
         case "medication_created", "medication_updated", "medication_archived":
-            // Medication changes from other family members - refresh medications list
+            // Medication changes from other family members - refresh medications list and widget
             DataService.shared.invalidateAllMedicationsCaches()
             NavigationManager.shared.requestTabRefresh(.medication)
+            // Sync fresh data to widget then reload
+            await DataService.shared.syncMedicationsToWidget()
         case "dose_administered":
             // Dose administered by family member - refresh medications and widget
             DataService.shared.invalidateAllMedicationsCaches()
             NavigationManager.shared.requestTabRefresh(.medication)
-            // Refresh widget to show updated dose status
-            WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
+            // Sync fresh data to widget then reload (syncMedicationsToWidget calls reloadTimelines)
+            await DataService.shared.syncMedicationsToWidget()
         default:
             break
         }

@@ -293,7 +293,15 @@ final class WidgetDataManager {
         // Only show today's schedule
         let today = now
 
-        for scheduledTime in scheduledTimes {
+        // Track which recorded doses have been matched to prevent double-matching
+        var unmatchedDoses = todayDoses
+
+        // Sort scheduled times chronologically for proper matching order
+        let sortedScheduledTimes = scheduledTimes.sorted {
+            ($0.scheduledHour, $0.scheduledMinute) < ($1.scheduledHour, $1.scheduledMinute)
+        }
+
+        for scheduledTime in sortedScheduledTimes {
             var components = calendar.dateComponents([.year, .month, .day], from: today)
             components.hour = scheduledTime.scheduledHour
             components.minute = scheduledTime.scheduledMinute
@@ -304,10 +312,27 @@ final class WidgetDataManager {
 
             // Check if this scheduled time was satisfied by a recorded dose
             // Match if dose was given within 2 hours before to 1 hour after scheduled time
-            let matchingDose = todayDoses.first { recordedDose in
+            // Find the CLOSEST unmatched dose within the window
+            var matchingDose: RecordedDoseInfo?
+            var matchingIndex: Int?
+            var closestDistance: TimeInterval = .infinity
+
+            for (index, recordedDose) in unmatchedDoses.enumerated() {
                 let windowStart = doseTime.addingTimeInterval(-2 * 3600)
                 let windowEnd = doseTime.addingTimeInterval(1 * 3600)
-                return recordedDose.givenAt >= windowStart && recordedDose.givenAt <= windowEnd
+                if recordedDose.givenAt >= windowStart && recordedDose.givenAt <= windowEnd {
+                    let distance = abs(recordedDose.givenAt.timeIntervalSince(doseTime))
+                    if distance < closestDistance {
+                        closestDistance = distance
+                        matchingDose = recordedDose
+                        matchingIndex = index
+                    }
+                }
+            }
+
+            // Remove matched dose from available pool
+            if let index = matchingIndex {
+                unmatchedDoses.remove(at: index)
             }
 
             // Include all today's doses (past and future)
