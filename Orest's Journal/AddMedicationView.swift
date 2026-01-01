@@ -156,7 +156,13 @@ struct AddMedicationView: View {
                                     "Time \(index + 1)",
                                     selection: Binding(
                                         get: { reminderTimes.indices.contains(index) ? reminderTimes[index] : Self.defaultTime(hour: 9 + index * 3) },
-                                        set: { if index < reminderTimes.count { reminderTimes[index] = $0 } }
+                                        set: { newValue in
+                                            // Grow array if needed to accommodate the index
+                                            while reminderTimes.count <= index {
+                                                reminderTimes.append(Self.defaultTime(hour: 9 + reminderTimes.count * 3))
+                                            }
+                                            reminderTimes[index] = newValue
+                                        }
                                     ),
                                     displayedComponents: .hourAndMinute
                                 )
@@ -370,6 +376,19 @@ struct AddMedicationView: View {
     private func populateExistingMedication() {
         guard let medication = existingMedication else { return }
 
+        #if DEBUG
+        print("💊 [AddMedication] Loading existing medication:")
+        print("   - name: \(medication.name)")
+        print("   - remindersEnabled: \(medication.remindersEnabled)")
+        print("   - timesPerDay: \(medication.timesPerDay)")
+        print("   - scheduledTimes count: \(medication.scheduledTimes?.count ?? 0)")
+        if let times = medication.scheduledTimes {
+            for (i, st) in times.enumerated() {
+                print("   - scheduledTimes[\(i)]: \(st.scheduledHour):\(String(format: "%02d", st.scheduledMinute))")
+            }
+        }
+        #endif
+
         name = medication.name
         friendlyName = medication.friendlyName ?? ""
         medicationType = medication.medicationType
@@ -385,8 +404,8 @@ struct AddMedicationView: View {
         remindersEnabled = medication.remindersEnabled
         timesPerDay = medication.timesPerDay
 
-        // Load scheduled times
-        if let scheduledTimes = medication.scheduledTimes {
+        // Load scheduled times - only if we have actual schedules
+        if let scheduledTimes = medication.scheduledTimes, !scheduledTimes.isEmpty {
             reminderTimes = scheduledTimes.map { scheduled in
                 let calendar = Calendar.current
                 var components = DateComponents()
@@ -394,6 +413,21 @@ struct AddMedicationView: View {
                 components.minute = scheduled.scheduledMinute
                 return calendar.date(from: components) ?? Date()
             }
+            #if DEBUG
+            print("   - Loaded \(reminderTimes.count) reminder times from medication")
+            #endif
+        }
+        // If no schedules exist, ensure we have default times for timesPerDay
+        // This handles the case where reminders were enabled but schedules weren't saved
+        if reminderTimes.count < timesPerDay {
+            let beforeCount = reminderTimes.count
+            for i in reminderTimes.count..<timesPerDay {
+                let hour = min(9 + i * 3, 21)
+                reminderTimes.append(Self.defaultTime(hour: hour))
+            }
+            #if DEBUG
+            print("   - Added \(reminderTimes.count - beforeCount) default times (now \(reminderTimes.count) total)")
+            #endif
         }
 
         // Load existing photos
@@ -445,6 +479,28 @@ struct AddMedicationView: View {
             let scheduledTimes: [ScheduledTimeCreate]? = remindersEnabled && !isAsNeeded
                 ? reminderTimes.prefix(timesPerDay).map { ScheduledTimeCreate(from: $0) }
                 : nil
+
+            #if DEBUG
+            print("💊 [AddMedication] Saving medication:")
+            print("   - remindersEnabled: \(remindersEnabled)")
+            print("   - isAsNeeded: \(isAsNeeded)")
+            print("   - timesPerDay: \(timesPerDay)")
+            print("   - reminderTimes count: \(reminderTimes.count)")
+            for (i, time) in reminderTimes.enumerated() {
+                let calendar = Calendar.current
+                let hour = calendar.component(.hour, from: time)
+                let minute = calendar.component(.minute, from: time)
+                print("   - reminderTimes[\(i)]: \(hour):\(String(format: "%02d", minute))")
+            }
+            if let scheduledTimes = scheduledTimes {
+                print("   - scheduledTimes to send: \(scheduledTimes.count)")
+                for (i, st) in scheduledTimes.enumerated() {
+                    print("   - scheduledTimes[\(i)]: \(st.hour):\(String(format: "%02d", st.minute))")
+                }
+            } else {
+                print("   - scheduledTimes to send: nil")
+            }
+            #endif
 
             if isEditing, let existing = existingMedication {
                 // Update existing medication
