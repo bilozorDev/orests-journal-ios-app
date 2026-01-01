@@ -40,13 +40,15 @@ struct WidgetPendingDose: Codable, Identifiable {
     let medicationId: UUID
     let medicationName: String
     let petName: String
+    let scheduledFor: Date?  // Links dose to specific schedule slot
     let requestedAt: Date
 
-    init(medicationId: UUID, medicationName: String, petName: String) {
+    init(medicationId: UUID, medicationName: String, petName: String, scheduledFor: Date? = nil) {
         self.id = UUID()
         self.medicationId = medicationId
         self.medicationName = medicationName
         self.petName = petName
+        self.scheduledFor = scheduledFor
         self.requestedAt = Date()
     }
 }
@@ -234,12 +236,69 @@ final class WidgetDataManager {
         WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
     }
 
+    // MARK: - Optimistic UI Update (from Widget Intent)
+
+    /// Mark a dose as given in widget data (optimistic UI update).
+    /// Called from RecordDoseIntent when user taps "Give" in widget.
+    /// The actual API call happens when the main app processes the pending queue.
+    func markDoseAsGiven(medicationId: UUID, scheduledTime: Date?, givenBy: String) {
+        guard let widgetData = getWidgetData() else {
+            #if DEBUG
+            print("⚠️ [Widget] Cannot mark dose - no widget data")
+            #endif
+            return
+        }
+
+        let now = Date()
+        var updatedDoses = widgetData.nextDoses.map { dose -> WidgetDoseInfo in
+            // Match by medication ID and scheduled time
+            let matchesMedication = dose.medicationId == medicationId
+
+            // Match scheduled time if provided, otherwise match closest pending dose
+            let matchesTime: Bool
+            if let scheduledTime = scheduledTime {
+                let calendar = Calendar.current
+                matchesTime = calendar.isDate(dose.scheduledTime, equalTo: scheduledTime, toGranularity: .minute)
+            } else {
+                // No specific time - match first pending dose for this medication
+                matchesTime = !dose.isGiven
+            }
+
+            if matchesMedication && matchesTime && !dose.isGiven {
+                // Return updated dose marked as given
+                return WidgetDoseInfo(
+                    medicationId: dose.medicationId,
+                    medicationName: dose.medicationName,
+                    dosage: dose.dosage,
+                    iconName: dose.iconName,
+                    petName: dose.petName,
+                    scheduledTime: dose.scheduledTime,
+                    isOverdue: false,
+                    isGiven: true,
+                    givenBy: givenBy,
+                    givenAt: now
+                )
+            }
+            return dose
+        }
+
+        // Save updated data
+        let updatedWidgetData = WidgetData(nextDoses: updatedDoses, lastUpdated: Date())
+        if let data = try? encoder.encode(updatedWidgetData) {
+            userDefaults?.set(data, forKey: WidgetDataKey.nextDoses)
+            #if DEBUG
+            print("✅ [Widget] Marked dose as given for medication \(medicationId)")
+            #endif
+        }
+    }
+
     // MARK: - Helpers for Main App
 
     /// Information about a recorded dose for matching with scheduled times
     struct RecordedDoseInfo {
         let givenAt: Date
         let givenBy: String
+        let scheduledFor: Date?  // The schedule slot this dose was for
     }
 
     /// Build widget dose info from medication and scheduled time
@@ -290,19 +349,13 @@ final class WidgetDataManager {
         let now = Date()
         var doses: [WidgetDoseInfo] = []
 
-        // Only show today's schedule
-        let today = now
-
-        // Track which recorded doses have been matched to prevent double-matching
-        var unmatchedDoses = todayDoses
-
-        // Sort scheduled times chronologically for proper matching order
+        // Sort scheduled times chronologically
         let sortedScheduledTimes = scheduledTimes.sorted {
             ($0.scheduledHour, $0.scheduledMinute) < ($1.scheduledHour, $1.scheduledMinute)
         }
 
         for scheduledTime in sortedScheduledTimes {
-            var components = calendar.dateComponents([.year, .month, .day], from: today)
+            var components = calendar.dateComponents([.year, .month, .day], from: now)
             components.hour = scheduledTime.scheduledHour
             components.minute = scheduledTime.scheduledMinute
 
@@ -310,34 +363,13 @@ final class WidgetDataManager {
                 continue
             }
 
-            // Check if this scheduled time was satisfied by a recorded dose
-            // Match if dose was given within 2 hours before to 1 hour after scheduled time
-            // Find the CLOSEST unmatched dose within the window
-            var matchingDose: RecordedDoseInfo?
-            var matchingIndex: Int?
-            var closestDistance: TimeInterval = .infinity
-
-            for (index, recordedDose) in unmatchedDoses.enumerated() {
-                let windowStart = doseTime.addingTimeInterval(-2 * 3600)
-                let windowEnd = doseTime.addingTimeInterval(1 * 3600)
-                if recordedDose.givenAt >= windowStart && recordedDose.givenAt <= windowEnd {
-                    let distance = abs(recordedDose.givenAt.timeIntervalSince(doseTime))
-                    if distance < closestDistance {
-                        closestDistance = distance
-                        matchingDose = recordedDose
-                        matchingIndex = index
-                    }
-                }
+            // Find dose with matching scheduledFor
+            let matchingDose = todayDoses.first { dose in
+                guard let scheduledFor = dose.scheduledFor else { return false }
+                return calendar.isDate(scheduledFor, equalTo: doseTime, toGranularity: .minute)
             }
 
-            // Remove matched dose from available pool
-            if let index = matchingIndex {
-                unmatchedDoses.remove(at: index)
-            }
-
-            // Include all today's doses (past and future)
-            // For past doses: show as given or overdue
-            // For future doses: show as upcoming
+            // Include doses from 6 hours ago onwards
             let sixHoursAgo = now.addingTimeInterval(-6 * 3600)
             if doseTime > sixHoursAgo {
                 doses.append(buildDoseInfo(
