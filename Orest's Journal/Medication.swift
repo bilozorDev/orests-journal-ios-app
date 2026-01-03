@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Medication Type
 
-enum MedicationType: String, Codable, CaseIterable {
+enum MedicationType: String, Codable, CaseIterable, Sendable {
     case drops = "drops"
     case pill = "pill"
     case inhaler = "inhaler"
@@ -19,7 +19,7 @@ enum MedicationType: String, Codable, CaseIterable {
     case capsule = "capsule"
     case topical = "topical"
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .drops: return "Drops"
         case .pill: return "Pill"
@@ -32,7 +32,7 @@ enum MedicationType: String, Codable, CaseIterable {
         }
     }
 
-    var icon: String {
+    nonisolated var icon: String {
         switch self {
         case .drops: return "drop.fill"
         case .pill: return "pills.fill"
@@ -48,14 +48,14 @@ enum MedicationType: String, Codable, CaseIterable {
 
 // MARK: - Scheduled Time
 
-struct ScheduledTime: Codable, Identifiable, Hashable {
+struct ScheduledTime: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let medicationId: UUID
     let scheduledHour: Int
     let scheduledMinute: Int
 
     /// Formatted time string (e.g., "8:00 AM")
-    var formattedTime: String {
+    nonisolated var formattedTime: String {
         let calendar = Calendar.current
         var components = DateComponents()
         components.hour = scheduledHour
@@ -69,7 +69,7 @@ struct ScheduledTime: Codable, Identifiable, Hashable {
 
 // MARK: - Medication Photo
 
-struct MedicationPhoto: Codable, Identifiable, Hashable {
+struct MedicationPhoto: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let medicationId: UUID
     let photoUrl: String
@@ -79,7 +79,7 @@ struct MedicationPhoto: Codable, Identifiable, Hashable {
 
 // MARK: - Medication
 
-struct Medication: Codable, Identifiable, Hashable {
+struct Medication: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let petId: UUID
     let name: String  // Full medical name (e.g., "fluticasone propionate")
@@ -101,12 +101,12 @@ struct Medication: Codable, Identifiable, Hashable {
     var photos: [MedicationPhoto]?
 
     /// Display name for UI (friendlyName if set, otherwise name)
-    var displayName: String {
+    nonisolated var displayName: String {
         friendlyName ?? name
     }
 
     /// Check if medication is currently active based on dates
-    var isActive: Bool {
+    nonisolated var isActive: Bool {
         let now = Date()
         if now < startDate { return false }
         if let end = endDate, now > end { return false }
@@ -114,7 +114,7 @@ struct Medication: Codable, Identifiable, Hashable {
     }
 
     /// Formatted interval description
-    var intervalDescription: String {
+    nonisolated var intervalDescription: String {
         if isAsNeeded {
             return "As needed"
         }
@@ -294,26 +294,27 @@ struct MedicationDeleteResponse: Codable {
 // MARK: - Dose Types
 
 /// A recorded dose of a medication
-struct MedicationDose: Codable, Identifiable, Hashable {
+struct MedicationDose: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let medicationId: UUID
     let givenAt: Date
     let givenBy: String  // Formatted user name
+    let scheduledFor: Date?  // Links dose to specific schedule slot
     let notes: String?
     let createdAt: Date
 
     /// Formatted relative time string (e.g., "2 hours ago")
-    var relativeTimeString: String {
+    nonisolated var relativeTimeString: String {
         Formatters.relativeDateTime.localizedString(for: givenAt, relativeTo: Date())
     }
 
     /// Formatted date and time string
-    var formattedDateTime: String {
+    nonisolated var formattedDateTime: String {
         Formatters.mediumDateTime.string(from: givenAt)
     }
 
     /// Short formatted time string
-    var formattedTime: String {
+    nonisolated var formattedTime: String {
         Formatters.shortTime.string(from: givenAt)
     }
 }
@@ -332,6 +333,7 @@ struct AllDoseDetail: Codable, Identifiable, Hashable {
     let petId: UUID
     let givenAt: Date
     let givenBy: String
+    let scheduledFor: Date?  // Links dose to specific schedule slot
     let notes: String?
     let createdAt: Date
 }
@@ -347,16 +349,19 @@ struct DoseCreate: Encodable {
     let medicationId: UUID
     let notes: String?
     let givenAt: Date?
+    let scheduledFor: Date?  // Links dose to specific schedule slot
 
-    init(medicationId: UUID, notes: String? = nil, givenAt: Date? = nil) {
+    init(medicationId: UUID, notes: String? = nil, givenAt: Date? = nil, scheduledFor: Date? = nil) {
         self.medicationId = medicationId
         self.notes = notes
         self.givenAt = givenAt
+        self.scheduledFor = scheduledFor
     }
 }
 
 /// DTO for updating a dose
 struct DoseUpdate: Encodable {
     var givenAt: Date?
+    var scheduledFor: Date?  // Links dose to specific schedule slot
     var notes: String?
 }
