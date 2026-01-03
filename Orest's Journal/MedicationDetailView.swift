@@ -14,6 +14,7 @@ struct MedicationDetailView: View {
     let onDelete: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showEditSheet = false
     @State private var showDeleteConfirmation = false
@@ -30,8 +31,18 @@ struct MedicationDetailView: View {
     @State private var recentDoses: [MedicationDose] = []
     @State private var lastDose: MedicationDose?
     @State private var isLoadingDoses = false
+    @State private var todayDoses: [MedicationDose] = []
+
+    // Today's schedule interaction
+    @State private var selectedScheduledTime: Date?
+    @State private var isRecordingDose = false
+    @State private var recordingForSlot: Date?
+
+    // Widget dose confirmation
+    @State private var showDoseConfirmation = false
 
     private let dataService = DataService.shared
+    private let navigationManager = NavigationManager.shared
 
     var body: some View {
         ScrollView {
@@ -42,6 +53,13 @@ struct MedicationDetailView: View {
                 // Dose recording (only for non-archived)
                 if !medication.isArchived {
                     doseRecordingSection
+                }
+
+                // Today's schedule (for scheduled medications with reminders)
+                if !medication.isArchived && !medication.isAsNeeded && medication.isActive {
+                    if let scheduledTimes = medication.scheduledTimes, !scheduledTimes.isEmpty {
+                        todayScheduleSection
+                    }
                 }
 
                 // Recent doses
@@ -71,6 +89,9 @@ struct MedicationDetailView: View {
                 metadataSection
             }
             .padding()
+        }
+        .refreshable {
+            await loadRecentDoses()
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Medication")
@@ -128,7 +149,33 @@ struct MedicationDetailView: View {
         }
         .task {
             await loadRecentDoses()
+            checkForWidgetDoseConfirmation()
         }
+        .onAppear {
+            // Check on every appear (handles returning from background, re-navigation)
+            checkForWidgetDoseConfirmation()
+        }
+        .onChange(of: navigationManager.widgetDoseRecorded?.medicationId) { _, newValue in
+            // Also watch for changes while view is on screen
+            guard newValue == medication.id else { return }
+            Task {
+                await loadRecentDoses()
+            }
+            checkForWidgetDoseConfirmation()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // When app becomes active (e.g., from widget tap), check for pending confirmation
+            if newPhase == .active {
+                checkForWidgetDoseConfirmation()
+            }
+        }
+        .overlay(alignment: .top) {
+            if showDoseConfirmation {
+                doseConfirmationBanner
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: showDoseConfirmation)
         .fullScreenCover(isPresented: $showFullScreenPhoto) {
             if let photos = medication.photos {
                 MedicationPhotoGalleryView(
@@ -435,6 +482,145 @@ struct MedicationDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    private var todayScheduleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Today's Schedule", systemImage: "clock.badge.checkmark")
+                .font(.headline)
+
+            if isLoadingDoses {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else if let scheduledTimes = medication.scheduledTimes {
+                let slots = buildTodaySlots(from: scheduledTimes)
+                VStack(spacing: 8) {
+                    ForEach(slots, id: \.scheduledFor) { slot in
+                        todaySlotRow(slot: slot)
+
+                        if slot.scheduledFor != slots.last?.scheduledFor {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private struct ScheduleSlot {
+        let scheduledFor: Date
+        let formattedTime: String
+        let isGiven: Bool
+        let dose: MedicationDose?
+        let isPast: Bool
+    }
+
+    private func buildTodaySlots(from scheduledTimes: [ScheduledTime]) -> [ScheduleSlot] {
+        let calendar = Calendar.current
+        let now = Date()
+
+        return scheduledTimes
+            .sorted { ($0.scheduledHour, $0.scheduledMinute) < ($1.scheduledHour, $1.scheduledMinute) }
+            .compactMap { time -> ScheduleSlot? in
+                // Build today's date with this scheduled time
+                var components = calendar.dateComponents([.year, .month, .day], from: now)
+                components.hour = time.scheduledHour
+                components.minute = time.scheduledMinute
+                guard let scheduledFor = calendar.date(from: components) else { return nil }
+
+                // Find dose with matching scheduledFor
+                let matchingDose = todayDoses.first { dose in
+                    guard let doseScheduledFor = dose.scheduledFor else { return false }
+                    return calendar.isDate(doseScheduledFor, equalTo: scheduledFor, toGranularity: .minute)
+                }
+
+                return ScheduleSlot(
+                    scheduledFor: scheduledFor,
+                    formattedTime: time.formattedTime,
+                    isGiven: matchingDose != nil,
+                    dose: matchingDose,
+                    isPast: scheduledFor < now
+                )
+            }
+    }
+
+    private func todaySlotRow(slot: ScheduleSlot) -> some View {
+        HStack {
+            // Time
+            Text(slot.formattedTime)
+                .font(.headline)
+                .frame(width: 80, alignment: .leading)
+
+            Spacer()
+
+            if slot.isGiven {
+                // Show given status
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Given")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                    if let dose = slot.dose {
+                        Text(dose.formattedTime)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                // Show Give button
+                Button {
+                    recordDoseForSlot(slot.scheduledFor)
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRecordingDose && recordingForSlot == slot.scheduledFor {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "pills.fill")
+                        }
+                        Text("Give")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(slot.isPast ? Color.orange : Color.accentColor)
+                    .foregroundColor(.white)
+                    .clipShape(Capsule())
+                }
+                .disabled(isRecordingDose)
+                .accessibilityLabel("Record dose for \(slot.formattedTime)")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func recordDoseForSlot(_ scheduledFor: Date) {
+        Task {
+            isRecordingDose = true
+            recordingForSlot = scheduledFor
+            defer {
+                isRecordingDose = false
+                recordingForSlot = nil
+            }
+
+            do {
+                _ = try await dataService.recordDose(
+                    medicationId: medication.id,
+                    scheduledFor: scheduledFor,
+                    familyId: pet.familyId
+                )
+                // Reload doses to update UI
+                await loadRecentDoses()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+        }
+    }
+
     private var recentDosesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -537,6 +723,75 @@ struct MedicationDetailView: View {
         }
     }
 
+    // MARK: - Widget Dose Confirmation
+
+    private var doseConfirmationBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .foregroundColor(.white)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Dose Recorded")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text("from widget")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.9))
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation {
+                    showDoseConfirmation = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+        }
+        .padding()
+        .background(Color.green)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    private func checkForWidgetDoseConfirmation() {
+        guard let recorded = navigationManager.widgetDoseRecorded,
+              recorded.medicationId == medication.id else {
+            return
+        }
+
+        #if DEBUG
+        print("✅ [Widget] Found widget dose confirmation for \(recorded.medicationName)")
+        #endif
+
+        // Clear the flag first to prevent duplicate handling
+        navigationManager.widgetDoseRecorded = nil
+
+        // Refresh doses to show updated "Given" status in Today's Schedule
+        Task {
+            await loadRecentDoses()
+
+            // Show confirmation banner after data loads
+            withAnimation {
+                showDoseConfirmation = true
+            }
+
+            // Auto-dismiss after 4 seconds
+            try? await Task.sleep(for: .seconds(4))
+            await MainActor.run {
+                withAnimation {
+                    showDoseConfirmation = false
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func loadRecentDoses() async {
@@ -549,6 +804,9 @@ struct MedicationDetailView: View {
 
             // Load recent doses
             recentDoses = try await dataService.getDosesForMedication(medicationId: medication.id, limit: 10)
+
+            // Load today's doses for schedule matching
+            todayDoses = try await dataService.getTodaysDoses(medicationId: medication.id)
         } catch {
             // Silently fail - not critical
             print("Failed to load doses: \(error)")

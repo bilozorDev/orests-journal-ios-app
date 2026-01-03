@@ -11,7 +11,7 @@ import WidgetKit
 
 // MARK: - App Group Constants
 
-enum AppGroup {
+nonisolated enum AppGroup: Sendable {
     static let identifier = "group.com.notip.orests-journal"
 
     static var containerURL: URL? {
@@ -25,17 +25,19 @@ enum AppGroup {
 
 // MARK: - Widget Data Keys
 
-private enum WidgetDataKey {
+nonisolated private enum WidgetDataKey: Sendable {
     static let nextDoses = "widget_next_doses"
     static let lastUpdated = "widget_last_updated"
     static let pendingDoseQueue = "pending_dose_queue"
+    static let apiBaseURL = "widget_api_base_url"
+    static let needsRefresh = "widget_needs_refresh"  // Signal app to refresh after widget API call
 }
 
 // MARK: - Widget Pending Dose Model (shared between app and widget)
 
 /// A dose waiting to be recorded by the main app (from widget interaction)
 /// Named differently from OfflineDoseQueue's PendingDose to avoid conflicts
-struct WidgetPendingDose: Codable, Identifiable {
+struct WidgetPendingDose: Codable, Identifiable, Sendable {
     let id: UUID
     let medicationId: UUID
     let medicationName: String
@@ -43,7 +45,7 @@ struct WidgetPendingDose: Codable, Identifiable {
     let scheduledFor: Date?  // Links dose to specific schedule slot
     let requestedAt: Date
 
-    init(medicationId: UUID, medicationName: String, petName: String, scheduledFor: Date? = nil) {
+    nonisolated init(medicationId: UUID, medicationName: String, petName: String, scheduledFor: Date? = nil) {
         self.id = UUID()
         self.medicationId = medicationId
         self.medicationName = medicationName
@@ -56,8 +58,9 @@ struct WidgetPendingDose: Codable, Identifiable {
 // MARK: - Widget Formatters
 
 /// Static formatters to avoid recreating expensive DateFormatter instances
-private enum WidgetFormatters {
-    static let shortTime: DateFormatter = {
+nonisolated private enum WidgetFormatters: Sendable {
+    // Use nonisolated(unsafe) for mutable formatter - safe because DateFormatter is thread-safe for formatting
+    nonisolated(unsafe) static let shortTime: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter
@@ -67,7 +70,7 @@ private enum WidgetFormatters {
 // MARK: - Widget Data Models
 
 /// Simplified medication info for widget display
-struct WidgetMedicationInfo: Codable, Identifiable {
+struct WidgetMedicationInfo: Codable, Identifiable, Sendable {
     let id: UUID
     let name: String
     let dosage: String?
@@ -77,8 +80,8 @@ struct WidgetMedicationInfo: Codable, Identifiable {
 }
 
 /// A scheduled dose for widget display
-struct WidgetDoseInfo: Codable, Identifiable {
-    var id: String { "\(medicationId)-\(scheduledTime.timeIntervalSince1970)" }
+struct WidgetDoseInfo: Codable, Identifiable, Sendable {
+    nonisolated var id: String { "\(medicationId)-\(scheduledTime.timeIntervalSince1970)" }
     let medicationId: UUID
     let medicationName: String
     let dosage: String?
@@ -93,23 +96,23 @@ struct WidgetDoseInfo: Codable, Identifiable {
     let givenAt: Date?
 
     /// Time until dose (negative if overdue)
-    var timeUntil: TimeInterval {
+    nonisolated var timeUntil: TimeInterval {
         scheduledTime.timeIntervalSinceNow
     }
 
     /// Formatted time string
-    var formattedTime: String {
+    nonisolated var formattedTime: String {
         WidgetFormatters.shortTime.string(from: scheduledTime)
     }
 
     /// Formatted given time string
-    var formattedGivenTime: String? {
+    nonisolated var formattedGivenTime: String? {
         guard let givenAt else { return nil }
         return WidgetFormatters.shortTime.string(from: givenAt)
     }
 
     /// Relative time description (e.g., "in 2h 30m" or "30m ago")
-    var relativeTimeDescription: String {
+    nonisolated var relativeTimeDescription: String {
         // If given, show when it was given
         if isGiven, let givenAt {
             let interval = Date().timeIntervalSince(givenAt)
@@ -147,24 +150,24 @@ struct WidgetDoseInfo: Codable, Identifiable {
 }
 
 /// Container for all widget data
-struct WidgetData: Codable {
+struct WidgetData: Codable, Sendable {
     let nextDoses: [WidgetDoseInfo]
     let lastUpdated: Date
 
     /// The most urgent upcoming dose
-    var primaryDose: WidgetDoseInfo? {
+    nonisolated var primaryDose: WidgetDoseInfo? {
         nextDoses.first
     }
 
     /// Check if data is stale (older than 15 minutes)
-    var isStale: Bool {
+    nonisolated var isStale: Bool {
         Date().timeIntervalSince(lastUpdated) > 15 * 60
     }
 }
 
 // MARK: - Widget Data Manager
 
-final class WidgetDataManager {
+nonisolated final class WidgetDataManager: @unchecked Sendable {
     static let shared = WidgetDataManager()
 
     private let userDefaults: UserDefaults?
@@ -236,6 +239,44 @@ final class WidgetDataManager {
         WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
     }
 
+    // MARK: - API Configuration (for Widget API calls)
+
+    /// Set the API base URL (called from main app on launch)
+    func setAPIBaseURL(_ url: String) {
+        userDefaults?.set(url, forKey: WidgetDataKey.apiBaseURL)
+        #if DEBUG
+        print("✅ [Widget] API base URL set: \(url)")
+        #endif
+    }
+
+    /// Get the API base URL (called from widget intent)
+    /// Marked nonisolated to allow access from widget AppIntent
+    nonisolated func getAPIBaseURL() -> String? {
+        AppGroup.userDefaults?.string(forKey: WidgetDataKey.apiBaseURL)
+    }
+
+    // MARK: - Widget-to-App Refresh Signal
+
+    /// Mark that a dose was recorded from widget and app should refresh (called from widget)
+    nonisolated func setNeedsRefresh() {
+        AppGroup.userDefaults?.set(true, forKey: WidgetDataKey.needsRefresh)
+        #if DEBUG
+        print("📱 [Widget] Set needs refresh flag")
+        #endif
+    }
+
+    /// Check if app needs to refresh after widget action (called from app)
+    nonisolated func checkAndClearNeedsRefresh() -> Bool {
+        let needsRefresh = AppGroup.userDefaults?.bool(forKey: WidgetDataKey.needsRefresh) ?? false
+        if needsRefresh {
+            AppGroup.userDefaults?.set(false, forKey: WidgetDataKey.needsRefresh)
+            #if DEBUG
+            print("📱 [App] Clearing needs refresh flag - will refresh data")
+            #endif
+        }
+        return needsRefresh
+    }
+
     // MARK: - Optimistic UI Update (from Widget Intent)
 
     /// Mark a dose as given in widget data (optimistic UI update).
@@ -250,7 +291,7 @@ final class WidgetDataManager {
         }
 
         let now = Date()
-        var updatedDoses = widgetData.nextDoses.map { dose -> WidgetDoseInfo in
+        let updatedDoses = widgetData.nextDoses.map { dose -> WidgetDoseInfo in
             // Match by medication ID and scheduled time
             let matchesMedication = dose.medicationId == medicationId
 

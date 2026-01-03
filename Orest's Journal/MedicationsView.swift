@@ -35,9 +35,14 @@ struct MedicationsView: View {
 
     // Deep link navigation
     @State private var isLoadingDeepLink = false
+    @State private var initialDataLoaded = false
 
     // Search
     @State private var searchText = ""
+
+    // Scene phase for detecting app foreground
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lastSceneRefreshTime: Date = .distantPast
 
     @AppStorage("medication_selected_pet_id") private var savedPetId: String = ""
 
@@ -46,159 +51,194 @@ struct MedicationsView: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            Group {
-                if isLoading {
-                    ProgressView("Loading...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if pets.isEmpty {
-                    emptyPetsView
-                } else {
-                    mainContent
+            coreContent
+                .background(Color(uiColor: .systemGroupedBackground))
+                .overlay { deepLinkLoadingOverlay }
+                .navigationTitle("Medications")
+                .toolbar { toolbarContent }
+                .navigationDestination(for: MedicationDestination.self) { destination in
+                    medicationDetailDestination(for: destination)
                 }
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .overlay {
-                if isLoadingDeepLink {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-                        ProgressView("Loading medication...")
-                            .padding()
-                            .background(Color(uiColor: .systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-            }
-            .navigationTitle("Medications")
-            .toolbar {
-                if !pets.isEmpty {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showArchived.toggle()
-                        } label: {
-                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                        }
-                        .accessibilityLabel(showArchived ? "Hide archived" : "Show archived")
-                    }
+        }
+        .sheet(isPresented: $showAddMedication, onDismiss: handleAddMedicationDismiss) {
+            addMedicationSheet
+        }
+        .sheet(isPresented: $showRecordDoseSheet) {
+            recordDoseSheet
+        }
+        .confirmationDialog("Select Pet", isPresented: $showPetPickerForAdd, titleVisibility: .visible) {
+            petPickerButtons
+        } message: {
+            Text("Which pet is this medication for?")
+        }
+        .confirmationDialog("Select Medication", isPresented: $showMedicationPicker, titleVisibility: .visible) {
+            medicationPickerButtons
+        } message: {
+            Text("Which medication do you want to record a dose for?")
+        }
+        .task { await loadInitialData() }
+        .onAppear { handleOnAppear() }
+        .onChange(of: navigationManager.tabsNeedingRefresh) { handleTabsNeedingRefreshChange(oldValue: $0, newValue: $1) }
+        .onChange(of: navigationManager.pendingDestination) { handlePendingDestinationChange(destination: $1) }
+        .onChange(of: scenePhase) { handleScenePhaseChange(newPhase: $1) }
+        .searchable(text: $searchText, prompt: "Search medications")
+        .alert("Error", isPresented: $showError) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            if selectedPet != nil {
-                                showAddMedication = true
-                            } else {
-                                showPetPickerForAdd = true
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel("Add medication")
-                    }
-                }
+    // MARK: - Body Subviews
+
+    @ViewBuilder
+    private var coreContent: some View {
+        if isLoading {
+            ProgressView("Loading...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if pets.isEmpty {
+            emptyPetsView
+        } else {
+            mainContent
+        }
+    }
+
+    @ViewBuilder
+    private var deepLinkLoadingOverlay: some View {
+        if isLoadingDeepLink {
+            ZStack {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                ProgressView("Loading medication...")
+                    .padding()
+                    .background(Color(uiColor: .systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .navigationDestination(for: MedicationDestination.self) { destination in
-                switch destination {
-                case .medicationDetail(let medication):
-                    if let pet = petForMedication(medication) {
-                        MedicationDetailView(
-                            medication: medication,
-                            pet: pet,
-                            onUpdate: { updatedMedication in
-                                updateMedicationInList(updatedMedication)
-                            },
-                            onDelete: {
-                                removeMedicationFromList(medication.id)
-                            }
-                        )
-                    } else {
-                        ContentUnavailableView(
-                            "Pet Not Found",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text("Unable to load pet information for this medication.")
-                        )
-                    }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if !pets.isEmpty {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showArchived.toggle()
+                } label: {
+                    Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
                 }
+                .accessibilityLabel(showArchived ? "Hide archived" : "Show archived")
             }
-            .sheet(isPresented: $showAddMedication, onDismiss: {
-                // Reload after sheet dismisses to ensure we have latest data
-                Task {
-                    await loadMedications(forceRefresh: true)
-                }
-            }) {
-                if let pet = selectedPet ?? pets.first {
-                    AddMedicationView(pet: pet) { _ in
-                        // Sheet will dismiss and trigger onDismiss reload
-                    }
-                }
-            }
-            .sheet(isPresented: $showRecordDoseSheet) {
-                if let medication = medicationForDose,
-                   let pet = petForMedication(medication) {
-                    RecordDoseSheet(
-                        medication: medication,
-                        petName: pet.name,
-                        familyId: pet.familyId,
-                        onDoseRecorded: {
-                            // No need to refresh the list, dose is recorded
-                        }
-                    )
-                }
-            }
-            .confirmationDialog(
-                "Select Pet",
-                isPresented: $showPetPickerForAdd,
-                titleVisibility: .visible
-            ) {
-                ForEach(pets) { pet in
-                    Button(pet.name) {
-                        selectedPet = pet
-                        savedPetId = pet.id.uuidString
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    if selectedPet != nil {
                         showAddMedication = true
+                    } else {
+                        showPetPickerForAdd = true
                     }
+                } label: {
+                    Image(systemName: "plus")
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Which pet is this medication for?")
+                .accessibilityLabel("Add medication")
             }
-            .task {
-                await loadInitialData()
+        }
+    }
+
+    @ViewBuilder
+    private func medicationDetailDestination(for destination: MedicationDestination) -> some View {
+        switch destination {
+        case .medicationDetail(let medication):
+            if let pet = petForMedication(medication) {
+                MedicationDetailView(
+                    medication: medication,
+                    pet: pet,
+                    onUpdate: { updateMedicationInList($0) },
+                    onDelete: { removeMedicationFromList(medication.id) }
+                )
+            } else {
+                ContentUnavailableView(
+                    "Pet Not Found",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("Unable to load pet information for this medication.")
+                )
             }
-            .onChange(of: navigationManager.tabsNeedingRefresh) { _, newValue in
-                if newValue.contains(.medication) {
-                    navigationManager.markTabRefreshed(.medication)
-                    Task {
-                        await loadMedications(forceRefresh: true)
+        }
+    }
+
+    @ViewBuilder
+    private var addMedicationSheet: some View {
+        if let pet = selectedPet ?? pets.first {
+            AddMedicationView(pet: pet) { newMedication in
+                handleNewMedication(newMedication)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recordDoseSheet: some View {
+        if let medication = medicationForDose,
+           let pet = petForMedication(medication) {
+            RecordDoseSheet(
+                medication: medication,
+                petName: pet.name,
+                familyId: pet.familyId,
+                onDoseRecorded: {}
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var petPickerButtons: some View {
+        ForEach(pets) { pet in
+            Button(pet.name) {
+                selectedPet = pet
+                savedPetId = pet.id.uuidString
+                showAddMedication = true
+            }
+        }
+        Button("Cancel", role: .cancel) {}
+    }
+
+    @ViewBuilder
+    private var medicationPickerButtons: some View {
+        ForEach(activeMedications) { medication in
+            Button(medicationPickerLabel(for: medication)) {
+                medicationForDose = medication
+                showRecordDoseSheet = true
+            }
+        }
+        Button("Cancel", role: .cancel) {}
+    }
+
+    private func handleAddMedicationDismiss() {
+        #if DEBUG
+        print("📋 [Medications] Sheet dismissed, refreshing list...")
+        #endif
+        Task { @MainActor in
+            await loadMedications(forceRefresh: true)
+            #if DEBUG
+            print("📋 [Medications] Refresh complete, \(medications.count) medications loaded")
+            #endif
+        }
+    }
+
+    private func handleNewMedication(_ newMedication: Medication) {
+        Task { @MainActor in
+            #if DEBUG
+            print("📋 [Medications] onSave called - medication: \(newMedication.displayName), petId: \(newMedication.petId)")
+            print("📋 [Medications] Current filter - selectedPet: \(selectedPet?.name ?? "All") (id: \(selectedPet?.id.uuidString ?? "nil"))")
+            #endif
+            if !medications.contains(where: { $0.id == newMedication.id }) {
+                medications.insert(newMedication, at: 0)
+                medications.sort { lhs, rhs in
+                    if lhs.isArchived != rhs.isArchived {
+                        return !lhs.isArchived
                     }
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
                 }
-            }
-            .onChange(of: navigationManager.pendingDestination) { _, destination in
-                handlePendingDestination(destination)
-            }
-            .onAppear {
-                // Handle pending destination on appear (e.g., from quick action)
-                if let destination = navigationManager.pendingDestination {
-                    handlePendingDestination(destination)
-                }
-            }
-            .confirmationDialog(
-                "Select Medication",
-                isPresented: $showMedicationPicker,
-                titleVisibility: .visible
-            ) {
-                ForEach(activeMedications) { medication in
-                    Button(medicationPickerLabel(for: medication)) {
-                        medicationForDose = medication
-                        showRecordDoseSheet = true
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Which medication do you want to record a dose for?")
-            }
-            .searchable(text: $searchText, prompt: "Search medications")
-            .alert("Error", isPresented: $showError) {
-                Button("OK") {}
-            } message: {
-                Text(errorMessage)
+                #if DEBUG
+                print("📋 [Medications] Added new medication to list: \(newMedication.displayName), total: \(medications.count)")
+                #endif
             }
         }
     }
@@ -454,10 +494,11 @@ struct MedicationsView: View {
 
         case .medicationDetail(let medicationId):
             // Navigate to specific medication from deep link
+            // Clear the pending destination first to prevent re-triggering
+            navigationManager.clearPendingDestination()
             Task {
                 await navigateToMedication(id: medicationId)
             }
-            navigationManager.clearPendingDestination()
 
         default:
             // Not for us
@@ -467,11 +508,23 @@ struct MedicationsView: View {
 
     /// Navigate to a specific medication by ID (for deep links)
     private func navigateToMedication(id medicationId: UUID) async {
+        #if DEBUG
+        print("📋 [Medications] navigateToMedication called for: \(medicationId)")
+        print("📋 [Medications] Current medications count: \(medications.count), pets count: \(pets.count)")
+        #endif
+
         // First check if medication is already in our list
         if let medication = medications.first(where: { $0.id == medicationId }) {
+            #if DEBUG
+            print("📋 [Medications] Found medication in list, navigating to: \(medication.displayName)")
+            #endif
             navigationPath.append(MedicationDestination.medicationDetail(medication))
             return
         }
+
+        #if DEBUG
+        print("📋 [Medications] Medication not in list, loading from API...")
+        #endif
 
         // Load the medication from API
         isLoadingDeepLink = true
@@ -479,14 +532,26 @@ struct MedicationsView: View {
 
         do {
             let medication = try await dataService.getMedication(id: medicationId)
+            #if DEBUG
+            print("📋 [Medications] Loaded medication from API: \(medication.displayName)")
+            #endif
 
             // Make sure we have the pet loaded
             if pets.isEmpty {
+                #if DEBUG
+                print("📋 [Medications] Pets empty, loading pets...")
+                #endif
                 pets = try await dataService.getPets(forceRefresh: true)
             }
 
             // Navigate to the medication detail
+            #if DEBUG
+            print("📋 [Medications] Appending to navigationPath...")
+            #endif
             navigationPath.append(MedicationDestination.medicationDetail(medication))
+            #if DEBUG
+            print("📋 [Medications] Navigation path count after append: \(navigationPath.count)")
+            #endif
 
             // Also add it to our list if not already there
             if !medications.contains(where: { $0.id == medication.id }) {
@@ -494,7 +559,7 @@ struct MedicationsView: View {
             }
         } catch {
             #if DEBUG
-            print("Failed to load medication for deep link: \(error)")
+            print("📋 [Medications] Failed to load medication for deep link: \(error)")
             #endif
             errorMessage = "Unable to load medication"
             showError = true
@@ -554,6 +619,69 @@ struct MedicationsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Lifecycle Handlers
+
+    private func handleOnAppear() {
+        // Check if we need to refresh (handles returning from sheet or other views)
+        if navigationManager.tabsNeedingRefresh.contains(.medication) {
+            navigationManager.markTabRefreshed(.medication)
+            Task {
+                await loadMedications(forceRefresh: true)
+            }
+        }
+    }
+
+    private func handleTabsNeedingRefreshChange(oldValue: Set<Tab>, newValue: Set<Tab>) {
+        #if DEBUG
+        print("📋 [Medications] tabsNeedingRefresh changed: \(oldValue) -> \(newValue)")
+        #endif
+        if newValue.contains(.medication) {
+            navigationManager.markTabRefreshed(.medication)
+            #if DEBUG
+            print("📋 [Medications] Refreshing due to navigation manager flag")
+            #endif
+            Task {
+                await loadMedications(forceRefresh: true)
+            }
+        }
+    }
+
+    private func handlePendingDestinationChange(destination: AppDestination?) {
+        // Only handle if initial data is loaded, otherwise loadInitialData will handle it
+        if initialDataLoaded {
+            handlePendingDestination(destination)
+        }
+    }
+
+    private func handleScenePhaseChange(newPhase: ScenePhase) {
+        // Refresh when app becomes active (e.g., after widget dose recording)
+        // This bypasses NavigationManager coordination which has race conditions
+        // with the app-level scenePhase handler
+        guard newPhase == .active && initialDataLoaded else { return }
+
+        let timeSinceLastRefresh = Date().timeIntervalSince(lastSceneRefreshTime)
+
+        // Only refresh if more than 5 seconds since last scene-triggered refresh
+        // This prevents excessive refreshes when user rapidly switches apps
+        if timeSinceLastRefresh > 5 {
+            #if DEBUG
+            print("📋 [Medications] Scene became active, refreshing (last: \(Int(timeSinceLastRefresh))s ago)")
+            #endif
+            lastSceneRefreshTime = Date()
+
+            // Clear any pending flag since we're refreshing anyway
+            navigationManager.markTabRefreshed(.medication)
+
+            Task {
+                await loadMedications(forceRefresh: true)
+            }
+        } else {
+            #if DEBUG
+            print("📋 [Medications] Scene became active, skipping refresh (last: \(Int(timeSinceLastRefresh))s ago)")
+            #endif
+        }
+    }
+
     // MARK: - Computed Properties
 
     private var displayedMedications: [Medication] {
@@ -610,6 +738,15 @@ struct MedicationsView: View {
 
         guard !Task.isCancelled else { return }
         isLoading = false
+        initialDataLoaded = true
+
+        // Handle any pending deep link navigation after data is loaded
+        if let destination = navigationManager.pendingDestination {
+            #if DEBUG
+            print("📋 [Medications] Initial data loaded, handling pending destination: \(destination)")
+            #endif
+            handlePendingDestination(destination)
+        }
     }
 
     private func selectPet(_ pet: Pet?) {
@@ -630,6 +767,10 @@ struct MedicationsView: View {
         guard let firstPet = pets.first else { return }
         let familyId = firstPet.familyId
 
+        #if DEBUG
+        print("📋 [Medications] Loading medications - forceRefresh: \(forceRefresh), petFilter: \(selectedPet?.name ?? "All")")
+        #endif
+
         do {
             let loaded = try await dataService.getMedications(
                 for: familyId,
@@ -637,6 +778,12 @@ struct MedicationsView: View {
                 includeArchived: true,
                 forceRefresh: forceRefresh
             )
+            #if DEBUG
+            print("📋 [Medications] API returned \(loaded.count) medications:")
+            for med in loaded {
+                print("   - \(med.displayName) (pet: \(med.petId), archived: \(med.isArchived))")
+            }
+            #endif
 
             guard !Task.isCancelled else { return }
 
@@ -657,6 +804,17 @@ struct MedicationsView: View {
     private func updateMedicationInList(_ updatedMedication: Medication) {
         if let index = medications.firstIndex(where: { $0.id == updatedMedication.id }) {
             medications[index] = updatedMedication
+            // Re-sort in case archived status changed
+            medications.sort { lhs, rhs in
+                if lhs.isArchived != rhs.isArchived {
+                    return !lhs.isArchived
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        }
+        // Also do a background refresh to ensure full sync
+        Task {
+            await loadMedications(forceRefresh: true)
         }
     }
 

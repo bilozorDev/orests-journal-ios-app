@@ -622,8 +622,8 @@ final class DataService {
             }
         }
 
-        // Fetch from network
-        let response = try await api.getMedications(familyId: familyUUID, petId: petId, includeArchived: includeArchived)
+        // Fetch from network (bypass HTTP cache when force refreshing)
+        let response = try await api.getMedications(familyId: familyUUID, petId: petId, includeArchived: includeArchived, bypassCache: forceRefresh)
         let medications = response.medications
 
         // Only cache full family list
@@ -707,12 +707,19 @@ final class DataService {
     // MARK: - Doses
 
     /// Record a dose for a medication. If offline, queues for later sync.
+    /// - Parameters:
+    ///   - medicationId: The medication ID
+    ///   - notes: Optional notes about the dose
+    ///   - givenAt: When the dose was given (defaults to now)
+    ///   - scheduledFor: The scheduled time slot this dose is for (for accurate tracking when given early/late)
+    ///   - familyId: The family ID for cache invalidation
     /// - Returns: The recorded dose if online, nil if queued for offline sync
     @discardableResult
     func recordDose(
         medicationId: UUID,
         notes: String? = nil,
         givenAt: Date? = nil,
+        scheduledFor: Date? = nil,
         familyId: String
     ) async throws -> MedicationDose? {
         let offlineQueue = await OfflineDoseQueue.shared
@@ -722,7 +729,8 @@ final class DataService {
             let doseCreate = DoseCreate(
                 medicationId: medicationId,
                 notes: notes,
-                givenAt: givenAt
+                givenAt: givenAt,
+                scheduledFor: scheduledFor
             )
             let result = try await api.recordDose(doseCreate)
             invalidateMedicationsCache(for: familyId.lowercased())
@@ -734,11 +742,12 @@ final class DataService {
 
             return result
         } else {
-            // Queue for later
+            // Queue for later - include scheduledFor
             await offlineQueue.queueDose(
                 medicationId: medicationId,
                 givenAt: givenAt ?? Date(),
                 notes: notes,
+                scheduledFor: scheduledFor,
                 familyId: familyId
             )
             return nil
@@ -808,11 +817,21 @@ final class DataService {
         }
     }
 
-    func prefetchDataOnForeground() {
+    func prefetchDataOnForeground(forceRefresh: Bool = false) {
         Task {
-            _ = try? await getPets(forceRefresh: false)
+            _ = try? await getPets(forceRefresh: forceRefresh)
             // Sync widget data
             await syncMedicationsToWidget()
+
+            // If force refreshing (e.g., after widget action), tell views to reload
+            if forceRefresh {
+                await MainActor.run {
+                    NavigationManager.shared.requestTabRefresh(.medication)
+                }
+                #if DEBUG
+                print("📱 [App] Force refreshed data after widget action")
+                #endif
+            }
         }
     }
 
@@ -848,7 +867,7 @@ final class DataService {
                     // Filter for today's doses only
                     let todayDoses = recentDoses
                         .filter { $0.givenAt >= startOfDay }
-                        .map { WidgetDataManager.RecordedDoseInfo(givenAt: $0.givenAt, givenBy: $0.givenBy) }
+                        .map { WidgetDataManager.RecordedDoseInfo(givenAt: $0.givenAt, givenBy: $0.givenBy, scheduledFor: $0.scheduledFor) }
                     if !todayDoses.isEmpty {
                         todayDosesCache[medication.id] = todayDoses
                     }
@@ -857,15 +876,20 @@ final class DataService {
 
             for medication in medications {
                 #if DEBUG
-                let hasScheduledTimes = medication.scheduledTimes?.isEmpty == false
-                print("📱 [Widget] \(medication.name): asNeeded=\(medication.isAsNeeded), archived=\(medication.isArchived), active=\(medication.isActive), hasScheduledTimes=\(hasScheduledTimes)")
+                let scheduledTimesCount = medication.scheduledTimes?.count ?? 0
+                print("📱 [Widget] \(medication.name): asNeeded=\(medication.isAsNeeded), archived=\(medication.isArchived), active=\(medication.isActive), remindersEnabled=\(medication.remindersEnabled), scheduledTimes=\(scheduledTimesCount)")
+                if let times = medication.scheduledTimes {
+                    for time in times {
+                        print("   ↳ Schedule: \(time.scheduledHour):\(String(format: "%02d", time.scheduledMinute))")
+                    }
+                }
                 #endif
 
                 guard !medication.isAsNeeded,
                       !medication.isArchived,
                       medication.isActive else {
                     #if DEBUG
-                    print("   ↳ Skipped (failed guard)")
+                    print("   ↳ Skipped (asNeeded/archived/inactive)")
                     #endif
                     continue
                 }

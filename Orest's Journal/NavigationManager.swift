@@ -33,6 +33,9 @@ final class NavigationManager {
     private(set) var tabsNeedingRefresh: Set<Tab> = []
     var familyRefreshTrigger: Int = 0
 
+    /// Set when a dose is recorded from widget - cleared after view shows confirmation
+    var widgetDoseRecorded: (medicationId: UUID, medicationName: String)?
+
     private init() {}
 
     func navigate(to destination: AppDestination) {
@@ -70,5 +73,6 @@ final class NavigationManager {
         selectedTab = .home
         pendingDestination = nil
         tabsNeedingRefresh.removeAll()
+        widgetDoseRecorded = nil
     }
 }

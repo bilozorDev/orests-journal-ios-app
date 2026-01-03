@@ -548,6 +548,8 @@ final class AuthManager {
         deleteTokenFromKeychain()
         deleteFamilyIdFromKeychain()
         deleteFamilyNameFromKeychain()
+        // Clear shared keychain for widget
+        SharedKeychainManager.deleteAll()
         // Clear removal and left family state from UserDefaults
         wasRemovedFromFamily = false
         removedFamilyName = nil
@@ -582,6 +584,9 @@ final class AuthManager {
         var newQuery = query
         newQuery[kSecValueData as String] = data
         SecItemAdd(newQuery as CFDictionary, nil)
+
+        // Sync to shared keychain for widget access
+        SharedKeychainManager.save(token, for: .authToken)
     }
 
     private func loadTokenFromKeychain() -> String? {
@@ -630,6 +635,9 @@ final class AuthManager {
         var newQuery = query
         newQuery[kSecValueData as String] = data
         SecItemAdd(newQuery as CFDictionary, nil)
+
+        // Sync to shared keychain for widget access
+        SharedKeychainManager.save(familyId, for: .familyId)
     }
 
     private func loadFamilyIdFromKeychain() -> String? {

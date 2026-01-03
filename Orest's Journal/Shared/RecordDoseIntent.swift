@@ -1,40 +1,134 @@
+
 //
 //  RecordDoseIntent.swift
 //  OrestsJournalWidget
 //
 //  Interactive AppIntent for recording doses directly from the widget.
 //  Available on iOS 17+.
-//  Uses PendingDose from WidgetDataManager.swift (shared between app and widget).
+//  Makes actual API call to record dose immediately so family members get notified.
 //
 
 import AppIntents
 import WidgetKit
 import Foundation
+import Security
+
+// MARK: - Shared Keychain Manager
+
+/// Manages credentials shared between the main app and widget extension
+/// using Keychain access groups for secure storage.
+/// All methods are nonisolated to allow access from widget AppIntents.
+nonisolated enum SharedKeychainManager: Sendable {
+    // Shared access group - must match in both app and widget entitlements
+    private static let accessGroup = "group.com.notip.orests-journal"
+    private static let service = "com.notip.orests-journal.shared"
+
+    enum Key: String, Sendable {
+        case authToken = "shared_auth_token"
+        case familyId = "shared_family_id"
+    }
+
+    /// Save a credential to the shared Keychain
+    nonisolated static func save(_ value: String, for key: Key) {
+        guard let data = value.data(using: .utf8) else { return }
+
+        let searchQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
+        ]
+
+        SecItemDelete(searchQuery as CFDictionary)
+
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    /// Retrieve a credential from the shared Keychain
+    nonisolated static func get(_ key: Key) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        return string
+    }
+
+    /// Delete a credential from the shared Keychain
+    nonisolated static func delete(_ key: Key) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccessGroup as String: accessGroup,
+        ]
+
+        SecItemDelete(query as CFDictionary)
+    }
+
+    /// Delete all shared credentials (e.g., on logout)
+    nonisolated static func deleteAll() {
+        delete(.authToken)
+        delete(.familyId)
+    }
+}
+
+// MARK: - Widget API Configuration
+
+private enum WidgetAPIConfig {
+    /// Get the API base URL from App Group (synced from main app)
+    static var baseURL: String? {
+        WidgetDataManager.shared.getAPIBaseURL()
+    }
+}
 
 // MARK: - Pending Dose Queue Keys
 
-private enum PendingDoseKey {
+nonisolated private enum PendingDoseKey: Sendable {
     static let queue = "pending_dose_queue"
 }
 
 // MARK: - Pending Dose Manager
 
 /// Manages the queue of doses waiting to be recorded
-final class PendingDoseManager {
+/// Thread-safe for access from widget AppIntents
+nonisolated final class PendingDoseManager: @unchecked Sendable {
     static let shared = PendingDoseManager()
 
     private let userDefaults: UserDefaults?
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    private init() {
+    init() {
         userDefaults = UserDefaults(suiteName: "group.com.notip.orests-journal")
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
     }
 
     /// Add a dose to the pending queue
-    func queueDose(_ dose: WidgetPendingDose) {
+    nonisolated func queueDose(_ dose: WidgetPendingDose) {
         var queue = getPendingDoses()
 
         // Prevent duplicate requests for the same medication within 5 minutes
@@ -52,7 +146,7 @@ final class PendingDoseManager {
     }
 
     /// Get all pending doses
-    func getPendingDoses() -> [WidgetPendingDose] {
+    nonisolated func getPendingDoses() -> [WidgetPendingDose] {
         guard let data = userDefaults?.data(forKey: PendingDoseKey.queue) else {
             return []
         }
@@ -60,35 +154,126 @@ final class PendingDoseManager {
     }
 
     /// Remove a dose from the queue (after processing)
-    func removeDose(_ dose: WidgetPendingDose) {
+    nonisolated func removeDose(_ dose: WidgetPendingDose) {
         var queue = getPendingDoses()
         queue.removeAll { $0.id == dose.id }
         savePendingDoses(queue)
     }
 
     /// Remove a dose by medication ID (after processing)
-    func removeDose(forMedicationId medicationId: UUID) {
+    nonisolated func removeDose(forMedicationId medicationId: UUID) {
         var queue = getPendingDoses()
         queue.removeAll { $0.medicationId == medicationId }
         savePendingDoses(queue)
     }
 
     /// Clear all pending doses
-    func clearAll() {
+    nonisolated func clearAll() {
         userDefaults?.removeObject(forKey: PendingDoseKey.queue)
     }
 
     /// Clean up old pending doses (older than 1 hour)
-    func cleanupOldDoses() {
+    nonisolated func cleanupOldDoses() {
         var queue = getPendingDoses()
         let oneHourAgo = Date().addingTimeInterval(-3600)
         queue.removeAll { $0.requestedAt < oneHourAgo }
         savePendingDoses(queue)
     }
 
-    private func savePendingDoses(_ doses: [WidgetPendingDose]) {
+    nonisolated private func savePendingDoses(_ doses: [WidgetPendingDose]) {
         if let data = try? encoder.encode(doses) {
             userDefaults?.set(data, forKey: PendingDoseKey.queue)
+        }
+    }
+}
+
+// MARK: - Widget API Client
+
+/// Lightweight API client for making authenticated requests from the widget
+private enum WidgetAPIClient {
+    /// Record a dose via API
+    static func recordDose(
+        medicationId: UUID,
+        familyId: String,
+        authToken: String,
+        notes: String?,
+        scheduledFor: Date?
+    ) async throws {
+        guard let baseURL = WidgetAPIConfig.baseURL else {
+            throw WidgetAPIError.noAPIURL
+        }
+
+        guard let url = URL(string: "\(baseURL)/doses?family_id=\(familyId)") else {
+            throw WidgetAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15  // Widgets have limited execution time
+
+        // Build request body
+        var body: [String: Any] = [
+            "medication_id": medicationId.uuidString.lowercased()
+        ]
+        if let notes = notes {
+            body["notes"] = notes
+        }
+        if let scheduledFor = scheduledFor {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            body["scheduled_for"] = formatter.string(from: scheduledFor)
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WidgetAPIError.invalidResponse
+        }
+
+        switch httpResponse.statusCode {
+        case 200...299:
+            #if DEBUG
+            print("✅ [Widget API] Dose recorded successfully")
+            #endif
+            return
+        case 401:
+            throw WidgetAPIError.unauthorized
+        default:
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            #if DEBUG
+            print("❌ [Widget API] Error \(httpResponse.statusCode): \(message)")
+            #endif
+            throw WidgetAPIError.httpError(statusCode: httpResponse.statusCode, message: message)
+        }
+    }
+
+    enum WidgetAPIError: Error, LocalizedError {
+        case invalidURL
+        case invalidResponse
+        case unauthorized
+        case httpError(statusCode: Int, message: String)
+        case noCredentials
+        case noAPIURL
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidURL:
+                return "Invalid URL"
+            case .invalidResponse:
+                return "Invalid response"
+            case .unauthorized:
+                return "Please open the app to re-authenticate"
+            case .httpError(let code, let message):
+                return "Error \(code): \(message)"
+            case .noCredentials:
+                return "Please open the app to sign in"
+            case .noAPIURL:
+                return "Please open the app first"
+            }
         }
     }
 }
@@ -135,7 +320,74 @@ struct RecordDoseIntent: AppIntent {
             throw IntentError.invalidMedicationId
         }
 
-        // Queue the dose for processing by the main app
+        // Get credentials from shared keychain
+        let authToken = SharedKeychainManager.get(.authToken)
+        let familyId = SharedKeychainManager.get(.familyId)
+
+        guard let authToken, let familyId else {
+            #if DEBUG
+            print("⚠️ [Widget] No credentials - falling back to queue")
+            #endif
+            // Fall back to queuing for later if no credentials
+            await queueAndUpdateWidget(medId: medId)
+            return .result()
+        }
+
+        #if DEBUG
+        print("📱 [Widget] Recording dose for \(medicationName) via API...")
+        #endif
+
+        do {
+            // Make actual API call to record the dose
+            try await WidgetAPIClient.recordDose(
+                medicationId: medId,
+                familyId: familyId,
+                authToken: authToken,
+                notes: "Recorded from widget",
+                scheduledFor: scheduledFor
+            )
+
+            // Update widget data to show success
+            await MainActor.run {
+                WidgetDataManager.shared.markDoseAsGiven(
+                    medicationId: medId,
+                    scheduledTime: scheduledFor,
+                    givenBy: "You"
+                )
+            }
+
+            // Signal app to refresh when opened (dose was recorded via API)
+            WidgetDataManager.shared.setNeedsRefresh()
+
+            // Refresh widget to show success state
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
+
+            #if DEBUG
+            print("✅ [Widget] Dose recorded and widget updated")
+            #endif
+
+            return .result()
+
+        } catch WidgetAPIClient.WidgetAPIError.unauthorized {
+            // Token expired - queue for later and suggest opening app
+            #if DEBUG
+            print("⚠️ [Widget] Auth expired - queuing dose")
+            #endif
+            await queueAndUpdateWidget(medId: medId)
+            return .result()
+
+        } catch {
+            // Network error or other failure - queue for later
+            #if DEBUG
+            print("⚠️ [Widget] API failed: \(error) - queuing dose")
+            #endif
+            await queueAndUpdateWidget(medId: medId)
+            return .result()
+        }
+    }
+
+    /// Queue the dose and update widget optimistically
+    private func queueAndUpdateWidget(medId: UUID) async {
         let pendingDose = WidgetPendingDose(
             medicationId: medId,
             medicationName: medicationName,
@@ -144,21 +396,16 @@ struct RecordDoseIntent: AppIntent {
         )
         PendingDoseManager.shared.queueDose(pendingDose)
 
-        // Mark dose as given in widget data (optimistic UI)
-        WidgetDataManager.shared.markDoseAsGiven(
-            medicationId: medId,
-            scheduledTime: scheduledFor,
-            givenBy: "You"  // Will be updated with actual name when synced
-        )
+        // Still update widget optimistically
+        await MainActor.run {
+            WidgetDataManager.shared.markDoseAsGiven(
+                medicationId: medId,
+                scheduledTime: scheduledFor,
+                givenBy: "You"
+            )
+        }
 
-        // Refresh widget to show success state
         WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
-
-        #if DEBUG
-        print("📱 [Widget] Recorded dose for \(medicationName) - widget updated")
-        #endif
-
-        return .result()
     }
 
     enum IntentError: Swift.Error, CustomLocalizedStringResourceConvertible {
