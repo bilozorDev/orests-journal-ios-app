@@ -65,22 +65,41 @@ final class PendingDoseProcessor {
     }
 
     /// Process a specific pending dose (called from deep link handling)
-    func processDoseForMedication(_ medicationId: UUID) async {
-        guard let familyId = AuthManager.shared.currentFamily?.id else { return }
-
-        let pendingDoses = getPendingDoses()
-        guard let dose = pendingDoses.first(where: { $0.medicationId == medicationId }) else {
-            return
+    /// Returns the medication name if dose was successfully recorded
+    @discardableResult
+    func processDoseForMedication(_ medicationId: UUID) async -> String? {
+        guard let familyId = AuthManager.shared.currentFamily?.id else {
+            #if DEBUG
+            print("⚠️ [PendingDose] No family ID available")
+            #endif
+            return nil
         }
 
-        await processDose(dose, familyId: familyId)
+        let pendingDoses = getPendingDoses()
+        #if DEBUG
+        print("📱 [PendingDose] Looking for medication \(medicationId) in \(pendingDoses.count) pending doses")
+        for dose in pendingDoses {
+            print("   - \(dose.medicationName): \(dose.medicationId)")
+        }
+        #endif
+
+        guard let dose = pendingDoses.first(where: { $0.medicationId == medicationId }) else {
+            #if DEBUG
+            print("⚠️ [PendingDose] No pending dose found for medication \(medicationId)")
+            #endif
+            return nil
+        }
+
+        let success = await processDose(dose, familyId: familyId)
+        return success ? dose.medicationName : nil
     }
 
     // MARK: - Private Methods
 
-    private func processDose(_ dose: WidgetPendingDose, familyId: String) async {
+    /// Process a dose and return whether it was successful
+    private func processDose(_ dose: WidgetPendingDose, familyId: String) async -> Bool {
         #if DEBUG
-        print("📱 [PendingDose] Recording dose for \(dose.medicationName)")
+        print("📱 [PendingDose] Recording dose for \(dose.medicationName), scheduledFor: \(String(describing: dose.scheduledFor))")
         #endif
 
         do {
@@ -88,6 +107,7 @@ final class PendingDoseProcessor {
                 medicationId: dose.medicationId,
                 notes: "Recorded from widget",
                 givenAt: nil,
+                scheduledFor: dose.scheduledFor,
                 familyId: familyId
             )
 
@@ -97,6 +117,7 @@ final class PendingDoseProcessor {
             #if DEBUG
             print("✅ [PendingDose] Successfully recorded dose for \(dose.medicationName)")
             #endif
+            return true
         } catch {
             #if DEBUG
             print("❌ [PendingDose] Failed to record dose: \(error)")
@@ -106,6 +127,7 @@ final class PendingDoseProcessor {
             if Date().timeIntervalSince(dose.requestedAt) > 600 {
                 removeDose(dose)
             }
+            return false
         }
     }
 

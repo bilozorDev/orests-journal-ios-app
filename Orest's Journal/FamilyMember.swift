@@ -8,7 +8,7 @@
 import Foundation
 
 /// Family member model matching API response structure
-struct FamilyMember: Codable, Identifiable {
+struct FamilyMember: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let familyId: String
     let userId: String

@@ -171,10 +171,100 @@ class APNsService:
             Number of notifications sent successfully
         """
         success_count = 0
+        expired_tokens: list[str] = []
+
         for token in device_tokens:
-            if await self.send_notification(token, title, body, data):
+            result = await self._send_notification_with_expiry_check(token, title, body, data)
+            if result == "success":
                 success_count += 1
+            elif result == "expired":
+                expired_tokens.append(token)
+
+        # Mark expired tokens as inactive in the database
+        if expired_tokens:
+            await self._mark_tokens_inactive(expired_tokens)
+
         return success_count
+
+    async def _send_notification_with_expiry_check(
+        self,
+        device_token: str,
+        title: str,
+        body: str,
+        data: Optional[dict] = None,
+    ) -> str:
+        """Send notification and return status: 'success', 'expired', or 'failed'."""
+        if not self.is_configured:
+            logger.warning("APNs not configured, skipping notification")
+            return "failed"
+
+        url = self._get_apns_url(device_token)
+
+        payload = {
+            "aps": {
+                "alert": {
+                    "title": title,
+                    "body": body,
+                },
+                "sound": "default",
+            }
+        }
+
+        if data:
+            payload["data"] = data
+
+        headers = {
+            "authorization": f"bearer {self._generate_token()}",
+            "apns-topic": self.settings.apns_bundle_id,
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+        }
+
+        try:
+            async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+
+                if response.status_code == 200:
+                    return "success"
+                elif response.status_code == 410:
+                    # Device token is no longer valid
+                    logger.warning(f"Device token expired: {device_token[:20]}...")
+                    return "expired"
+                else:
+                    logger.error(
+                        f"APNs error {response.status_code}: {response.text}"
+                    )
+                    return "failed"
+
+        except Exception as e:
+            logger.error(f"Failed to send notification: {e}")
+            return "failed"
+
+    async def _mark_tokens_inactive(self, tokens: list[str]) -> None:
+        """Mark expired device tokens as inactive in the database."""
+        from sqlalchemy import update
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+        from app.models.notification import UserDeviceToken
+        from app.core.config import get_settings
+
+        try:
+            settings = get_settings()
+            engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+            session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+            async with session_factory() as db:
+                stmt = (
+                    update(UserDeviceToken)
+                    .where(UserDeviceToken.device_token.in_(tokens))
+                    .values(is_active=False)
+                )
+                await db.execute(stmt)
+                await db.commit()
+                logger.info(f"Marked {len(tokens)} expired device tokens as inactive")
+
+            await engine.dispose()
+        except Exception as e:
+            logger.error(f"Failed to mark tokens as inactive: {e}")
 
 
 # Singleton instance

@@ -118,7 +118,7 @@ struct SmallWidgetView: View {
                     Spacer()
 
                     // Interactive button (iOS 17+)
-                    if #available(iOS 17.0, *) {
+                    if #available(iOS 18.0, *) {
                         RecordDoseButton(dose: dose, style: .compact)
                     }
                 }
@@ -268,7 +268,7 @@ struct MediumWidgetView: View {
                 Spacer()
 
                 // Interactive button (iOS 17+)
-                if #available(iOS 17.0, *) {
+                if #available(iOS 18.0, *) {
                     RecordDoseButton(dose: dose, style: .standard)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -482,7 +482,7 @@ struct LargeWidgetView: View {
                         .foregroundStyle(dose.isOverdue ? .red : .blue)
 
                     // Interactive button (iOS 17+)
-                    if #available(iOS 17.0, *) {
+                    if #available(iOS 18.0, *) {
                         RecordDoseButton(dose: dose, style: .standard)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)

@@ -124,12 +124,14 @@ class DoseCreate(BaseModel):
     medication_id: UUID
     notes: Optional[str] = None
     given_at: Optional[datetime] = None  # Defaults to now
+    scheduled_for: Optional[datetime] = None  # Links dose to specific schedule slot
 
 
 class DoseUpdate(BaseModel):
     given_at: Optional[datetime] = None
     given_by: Optional[UUID] = None
     notes: Optional[str] = None
+    scheduled_for: Optional[datetime] = None
 
 
 class DoseResponse(BaseModel):
@@ -139,6 +141,7 @@ class DoseResponse(BaseModel):
     medication_id: UUID
     given_at: datetime
     given_by: UUID
+    scheduled_for: Optional[datetime] = None
     notes: Optional[str] = None
     created_at: datetime
 
@@ -151,6 +154,7 @@ class DoseDetailResponse(BaseModel):
     medication_id: UUID
     given_at: datetime
     given_by: str  # Formatted user name
+    scheduled_for: Optional[datetime] = None
     notes: Optional[str] = None
     created_at: datetime
 
@@ -177,6 +181,7 @@ class AllDoseDetailResponse(BaseModel):
     pet_id: UUID
     given_at: datetime
     given_by: str
+    scheduled_for: Optional[datetime] = None
     notes: Optional[str] = None
     created_at: datetime
 

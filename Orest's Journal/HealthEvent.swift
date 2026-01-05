@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Health Category
 
-struct HealthCategory: Codable, Identifiable, Hashable {
+struct HealthCategory: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let familyId: UUID
     let name: String
@@ -20,7 +20,7 @@ struct HealthCategory: Codable, Identifiable, Hashable {
 
 // MARK: - Health Event Photo
 
-struct HealthEventPhoto: Codable, Identifiable, Hashable {
+struct HealthEventPhoto: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let photoUrl: String
     let sortOrder: Int
@@ -29,7 +29,7 @@ struct HealthEventPhoto: Codable, Identifiable, Hashable {
 
 // MARK: - Health Event
 
-struct HealthEvent: Codable, Identifiable, Hashable {
+struct HealthEvent: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let petId: UUID?
     let categoryId: UUID
@@ -70,7 +70,7 @@ struct HealthEvent: Codable, Identifiable, Hashable {
 
 // MARK: - Combined Response (event + category)
 
-struct HealthEventWithCategory: Codable, Identifiable, Hashable {
+struct HealthEventWithCategory: Codable, Identifiable, Hashable, Sendable {
     let event: HealthEvent
     let category: HealthCategory
 
@@ -79,13 +79,13 @@ struct HealthEventWithCategory: Codable, Identifiable, Hashable {
 
 // MARK: - List Response
 
-struct HealthEventListResponse: Codable {
+struct HealthEventListResponse: Codable, Sendable {
     let events: [HealthEventWithCategory]
 }
 
 // MARK: - Create/Update DTOs
 
-struct HealthEventCreate: Encodable {
+struct HealthEventCreate: Encodable, Sendable {
     let categoryName: String
     let occurredAt: Date?
     let durationMinutes: Int?
@@ -101,7 +101,7 @@ struct HealthEventCreate: Encodable {
     }
 }
 
-struct HealthEventUpdate: Encodable {
+struct HealthEventUpdate: Encodable, Sendable {
     var categoryName: String?
     var occurredAt: Date?
     var durationMinutes: Int?

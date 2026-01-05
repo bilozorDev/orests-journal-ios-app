@@ -1552,9 +1552,11 @@ class TestListAllDoses:
         med1_row = MagicMock()
         med1_row.id = UUID(med1_id)
         med1_row.name = "Prednisone"
+        med1_row.friendly_name = None  # Explicitly set to None for proper or behavior
         med2_row = MagicMock()
         med2_row.id = UUID(med2_id)
         med2_row.name = "Eye Drops"
+        med2_row.friendly_name = None  # Explicitly set to None for proper or behavior
         meds_result.all.return_value = [med1_row, med2_row]
 
         # Mock count query
@@ -1632,6 +1634,7 @@ class TestListAllDoses:
         med_row = MagicMock()
         med_row.id = UUID(med_id)
         med_row.name = "Prednisone"
+        med_row.friendly_name = None  # Explicitly set to None for proper or behavior
         meds_result.all.return_value = [med_row]
 
         # Total of 100 doses
@@ -1767,6 +1770,7 @@ class TestListAllDoses:
         med_row = MagicMock()
         med_row.id = UUID(archived_med_id)
         med_row.name = "Old Medication (Archived)"
+        med_row.friendly_name = None  # Explicitly set to None for proper or behavior
         meds_result.all.return_value = [med_row]
 
         count_result = MagicMock()

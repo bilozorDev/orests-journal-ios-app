@@ -47,4 +47,14 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+
+    # Validate JWT secret strength in production
+    if settings.environment == "production":
+        if len(settings.jwt_secret_key) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters in production. "
+                "Use a cryptographically secure random string."
+            )
+
+    return settings

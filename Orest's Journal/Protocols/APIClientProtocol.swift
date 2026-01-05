@@ -21,7 +21,8 @@ protocol APIClientProtocol {
     /// Perform a GET request
     func get<T: Decodable>(
         _ path: String,
-        queryItems: [URLQueryItem]?
+        queryItems: [URLQueryItem]?,
+        bypassCache: Bool
     ) async throws -> T
 
     /// Perform a POST request with a body
@@ -48,7 +49,15 @@ protocol APIClientProtocol {
 
 extension APIClientProtocol {
     func get<T: Decodable>(_ path: String) async throws -> T {
-        try await get(path, queryItems: nil)
+        try await get(path, queryItems: nil, bypassCache: false)
+    }
+
+    func get<T: Decodable>(_ path: String, bypassCache: Bool) async throws -> T {
+        try await get(path, queryItems: nil, bypassCache: bypassCache)
+    }
+
+    func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem]?) async throws -> T {
+        try await get(path, queryItems: queryItems, bypassCache: false)
     }
 
     func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {

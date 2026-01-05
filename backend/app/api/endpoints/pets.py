@@ -318,6 +318,10 @@ async def create_health_record(
     await db.commit()
     await db.refresh(record)
 
+    # Invalidate pet cache since weight was updated
+    if record_in.weight_pounds is not None and pet:
+        await cache_delete(key_pets(str(pet.family_id)))
+
     return HealthRecordResponse.model_validate(record)
 
 

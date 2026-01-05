@@ -369,10 +369,11 @@ struct RecordDoseIntent: AppIntent {
             return .result()
 
         } catch WidgetAPIClient.WidgetAPIError.unauthorized {
-            // Token expired - queue for later and suggest opening app
+            // Token expired - queue for later and show reauth indicator
             #if DEBUG
-            print("⚠️ [Widget] Auth expired - queuing dose")
+            print("⚠️ [Widget] Auth expired - queuing dose and setting reauth flag")
             #endif
+            WidgetDataManager.shared.setNeedsReauth()
             await queueAndUpdateWidget(medId: medId)
             return .result()
 

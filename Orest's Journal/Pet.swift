@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Pet: Codable, Identifiable, Hashable {
+struct Pet: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let familyId: String
     let name: String
@@ -20,7 +20,7 @@ struct Pet: Codable, Identifiable, Hashable {
     let createdBy: String?
 }
 
-struct PetDeleteResponse: Codable {
+struct PetDeleteResponse: Codable, Sendable {
     let deleted: Bool
     let archived: Bool
     let message: String

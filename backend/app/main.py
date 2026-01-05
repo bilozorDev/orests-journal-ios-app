@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.rate_limit import RateLimitMiddleware
 from app.api.router import api_router
 from app.cache.redis_client import init_redis, close_redis
 
@@ -38,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting middleware (60 requests/minute per IP)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst_limit=10)
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")

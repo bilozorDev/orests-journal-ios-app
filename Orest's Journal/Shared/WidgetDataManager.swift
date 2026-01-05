@@ -31,6 +31,7 @@ nonisolated private enum WidgetDataKey: Sendable {
     static let pendingDoseQueue = "pending_dose_queue"
     static let apiBaseURL = "widget_api_base_url"
     static let needsRefresh = "widget_needs_refresh"  // Signal app to refresh after widget API call
+    static let needsReauth = "widget_needs_reauth"  // Signal to show auth required indicator
 }
 
 // MARK: - Widget Pending Dose Model (shared between app and widget)
@@ -275,6 +276,30 @@ nonisolated final class WidgetDataManager: @unchecked Sendable {
             #endif
         }
         return needsRefresh
+    }
+
+    // MARK: - Auth Status for Widget
+
+    /// Mark that the widget encountered an auth error (called from widget intent)
+    nonisolated func setNeedsReauth() {
+        AppGroup.userDefaults?.set(true, forKey: WidgetDataKey.needsReauth)
+        #if DEBUG
+        print("📱 [Widget] Set needs reauth flag")
+        #endif
+    }
+
+    /// Check if widget is showing auth error state (called from widget provider)
+    nonisolated func getNeedsReauth() -> Bool {
+        AppGroup.userDefaults?.bool(forKey: WidgetDataKey.needsReauth) ?? false
+    }
+
+    /// Clear the reauth flag when user logs in (called from app after successful auth)
+    nonisolated func clearNeedsReauth() {
+        AppGroup.userDefaults?.set(false, forKey: WidgetDataKey.needsReauth)
+        WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
+        #if DEBUG
+        print("📱 [App] Cleared needs reauth flag")
+        #endif
     }
 
     // MARK: - Optimistic UI Update (from Widget Intent)

@@ -1,9 +1,12 @@
 """Cache helper functions for get/set/delete operations."""
 from __future__ import annotations
 
+import logging
 from typing import TypeVar, Type
 from pydantic import BaseModel
 from app.cache.redis_client import get_redis, is_cache_enabled
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -25,7 +28,7 @@ async def cache_get(key: str, model: Type[T]) -> T | None:
         if data:
             return model.model_validate_json(data)
     except Exception as e:
-        print(f"Cache get error for {key}: {e}")
+        logger.warning(f"Cache get error for {key}: {e}")
 
     return None
 
@@ -45,7 +48,7 @@ async def cache_set(key: str, value: BaseModel, ttl: int) -> None:
     try:
         await redis.setex(key, ttl, value.model_dump_json())
     except Exception as e:
-        print(f"Cache set error for {key}: {e}")
+        logger.warning(f"Cache set error for {key}: {e}")
 
 
 async def cache_delete(key: str) -> None:
@@ -63,7 +66,7 @@ async def cache_delete(key: str) -> None:
     try:
         await redis.delete(key)
     except Exception as e:
-        print(f"Cache delete error for {key}: {e}")
+        logger.warning(f"Cache delete error for {key}: {e}")
 
 
 async def cache_delete_pattern(pattern: str) -> None:
@@ -85,4 +88,4 @@ async def cache_delete_pattern(pattern: str) -> None:
         if keys:
             await redis.delete(*keys)
     except Exception as e:
-        print(f"Cache delete pattern error for {pattern}: {e}")
+        logger.warning(f"Cache delete pattern error for {pattern}: {e}")

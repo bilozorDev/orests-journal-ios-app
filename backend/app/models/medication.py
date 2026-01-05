@@ -69,6 +69,7 @@ class PetMedicationDose(Base):
     medication_id = Column(UUID(as_uuid=True), ForeignKey("pet_medications.id", ondelete="CASCADE"), nullable=False)
     given_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     given_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    scheduled_for = Column(DateTime, nullable=True)  # Links dose to specific schedule slot
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 

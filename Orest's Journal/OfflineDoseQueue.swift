@@ -7,22 +7,23 @@
 
 import Foundation
 import Network
-import Combine
 
 /// A pending dose that hasn't been synced to the server yet
-struct PendingDose: Codable, Identifiable {
+struct PendingDose: Codable, Identifiable, Sendable {
     let id: UUID
     let medicationId: UUID
     let givenAt: Date
     let notes: String?
+    let scheduledFor: Date?  // Links dose to specific schedule slot
     let familyId: String
     let queuedAt: Date
 
-    init(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, familyId: String) {
+    init(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, scheduledFor: Date? = nil, familyId: String) {
         self.id = UUID()
         self.medicationId = medicationId
         self.givenAt = givenAt
         self.notes = notes
+        self.scheduledFor = scheduledFor
         self.familyId = familyId
         self.queuedAt = Date()
     }
@@ -30,12 +31,13 @@ struct PendingDose: Codable, Identifiable {
 
 /// Manages offline dose queue with persistence and automatic sync
 @MainActor
-final class OfflineDoseQueue: ObservableObject {
+@Observable
+final class OfflineDoseQueue {
     static let shared = OfflineDoseQueue()
 
-    @Published private(set) var pendingDoses: [PendingDose] = []
-    @Published private(set) var isOnline = true
-    @Published private(set) var isSyncing = false
+    private(set) var pendingDoses: [PendingDose] = []
+    private(set) var isOnline = true
+    private(set) var isSyncing = false
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.orestsjournal.networkmonitor")
@@ -68,11 +70,12 @@ final class OfflineDoseQueue: ObservableObject {
     // MARK: - Queue Management
 
     /// Queue a dose for later sync (when offline)
-    func queueDose(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, familyId: String) {
+    func queueDose(medicationId: UUID, givenAt: Date = Date(), notes: String? = nil, scheduledFor: Date? = nil, familyId: String) {
         let pendingDose = PendingDose(
             medicationId: medicationId,
             givenAt: givenAt,
             notes: notes,
+            scheduledFor: scheduledFor,
             familyId: familyId
         )
         pendingDoses.append(pendingDose)
@@ -125,7 +128,8 @@ final class OfflineDoseQueue: ObservableObject {
                 let doseCreate = DoseCreate(
                     medicationId: dose.medicationId,
                     notes: dose.notes,
-                    givenAt: dose.givenAt
+                    givenAt: dose.givenAt,
+                    scheduledFor: dose.scheduledFor
                 )
                 _ = try await APIClient.shared.recordDose(doseCreate)
                 successfullySubmitted.insert(dose.id)

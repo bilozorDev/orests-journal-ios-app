@@ -128,10 +128,16 @@ async def record_dose(
         # Convert to UTC and strip timezone info for naive timestamp storage
         given_at = given_at.astimezone(UTC).replace(tzinfo=None)
 
+    # Handle scheduled_for - strip timezone if present
+    scheduled_for = dose_in.scheduled_for
+    if scheduled_for is not None and scheduled_for.tzinfo is not None:
+        scheduled_for = scheduled_for.astimezone(UTC).replace(tzinfo=None)
+
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,
         given_at=given_at,
         given_by=UUID(user_id),
+        scheduled_for=scheduled_for,
         notes=dose_in.notes,
     )
     db.add(dose)
@@ -209,6 +215,7 @@ async def list_doses(
             "medication_id": d.medication_id,
             "given_at": d.given_at,
             "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "scheduled_for": d.scheduled_for,
             "notes": d.notes,
             "created_at": d.created_at,
         }
@@ -287,6 +294,7 @@ async def get_today_doses(
             "medication_id": d.medication_id,
             "given_at": d.given_at,
             "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "scheduled_for": d.scheduled_for,
             "notes": d.notes,
             "created_at": d.created_at,
         }
@@ -338,6 +346,7 @@ async def get_last_dose(
         "medication_id": dose.medication_id,
         "given_at": dose.given_at,
         "given_by": user_name_map.get(str(dose.given_by), "Unknown"),
+        "scheduled_for": dose.scheduled_for,
         "notes": dose.notes,
         "created_at": dose.created_at,
     }
@@ -395,6 +404,7 @@ async def update_dose(
         "medication_id": dose.medication_id,
         "given_at": dose.given_at,
         "given_by": user_name_map.get(str(dose.given_by), "Unknown"),
+        "scheduled_for": dose.scheduled_for,
         "notes": dose.notes,
         "created_at": dose.created_at,
     }
@@ -465,6 +475,7 @@ async def list_all_doses(
             "pet_id": pet_id,
             "given_at": d.given_at,
             "given_by": user_name_map.get(str(d.given_by), "Unknown"),
+            "scheduled_for": d.scheduled_for,
             "notes": d.notes,
             "created_at": d.created_at,
         }

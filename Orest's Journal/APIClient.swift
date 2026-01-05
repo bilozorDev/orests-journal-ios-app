@@ -58,6 +58,11 @@ final class APIClient: APIClientProtocol {
     var authToken: String?
     var currentFamilyId: String?
 
+    // Retry configuration
+    private let maxRetries = 3
+    private let retryableStatusCodes: Set<Int> = [408, 429, 500, 502, 503, 504]
+    private let initialRetryDelay: TimeInterval = 1.0
+
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
@@ -125,7 +130,8 @@ final class APIClient: APIClientProtocol {
         path: String,
         method: String = "GET",
         queryItems: [URLQueryItem]? = nil,
-        body: Encodable? = nil
+        body: Encodable? = nil,
+        bypassCache: Bool = false
     ) throws -> URLRequest {
         var components = URLComponents(string: APIConfiguration.baseURL + path)
         // Only override query items if explicitly provided
@@ -140,6 +146,11 @@ final class APIClient: APIClientProtocol {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Bypass HTTP cache when requested (e.g., after mutations)
+        if bypassCache {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
 
         if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -196,12 +207,59 @@ final class APIClient: APIClientProtocol {
 
     // MARK: - Generic Request Methods
 
+    // MARK: - Request Execution with Retry
+
+    private func executeWithRetry(
+        request: URLRequest,
+        retryCount: Int = 0
+    ) async throws -> (Data, URLResponse) {
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            // Check if we should retry based on status code
+            if let httpResponse = response as? HTTPURLResponse,
+               retryableStatusCodes.contains(httpResponse.statusCode),
+               retryCount < maxRetries {
+                let delay = initialRetryDelay * pow(2.0, Double(retryCount))
+                #if DEBUG
+                print("APIClient: Retrying request after \(delay)s (attempt \(retryCount + 1)/\(maxRetries))")
+                #endif
+                try await Task.sleep(for: .seconds(delay))
+                return try await executeWithRetry(request: request, retryCount: retryCount + 1)
+            }
+
+            return (data, response)
+        } catch let error as URLError {
+            // Retry on network errors
+            if retryCount < maxRetries && isRetryableError(error) {
+                let delay = initialRetryDelay * pow(2.0, Double(retryCount))
+                #if DEBUG
+                print("APIClient: Network error, retrying after \(delay)s (attempt \(retryCount + 1)/\(maxRetries)): \(error.localizedDescription)")
+                #endif
+                try await Task.sleep(for: .seconds(delay))
+                return try await executeWithRetry(request: request, retryCount: retryCount + 1)
+            }
+            throw APIError.networkError(error)
+        }
+    }
+
+    private func isRetryableError(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .networkConnectionLost, .notConnectedToInternet,
+             .cannotConnectToHost, .cannotFindHost:
+            return true
+        default:
+            return false
+        }
+    }
+
     func get<T: Decodable>(
         _ path: String,
-        queryItems: [URLQueryItem]? = nil
+        queryItems: [URLQueryItem]? = nil,
+        bypassCache: Bool = false
     ) async throws -> T {
-        let request = try buildRequest(path: path, queryItems: queryItems)
-        let (data, response) = try await session.data(for: request)
+        let request = try buildRequest(path: path, queryItems: queryItems, bypassCache: bypassCache)
+        let (data, response) = try await executeWithRetry(request: request)
         return try handleResponse(data, response)
     }
 
@@ -211,7 +269,7 @@ final class APIClient: APIClientProtocol {
         queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
         let request = try buildRequest(path: path, method: "POST", queryItems: queryItems, body: body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await executeWithRetry(request: request)
         return try handleResponse(data, response)
     }
 
@@ -220,13 +278,13 @@ final class APIClient: APIClientProtocol {
         body: B
     ) async throws -> T {
         let request = try buildRequest(path: path, method: "PATCH", body: body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await executeWithRetry(request: request)
         return try handleResponse(data, response)
     }
 
     func delete(_ path: String) async throws {
         let request = try buildRequest(path: path, method: "DELETE")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await executeWithRetry(request: request)
         try handleEmptyResponse(data, response)
     }
 
@@ -234,13 +292,13 @@ final class APIClient: APIClientProtocol {
         var request = try buildRequest(path: path, method: "DELETE")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await executeWithRetry(request: request)
         try handleEmptyResponse(data, response)
     }
 
     func deleteWithResponse<T: Decodable>(_ path: String) async throws -> T {
         let request = try buildRequest(path: path, method: "DELETE")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await executeWithRetry(request: request)
         return try handleResponse(data, response)
     }
 
@@ -498,7 +556,8 @@ final class APIClient: APIClientProtocol {
         petId: UUID? = nil,
         activeOnly: Bool = false,
         includeArchived: Bool = false,
-        timezone: String = TimeZone.current.identifier
+        timezone: String = TimeZone.current.identifier,
+        bypassCache: Bool = false
     ) async throws -> MedicationListResponse {
         var path = "/medications?family_id=\(familyId.uuidString.lowercased())&timezone=\(timezone)"
         if let petId = petId {
@@ -510,7 +569,7 @@ final class APIClient: APIClientProtocol {
         if includeArchived {
             path += "&include_archived=true"
         }
-        return try await get(path)
+        return try await get(path, bypassCache: bypassCache)
     }
 
     func getMedication(id: UUID) async throws -> Medication {

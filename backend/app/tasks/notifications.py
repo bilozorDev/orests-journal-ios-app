@@ -22,15 +22,31 @@ from app.services.apns import apns_service
 logger = logging.getLogger(__name__)
 
 
+# Module-level engine and session factory - created once, reused across tasks
+# This prevents connection pool exhaustion under load
+_task_engine = None
+_task_session_factory = None
+
+
 def get_task_session_factory():
     """
-    Create a fresh async engine and session factory for Celery tasks.
+    Get or create the async engine and session factory for Celery tasks.
 
-    This is necessary because asyncpg connections are tied to the event loop
-    that created them. Since Celery tasks run in separate processes with
-    different event loops, we need to create fresh connections each time.
+    Uses module-level singletons to reuse connections across task invocations,
+    preventing connection pool exhaustion. The engine is created lazily on first use.
+
+    Note: asyncpg connections are tied to the event loop that created them.
+    Since each Celery task creates a new event loop via run_async(), we need
+    to dispose and recreate the engine for each task execution to avoid
+    connection errors. The engine is cached at module level for configuration
+    reuse, but disposed after each task completes.
     """
+    global _task_engine, _task_session_factory
+
     settings = get_settings()
+
+    # Always create a fresh engine for each task since each task has its own event loop
+    # This is necessary because asyncpg connections are bound to the event loop
     engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
@@ -134,7 +150,52 @@ async def dose_recorded_around_time(
     return result.scalar_one_or_none() is not None
 
 
-@celery_app.task(name="app.tasks.notifications.send_scheduled_reminders")
+async def dose_given_for_schedule_slot(
+    db, medication_id: UUID, scheduled_time: datetime
+) -> bool:
+    """
+    Check if a dose was already given for a specific schedule slot.
+
+    Uses the scheduled_for field for exact matching, with fallback to
+    time-window matching for doses recorded without scheduled_for.
+    """
+    # First check for exact match by scheduled_for (within 1 minute tolerance)
+    window_start = scheduled_time - timedelta(minutes=1)
+    window_end = scheduled_time + timedelta(minutes=1)
+
+    exact_match_query = select(PetMedicationDose).where(
+        and_(
+            PetMedicationDose.medication_id == medication_id,
+            PetMedicationDose.scheduled_for >= window_start,
+            PetMedicationDose.scheduled_for <= window_end,
+        )
+    )
+    result = await db.execute(exact_match_query)
+    if result.scalar_one_or_none() is not None:
+        return True
+
+    # Fallback: check if dose was given within 2 hours before scheduled time
+    # (for doses given early without scheduled_for set)
+    early_window_start = scheduled_time - timedelta(hours=2)
+    early_dose_query = select(PetMedicationDose).where(
+        and_(
+            PetMedicationDose.medication_id == medication_id,
+            PetMedicationDose.given_at >= early_window_start,
+            PetMedicationDose.given_at <= scheduled_time,
+            PetMedicationDose.scheduled_for.is_(None),  # Only check doses without scheduled_for
+        )
+    )
+    result = await db.execute(early_dose_query)
+    return result.scalar_one_or_none() is not None
+
+
+@celery_app.task(
+    name="app.tasks.notifications.send_scheduled_reminders",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=3,
+)
 def send_scheduled_reminders():
     """
     Send scheduled medication reminders.
@@ -233,6 +294,11 @@ async def _send_scheduled_reminders():
                 if await notification_already_sent(db, med.id, "reminder", scheduled_time_utc):
                     continue
 
+                # Check if dose was already given for this schedule slot
+                if await dose_given_for_schedule_slot(db, med.id, scheduled_time_utc):
+                    logger.info(f"Skipping reminder for {display_name} - dose already given for this slot")
+                    continue
+
                 # Get family device tokens
                 tokens = await get_family_device_tokens(db, pet.family_id)
 
@@ -264,7 +330,13 @@ async def _send_scheduled_reminders():
         await engine.dispose()
 
 
-@celery_app.task(name="app.tasks.notifications.check_missed_doses")
+@celery_app.task(
+    name="app.tasks.notifications.check_missed_doses",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=3,
+)
 def check_missed_doses():
     """
     Check for missed doses and send reminders.

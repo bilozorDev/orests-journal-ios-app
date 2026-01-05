@@ -75,17 +75,24 @@ final class BackgroundTaskManager {
             await DataService.shared.refreshAllDataInBackground()
         }
 
-        // Handle task expiration
+        // Track whether task completed normally
+        var taskCompleted = false
+
+        // Handle task expiration - must call setTaskCompleted
         task.expirationHandler = {
             #if DEBUG
             print("BackgroundTaskManager: Background task expired, cancelling")
             #endif
             refreshTask.cancel()
+            if !taskCompleted {
+                task.setTaskCompleted(success: false)
+            }
         }
 
         // Complete the task when refresh finishes
         Task {
             await refreshTask.value
+            taskCompleted = true
             #if DEBUG
             print("BackgroundTaskManager: Background refresh completed")
             #endif

@@ -120,16 +120,14 @@ final class DataService {
     }
 
     /// Invalidate all caches (used when user is removed from family)
-    func invalidateAllCaches() {
+    func invalidateAllCaches() async {
         petsCache = nil
         familyMembersCache.removeAll()
         calorieGoalCache.removeAll()
         healthEventsCache.removeAll()
         healthCategoriesCache.removeAll()
         medicationsCache.removeAll()
-        Task {
-            await persistentCache.clearAll()
-        }
+        await persistentCache.clearAll()
     }
 
     // MARK: - Pets
