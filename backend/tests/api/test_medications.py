@@ -191,6 +191,7 @@ def create_mock_medication(
     medication.created_by = created_by
     medication.created_at = datetime(2024, 1, 1)
     medication.photos = []
+    medication.schedules = []  # Eager-loaded schedules
     return medication
 
 
@@ -300,15 +301,15 @@ class TestListMedications:
         pets_result = MagicMock()
         pets_result.scalars.return_value.all.return_value = [UUID(pet_id)]
 
+        # Count query returns scalar (total count)
+        count_result = MagicMock()
+        count_result.scalar.return_value = 2
+
         meds_result = MagicMock()
         meds_result.scalars.return_value.all.return_value = [mock_med1, mock_med2]
 
-        # Mock scheduled times query (returns empty list)
-        schedules_result = MagicMock()
-        schedules_result.scalars.return_value.all.return_value = []
-
         mock_db_session.execute = AsyncMock(
-            side_effect=[rls_result, membership_result, pets_result, meds_result, schedules_result]
+            side_effect=[rls_result, membership_result, pets_result, count_result, meds_result]
         )
 
         # Make request with mocked cache

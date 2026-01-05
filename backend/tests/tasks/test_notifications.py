@@ -540,16 +540,24 @@ class TestSendScheduledRemindersAsync:
         # Query 3: Check if notification already sent
         not_sent_result = create_mock_scalar_result(None)
 
-        # Query 4: Get family device tokens (members)
+        # Query 4: dose_given_for_schedule_slot - exact match (not found)
+        dose_exact_result = create_mock_scalar_result(None)
+
+        # Query 5: dose_given_for_schedule_slot - early dose (not found)
+        dose_early_result = create_mock_scalar_result(None)
+
+        # Query 6: Get family device tokens (members)
         members_result = create_mock_db_result([TEST_USER_ID_1, TEST_USER_ID_2])
 
-        # Query 5: Get device tokens
+        # Query 7: Get device tokens
         tokens_result = create_mock_db_result([TEST_DEVICE_TOKEN_1, TEST_DEVICE_TOKEN_2])
 
         mock_db.execute = AsyncMock(side_effect=[
             meds_result,
             pet_result,
             not_sent_result,
+            dose_exact_result,
+            dose_early_result,
             members_result,
             tokens_result,
         ])
@@ -710,6 +718,8 @@ class TestSendScheduledRemindersAsync:
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
         not_sent_result = create_mock_scalar_result(None)
+        dose_exact_result = create_mock_scalar_result(None)
+        dose_early_result = create_mock_scalar_result(None)
         members_result = create_mock_db_result([TEST_USER_ID_1])
         tokens_result = create_mock_db_result([TEST_DEVICE_TOKEN_1])
 
@@ -717,6 +727,8 @@ class TestSendScheduledRemindersAsync:
             meds_result,
             pet_result,
             not_sent_result,
+            dose_exact_result,
+            dose_early_result,
             members_result,
             tokens_result,
         ])
@@ -1402,6 +1414,8 @@ class TestNotificationTasksEdgeCases:
         meds_result = create_mock_db_result([medication], unique_method=True)
         pet_result = create_mock_scalar_result(pet)
         not_sent_result = create_mock_scalar_result(None)
+        dose_exact_result = create_mock_scalar_result(None)
+        dose_early_result = create_mock_scalar_result(None)
         members_result = create_mock_db_result([TEST_USER_ID_1])
         tokens_result = create_mock_db_result([TEST_DEVICE_TOKEN_1])
 
@@ -1409,6 +1423,8 @@ class TestNotificationTasksEdgeCases:
             meds_result,
             pet_result,
             not_sent_result,
+            dose_exact_result,
+            dose_early_result,
             members_result,
             tokens_result,
         ])
