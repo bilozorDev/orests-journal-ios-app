@@ -504,7 +504,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
                 apns_use_sandbox=True,
             )
@@ -550,7 +550,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -583,7 +583,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -637,7 +637,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -670,7 +670,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -703,7 +703,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -733,7 +733,7 @@ class TestAPNsSendNotification:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -770,15 +770,15 @@ class TestAPNsSendToMultiple:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
             service = APNsService()
 
-            # Mock successful sends
-            with patch.object(service, "send_notification", new_callable=AsyncMock) as mock_send:
-                mock_send.return_value = True
+            # Mock successful sends (now returns "success", "expired", or "failed")
+            with patch.object(service, "_send_notification_with_expiry_check", new_callable=AsyncMock) as mock_send:
+                mock_send.return_value = "success"
 
                 tokens = [TEST_DEVICE_TOKEN_1, TEST_DEVICE_TOKEN_2, TEST_DEVICE_TOKEN_3]
                 success_count = await service.send_to_multiple(
@@ -797,15 +797,15 @@ class TestAPNsSendToMultiple:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
             service = APNsService()
 
-            # Mock some successes and some failures
-            with patch.object(service, "send_notification", new_callable=AsyncMock) as mock_send:
-                mock_send.side_effect = [True, False, True]  # 2 successes, 1 failure
+            # Mock some successes and some failures (now returns "success", "expired", or "failed")
+            with patch.object(service, "_send_notification_with_expiry_check", new_callable=AsyncMock) as mock_send:
+                mock_send.side_effect = ["success", "failed", "success"]  # 2 successes, 1 failure
 
                 tokens = [TEST_DEVICE_TOKEN_1, TEST_DEVICE_TOKEN_2, TEST_DEVICE_TOKEN_3]
                 success_count = await service.send_to_multiple(
@@ -823,7 +823,7 @@ class TestAPNsSendToMultiple:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
             )
 
             service = APNsService()
@@ -845,14 +845,15 @@ class TestAPNsSendToMultiple:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
             )
 
             service = APNsService()
             custom_data = {"action": "family_update"}
 
-            with patch.object(service, "send_notification", new_callable=AsyncMock) as mock_send:
-                mock_send.return_value = True
+            # Mock _send_notification_with_expiry_check since send_to_multiple now uses that
+            with patch.object(service, "_send_notification_with_expiry_check", new_callable=AsyncMock) as mock_send:
+                mock_send.return_value = "success"
 
                 tokens = [TEST_DEVICE_TOKEN_1, TEST_DEVICE_TOKEN_2]
                 await service.send_to_multiple(
@@ -863,8 +864,7 @@ class TestAPNsSendToMultiple:
                 )
 
                 # Verify custom data was passed to each call
-                # The signature is: send_notification(device_token, title, body, data=None, badge=None)
-                # So data is the 4th parameter (index 3 when counting args, or in kwargs)
+                # The signature is: _send_notification_with_expiry_check(device_token, title, body, data=None)
                 for call in mock_send.call_args_list:
                     # Check if data was passed as keyword argument
                     if "data" in call.kwargs:
@@ -929,7 +929,7 @@ class TestAPNsEdgeCases:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 
@@ -960,7 +960,7 @@ class TestAPNsEdgeCases:
             mock_settings.return_value = MagicMock(
                 apns_key_id="ABC123",
                 apns_team_id="TEAM123",
-                apns_key_base64="base64key==",
+                apns_key_base64="dGVzdF9wcml2YXRlX2tleV9mb3JfdGVzdGluZw==",
                 apns_bundle_id="com.example.app",
             )
 

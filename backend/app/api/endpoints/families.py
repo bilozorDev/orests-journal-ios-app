@@ -264,8 +264,12 @@ async def check_user_lockout(db: AsyncSession, user_id: UUID) -> None:
         return
 
     if user.is_locked_out:
-        now_naive = datetime.now(UTC).replace(tzinfo=None)
-        if user.lockout_expires_at and now_naive >= user.lockout_expires_at:
+        now = datetime.now(UTC)
+        # Ensure lockout_expires_at is timezone-aware for comparison
+        lockout_expires = user.lockout_expires_at
+        if lockout_expires and lockout_expires.tzinfo is None:
+            lockout_expires = lockout_expires.replace(tzinfo=UTC)
+        if lockout_expires and now >= lockout_expires:
             # Lockout expired - clear it
             user.is_locked_out = False
             user.lockout_expires_at = None
@@ -274,7 +278,7 @@ async def check_user_lockout(db: AsyncSession, user_id: UUID) -> None:
             await db.commit()
         else:
             # Still locked out
-            remaining = user.lockout_expires_at - now_naive if user.lockout_expires_at else timedelta(0)
+            remaining = lockout_expires - now if lockout_expires else timedelta(0)
             minutes_remaining = max(1, int(remaining.total_seconds() / 60))
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -297,8 +301,12 @@ async def check_exponential_backoff(db: AsyncSession, user_id: UUID) -> None:
     backoff_seconds = calculate_backoff_seconds(user.failed_invite_attempts)
 
     if user.last_failed_invite_at:
-        now_naive = datetime.now(UTC).replace(tzinfo=None)
-        elapsed = (now_naive - user.last_failed_invite_at).total_seconds()
+        now = datetime.now(UTC)
+        # Ensure last_failed_invite_at is timezone-aware for comparison
+        last_failed = user.last_failed_invite_at
+        if last_failed.tzinfo is None:
+            last_failed = last_failed.replace(tzinfo=UTC)
+        elapsed = (now - last_failed).total_seconds()
         if elapsed < backoff_seconds:
             wait_remaining = int(backoff_seconds - elapsed)
             if wait_remaining >= 60:

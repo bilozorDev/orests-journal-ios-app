@@ -196,16 +196,11 @@ async def get_active_calorie_goal(
     # Verify user has access to this pet through family membership
     await verify_pet_access(db, user_id, pet_id)
 
-    now = datetime.now(UTC).replace(tzinfo=None)
+    now = datetime.now(UTC)
 
     query = (
         select(PetCalorieGoal)
-        .where(
-            and_(
-                PetCalorieGoal.pet_id == pet_id,
-                PetCalorieGoal.effective_from <= now,
-            )
-        )
+        .where(PetCalorieGoal.pet_id == pet_id)
         .order_by(PetCalorieGoal.effective_from.desc())
         .limit(1)
     )
@@ -215,9 +210,13 @@ async def get_active_calorie_goal(
     if not goal:
         return None
 
-    # Check if goal is still effective
-    if goal.effective_until and goal.effective_until < now:
-        return None
+    # Check if goal is still effective (handle both naive and aware datetimes)
+    effective_until = goal.effective_until
+    if effective_until:
+        if effective_until.tzinfo is None:
+            effective_until = effective_until.replace(tzinfo=UTC)
+        if effective_until < now:
+            return None
 
     return CalorieGoalResponse.model_validate(goal)
 
