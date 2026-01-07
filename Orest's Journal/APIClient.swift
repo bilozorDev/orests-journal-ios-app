@@ -10,8 +10,14 @@ import Foundation
 // MARK: - Configuration
 
 struct APIConfiguration {
-    // For local development via ngrok:
+    #if DEBUG
+    // Development: Use ngrok or local tunnel URL
+    // Update this URL when your ngrok session changes
     static let baseURL = "https://climbing-helping-hermit.ngrok-free.app/api/v1"
+    #else
+    // Production: Use Railway deployment URL
+    static let baseURL = "https://orestsjournal.up.railway.app/api/v1"
+    #endif
 }
 
 // MARK: - API Errors

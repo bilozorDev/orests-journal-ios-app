@@ -28,7 +28,14 @@ final class BackgroundTaskManager {
             forTaskWithIdentifier: Self.backgroundRefreshIdentifier,
             using: nil
         ) { task in
-            self.handleAppRefresh(task: task as! BGAppRefreshTask)
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                #if DEBUG
+                print("BackgroundTaskManager: Unexpected task type")
+                #endif
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleAppRefresh(task: refreshTask)
         }
         #if DEBUG
         print("BackgroundTaskManager: Registered background refresh task")
@@ -75,8 +82,8 @@ final class BackgroundTaskManager {
             await DataService.shared.refreshAllDataInBackground()
         }
 
-        // Track whether task completed normally
-        var taskCompleted = false
+        // Thread-safe completion tracker to prevent double-calling setTaskCompleted
+        let completionTracker = TaskCompletionTracker()
 
         // Handle task expiration - must call setTaskCompleted
         task.expirationHandler = {
@@ -84,7 +91,7 @@ final class BackgroundTaskManager {
             print("BackgroundTaskManager: Background task expired, cancelling")
             #endif
             refreshTask.cancel()
-            if !taskCompleted {
+            if completionTracker.tryMarkCompleted() {
                 task.setTaskCompleted(success: false)
             }
         }
@@ -92,11 +99,30 @@ final class BackgroundTaskManager {
         // Complete the task when refresh finishes
         Task {
             await refreshTask.value
-            taskCompleted = true
-            #if DEBUG
-            print("BackgroundTaskManager: Background refresh completed")
-            #endif
-            task.setTaskCompleted(success: true)
+            if completionTracker.tryMarkCompleted() {
+                #if DEBUG
+                print("BackgroundTaskManager: Background refresh completed")
+                #endif
+                task.setTaskCompleted(success: true)
+            }
         }
+    }
+}
+
+/// Thread-safe tracker to ensure task completion is only called once
+private final class TaskCompletionTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isCompleted = false
+
+    /// Attempts to mark the task as completed. Returns true if this is the first call, false if already completed.
+    func tryMarkCompleted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if isCompleted {
+            return false
+        }
+        isCompleted = true
+        return true
     }
 }

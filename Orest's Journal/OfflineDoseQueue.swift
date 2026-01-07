@@ -54,13 +54,17 @@ final class OfflineDoseQueue {
 
     private func startNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
+            // Capture network status before entering MainActor to avoid data races
+            let newOnlineStatus = path.status == .satisfied
+
             Task { @MainActor [weak self] in
-                let wasOffline = !(self?.isOnline ?? true)
-                self?.isOnline = path.status == .satisfied
+                guard let self else { return }
+                let wasOffline = !self.isOnline
+                self.isOnline = newOnlineStatus
 
                 // Sync when coming back online
-                if wasOffline && path.status == .satisfied {
-                    self?.syncPendingDoses()
+                if wasOffline && newOnlineStatus {
+                    self.syncPendingDoses()
                 }
             }
         }

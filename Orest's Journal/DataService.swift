@@ -794,6 +794,8 @@ final class DataService {
         update.notes = notes
         let result = try await api.updateDose(doseId: doseId, update)
         invalidateMedicationsCache(for: familyId.lowercased())
+        // Sync widget with updated dose status
+        await syncMedicationsToWidget()
         return result
     }
 
@@ -801,6 +803,8 @@ final class DataService {
     func deleteDose(doseId: UUID, familyId: String) async throws {
         try await api.deleteDose(doseId: doseId)
         invalidateMedicationsCache(for: familyId.lowercased())
+        // Sync widget with updated dose status
+        await syncMedicationsToWidget()
     }
 
     // MARK: - Background Refresh
@@ -808,6 +812,8 @@ final class DataService {
     func refreshAllDataInBackground() async {
         do {
             _ = try await getPets(forceRefresh: true)
+            // Also sync medications to widget for updated dose status
+            await syncMedicationsToWidget()
         } catch {
             #if DEBUG
             print("Background refresh failed: \(error)")
@@ -817,14 +823,27 @@ final class DataService {
 
     func prefetchDataOnForeground(forceRefresh: Bool = false) {
         Task {
-            _ = try? await getPets(forceRefresh: forceRefresh)
-            // Sync widget data
+            // If force refreshing (e.g., after widget recorded a dose),
+            // invalidate medications cache first to ensure fresh data
+            if forceRefresh {
+                invalidateAllMedicationsCaches()
+                #if DEBUG
+                print("📱 [App] Invalidated medications cache before foreground refresh")
+                #endif
+            }
+
+            let pets = try? await getPets(forceRefresh: forceRefresh)
+            // Sync widget data (this also refreshes medications)
             await syncMedicationsToWidget()
 
-            // If force refreshing (e.g., after widget action), tell views to reload
+            // If force refreshing, tell views to reload
             if forceRefresh {
                 await MainActor.run {
                     NavigationManager.shared.requestTabRefresh(.medication)
+                    // Also refresh home tab which may show medication schedules
+                    if pets?.isEmpty == false {
+                        NavigationManager.shared.requestTabRefresh(.home)
+                    }
                 }
                 #if DEBUG
                 print("📱 [App] Force refreshed data after widget action")

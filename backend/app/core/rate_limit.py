@@ -17,6 +17,36 @@ logger = logging.getLogger(__name__)
 
 # In-memory fallback when Redis is not available
 _memory_store: dict[str, list[float]] = defaultdict(list)
+_last_cleanup = time.time()
+MAX_MEMORY_ENTRIES = 10000  # Prevent unbounded memory growth
+
+
+def _cleanup_memory_store():
+    """Periodically clean up old entries and limit memory usage."""
+    global _last_cleanup
+    now = time.time()
+
+    # Only cleanup every 5 minutes
+    if now - _last_cleanup < 300:
+        return
+
+    _last_cleanup = now
+    cutoff = now - 3600  # Keep entries from last hour
+
+    # Remove expired entries
+    keys_to_delete = []
+    for key in list(_memory_store.keys()):
+        _memory_store[key] = [t for t in _memory_store[key] if t > cutoff]
+        if not _memory_store[key]:
+            keys_to_delete.append(key)
+
+    for key in keys_to_delete:
+        del _memory_store[key]
+
+    # Emergency cleanup if still too large (under attack)
+    if len(_memory_store) > MAX_MEMORY_ENTRIES:
+        logger.warning(f"Rate limiter memory store exceeded {MAX_MEMORY_ENTRIES} entries, clearing")
+        _memory_store.clear()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -121,7 +151,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self, key: str, now: float, window_start: float
     ) -> tuple[bool, int]:
         """In-memory fallback rate limiting."""
-        # Clean old entries
+        # Periodic cleanup to prevent memory exhaustion
+        _cleanup_memory_store()
+
+        # Clean old entries for this key
         _memory_store[key] = [t for t in _memory_store[key] if t > window_start]
 
         # Add current request

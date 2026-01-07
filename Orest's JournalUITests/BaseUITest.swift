@@ -13,7 +13,10 @@ class BaseUITest: XCTestCase {
 
     // MARK: - Test Configuration
 
-    /// Base URL for the backend API (ngrok URL or localhost)
+    /// Base URL for the backend API.
+    /// UPDATE THIS when your ngrok URL changes or when testing against a different server.
+    /// For local testing: http://localhost:8000/api/v1
+    /// For ngrok: https://your-tunnel.ngrok-free.app/api/v1
     static let apiBaseURL = "https://climbing-helping-hermit.ngrok-free.app/api/v1"
 
     /// Track created test user IDs for cleanup

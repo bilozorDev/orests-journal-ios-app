@@ -3,13 +3,14 @@ from datetime import datetime, timezone as dt_timezone
 from typing import Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status, File, UploadFile
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.rate_limit import rate_limit
 from app.core.authorization import verify_family_access, verify_pet_access, verify_medication_access
 from app.models.pet import Pet
 from app.models.medication import PetMedication, PetMedicationDose, PetMedicationPhoto
@@ -132,7 +133,9 @@ def validate_medication_input(med_in: MedicationCreate | MedicationUpdate, is_cr
 
 
 @router.get("", response_model=MedicationListResponse)
+@rate_limit(requests=30, window_seconds=60)  # 30 requests per minute
 async def list_medications(
+    request: Request,
     family_id: str,
     response: Response,
     pet_id: Optional[UUID] = None,

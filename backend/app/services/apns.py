@@ -2,6 +2,7 @@
 Apple Push Notification Service (APNs) client.
 Uses HTTP/2 to send push notifications to iOS devices.
 """
+import asyncio
 import base64
 import time
 import logging
@@ -13,6 +14,11 @@ import jwt
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 2  # seconds
+RETRY_BACKOFF_MAX = 10  # seconds
 
 
 class APNsService:
@@ -90,7 +96,7 @@ class APNsService:
         data: Optional[dict] = None,
         badge: Optional[int] = None,
     ) -> bool:
-        """Send a push notification to a device.
+        """Send a push notification to a device with retry logic.
 
         Args:
             device_token: The APNs device token
@@ -131,26 +137,45 @@ class APNsService:
             "apns-priority": "10",
         }
 
-        try:
-            async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
+        # Retry with exponential backoff for transient errors
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
+                    response = await client.post(url, json=payload, headers=headers)
 
-                if response.status_code == 200:
-                    logger.info(f"Notification sent successfully to {device_token[:20]}...")
-                    return True
-                elif response.status_code == 410:
-                    # Device token is no longer valid
-                    logger.warning(f"Device token expired: {device_token[:20]}...")
-                    return False
-                else:
-                    logger.error(
-                        f"APNs error {response.status_code}: {response.text}"
-                    )
-                    return False
+                    if response.status_code == 200:
+                        logger.info(f"Notification sent successfully to {device_token[:20]}...")
+                        return True
+                    elif response.status_code == 410:
+                        # Device token is no longer valid - don't retry
+                        logger.warning(f"Device token expired: {device_token[:20]}...")
+                        return False
+                    elif response.status_code >= 500:
+                        # Server error - retry
+                        last_error = f"APNs server error {response.status_code}"
+                        logger.warning(f"{last_error}, attempt {attempt + 1}/{MAX_RETRIES}")
+                    else:
+                        # Client error - don't retry
+                        logger.error(f"APNs error {response.status_code}: {response.text}")
+                        return False
 
-        except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
-            return False
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                # Network error - retry
+                last_error = str(e)
+                logger.warning(f"APNs network error: {e}, attempt {attempt + 1}/{MAX_RETRIES}")
+            except Exception as e:
+                # Unknown error - don't retry
+                logger.error(f"Failed to send notification: {e}")
+                return False
+
+            # Exponential backoff before retry
+            if attempt < MAX_RETRIES - 1:
+                delay = min(RETRY_BACKOFF_BASE * (2 ** attempt), RETRY_BACKOFF_MAX)
+                await asyncio.sleep(delay)
+
+        logger.error(f"Failed to send notification after {MAX_RETRIES} attempts: {last_error}")
+        return False
 
     async def send_to_multiple(
         self,
@@ -193,7 +218,7 @@ class APNsService:
         body: str,
         data: Optional[dict] = None,
     ) -> str:
-        """Send notification and return status: 'success', 'expired', or 'failed'."""
+        """Send notification with retry and return status: 'success', 'expired', or 'failed'."""
         if not self.is_configured:
             logger.warning("APNs not configured, skipping notification")
             return "failed"
@@ -220,25 +245,44 @@ class APNsService:
             "apns-priority": "10",
         }
 
-        try:
-            async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
+        # Retry with exponential backoff for transient errors
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
+                    response = await client.post(url, json=payload, headers=headers)
 
-                if response.status_code == 200:
-                    return "success"
-                elif response.status_code == 410:
-                    # Device token is no longer valid
-                    logger.warning(f"Device token expired: {device_token[:20]}...")
-                    return "expired"
-                else:
-                    logger.error(
-                        f"APNs error {response.status_code}: {response.text}"
-                    )
-                    return "failed"
+                    if response.status_code == 200:
+                        return "success"
+                    elif response.status_code == 410:
+                        # Device token is no longer valid - don't retry
+                        logger.warning(f"Device token expired: {device_token[:20]}...")
+                        return "expired"
+                    elif response.status_code >= 500:
+                        # Server error - retry
+                        last_error = f"APNs server error {response.status_code}"
+                        logger.warning(f"{last_error}, attempt {attempt + 1}/{MAX_RETRIES}")
+                    else:
+                        # Client error - don't retry
+                        logger.error(f"APNs error {response.status_code}: {response.text}")
+                        return "failed"
 
-        except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
-            return "failed"
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                # Network error - retry
+                last_error = str(e)
+                logger.warning(f"APNs network error: {e}, attempt {attempt + 1}/{MAX_RETRIES}")
+            except Exception as e:
+                # Unknown error - don't retry
+                logger.error(f"Failed to send notification: {e}")
+                return "failed"
+
+            # Exponential backoff before retry
+            if attempt < MAX_RETRIES - 1:
+                delay = min(RETRY_BACKOFF_BASE * (2 ** attempt), RETRY_BACKOFF_MAX)
+                await asyncio.sleep(delay)
+
+        logger.error(f"Failed to send notification after {MAX_RETRIES} attempts: {last_error}")
+        return "failed"
 
     async def _mark_tokens_inactive(self, tokens: list[str]) -> None:
         """Mark expired device tokens as inactive in the database."""

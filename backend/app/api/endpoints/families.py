@@ -17,7 +17,7 @@ from app.models.notification import UserDeviceToken
 from app.services.apns import apns_service
 from app.services.family_notifications import get_filtered_family_member_tokens
 from app.cache.helpers import cache_get, cache_set, cache_delete
-from app.cache.keys import key_family_detail, TTL_FAMILY
+from app.cache.keys import key_family_detail, key_pets, TTL_FAMILY
 
 router = APIRouter()
 
@@ -726,8 +726,9 @@ async def update_family(
     await db.commit()
     await db.refresh(family)
 
-    # Invalidate family cache
+    # Invalidate family and pets cache (pets may display family name)
     await cache_delete(key_family_detail(family_id))
+    await cache_delete(key_pets(family_id))
 
     return FamilyResponse(
         id=str(family.id),

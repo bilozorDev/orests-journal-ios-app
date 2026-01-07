@@ -4,7 +4,7 @@ Users are stored directly in PostgreSQL.
 """
 from typing import Optional, List, Literal
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from pydantic import BaseModel
 import httpx
 import jwt as pyjwt
@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.core.security import create_access_token, get_current_user_id
+from app.core.rate_limit import rate_limit
 from app.models.user import User, Family, FamilyMember
 from app.models.notification import UserDeviceToken
 from app.services.apns import apns_service
@@ -210,8 +211,10 @@ def get_display_name(user: Optional[User]) -> str:
 # --- Endpoints ---
 
 @router.post("/apple", response_model=AuthResponse)
+@rate_limit(requests=10, window_seconds=60)  # Limit auth attempts to prevent abuse
 async def sign_in_with_apple(
-    request: AppleAuthRequest,
+    request: Request,
+    auth_request: AppleAuthRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -222,7 +225,7 @@ async def sign_in_with_apple(
     3. Return our own JWT + user info + families
     """
     # Verify Apple token
-    apple_claims = await verify_apple_identity_token(request.identity_token)
+    apple_claims = await verify_apple_identity_token(auth_request.identity_token)
 
     # Get Apple's stable user ID from the token
     apple_user_id = apple_claims.get("sub")
@@ -233,7 +236,7 @@ async def sign_in_with_apple(
         )
 
     # Get email from Apple token or request (Apple only provides email on first sign-in)
-    email = request.email or apple_claims.get("email")
+    email = auth_request.email or apple_claims.get("email")
 
     # Try to find existing user
     query = select(User).where(User.apple_user_id == apple_user_id)
@@ -245,8 +248,8 @@ async def sign_in_with_apple(
         user = User(
             apple_user_id=apple_user_id,
             email=email,
-            first_name=request.first_name,
-            last_name=request.last_name,
+            first_name=auth_request.first_name,
+            last_name=auth_request.last_name,
         )
         db.add(user)
         await db.commit()
@@ -254,14 +257,14 @@ async def sign_in_with_apple(
     else:
         # Update user info if provided (Apple only provides name on first sign-in)
         updated = False
-        if request.email and not user.email:
-            user.email = request.email
+        if auth_request.email and not user.email:
+            user.email = auth_request.email
             updated = True
-        if request.first_name and not user.first_name:
-            user.first_name = request.first_name
+        if auth_request.first_name and not user.first_name:
+            user.first_name = auth_request.first_name
             updated = True
-        if request.last_name and not user.last_name:
-            user.last_name = request.last_name
+        if auth_request.last_name and not user.last_name:
+            user.last_name = auth_request.last_name
             updated = True
         if updated:
             await db.commit()
@@ -540,16 +543,20 @@ async def test_login(
 
     SECURITY: Only available when environment is "development" or "test".
     """
+    import os
     from app.core.config import get_settings
 
     settings = get_settings()
 
     # Security check - only allow in development/test environments
+    # Use multiple checks for defense in depth
     if settings.environment not in ("development", "test"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Test login is only available in development/test environments",
-        )
+        # Return 404 in production to hide endpoint existence
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    # Additional check: DEBUG must be true for test endpoints
+    if os.getenv("DEBUG", "").lower() != "true":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     # Create unique apple_user_id based on test_user_id
     apple_user_id = f"test_{request.test_user_id}"
@@ -620,16 +627,20 @@ async def test_cleanup(
 
     SECURITY: Only available when environment is "development" or "test".
     """
+    import os
     from app.core.config import get_settings
 
     settings = get_settings()
 
     # Security check - only allow in development/test environments
+    # Use multiple checks for defense in depth
     if settings.environment not in ("development", "test"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Test cleanup is only available in development/test environments",
-        )
+        # Return 404 in production to hide endpoint existence
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    # Additional check: DEBUG must be true for test endpoints
+    if os.getenv("DEBUG", "").lower() != "true":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     # Build apple_user_id from test_user_id
     apple_user_id = f"test_{test_user_id}"

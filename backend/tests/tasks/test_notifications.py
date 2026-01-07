@@ -193,9 +193,9 @@ class TestGetTaskSessionFactory:
         call_args = mock_create_engine.call_args
         assert call_args[0][0] == mock_settings.database_url
         assert call_args.kwargs["echo"] == False
-        assert call_args.kwargs["pool_pre_ping"] is True
-        assert call_args.kwargs["pool_size"] == 2
-        assert call_args.kwargs["max_overflow"] == 3
+        # NullPool is used to prevent connection binding to event loops
+        from sqlalchemy.pool import NullPool
+        assert call_args.kwargs["poolclass"] == NullPool
 
     @patch("app.tasks.notifications.get_settings")
     @patch("app.tasks.notifications.create_async_engine")
@@ -213,11 +213,13 @@ class TestGetTaskSessionFactory:
         # Execute
         get_task_session_factory()
 
-        # Assert connection args include asyncpg fixes
+        # Assert connection args include asyncpg fixes and timeouts
         call_args = mock_create_engine.call_args
         connect_args = call_args.kwargs["connect_args"]
         assert connect_args["server_settings"]["jit"] == "off"
         assert connect_args["server_settings"]["plan_cache_mode"] == "force_custom_plan"
+        assert connect_args["server_settings"]["statement_timeout"] == "30000"
+        assert connect_args["command_timeout"] == 30
         assert connect_args["prepared_statement_cache_size"] == 0
         assert connect_args["statement_cache_size"] == 0
 

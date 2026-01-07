@@ -9,7 +9,7 @@ import SwiftUI
 
 struct RecordDoseSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var offlineQueue = OfflineDoseQueue.shared
+    private var offlineQueue: OfflineDoseQueue { OfflineDoseQueue.shared }
 
     let medication: Medication
     let petName: String

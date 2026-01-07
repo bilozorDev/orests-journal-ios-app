@@ -404,7 +404,9 @@ final class AuthManager {
         }
 
         // Invalidate caches
-        DataService.shared.invalidateAllCaches()
+        Task {
+            await DataService.shared.invalidateAllCaches()
+        }
     }
 
     /// Reset removal state when user taps "Start Over"
@@ -440,7 +442,9 @@ final class AuthManager {
         }
 
         // Invalidate caches
-        DataService.shared.invalidateAllCaches()
+        Task {
+            await DataService.shared.invalidateAllCaches()
+        }
     }
 
     /// Reset left family state when user taps "Start Over"

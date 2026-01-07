@@ -11,6 +11,7 @@ settings = get_settings()
 # Configuration to fix asyncpg + PostgreSQL enum type issues:
 # - jit=off: Prevents slow enum type introspection (https://github.com/MagicStack/asyncpg/issues/1078)
 # - prepared_statement_cache_size=0: Disables prepared statement caching to avoid InvalidCachedStatementError
+# - statement_timeout: Prevents long-running queries from holding locks indefinitely
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
@@ -18,9 +19,11 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=10,
     connect_args={
+        "command_timeout": 30,  # 30 second timeout per command
         "server_settings": {
             "jit": "off",
             "plan_cache_mode": "force_custom_plan",
+            "statement_timeout": "30000",  # 30 second statement timeout (milliseconds)
         },
         "prepared_statement_cache_size": 0,
         "statement_cache_size": 0,

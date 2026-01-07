@@ -168,17 +168,13 @@ struct WidgetData: Codable, Sendable {
 
 // MARK: - Widget Data Manager
 
-nonisolated final class WidgetDataManager: @unchecked Sendable {
+nonisolated final class WidgetDataManager: Sendable {
     static let shared = WidgetDataManager()
 
     private let userDefaults: UserDefaults?
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     private init() {
         userDefaults = AppGroup.userDefaults
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
 
         #if DEBUG
         if userDefaults == nil {
@@ -189,6 +185,20 @@ nonisolated final class WidgetDataManager: @unchecked Sendable {
         #endif
     }
 
+    /// Create a configured encoder (thread-safe because created per-call)
+    private func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    /// Create a configured decoder (thread-safe because created per-call)
+    private func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
     // MARK: - Read Data (for Widget)
 
     /// Get the current widget data
@@ -196,7 +206,7 @@ nonisolated final class WidgetDataManager: @unchecked Sendable {
         guard let data = userDefaults?.data(forKey: WidgetDataKey.nextDoses) else {
             return nil
         }
-        return try? decoder.decode(WidgetData.self, from: data)
+        return try? makeDecoder().decode(WidgetData.self, from: data)
     }
 
     // MARK: - Write Data (from Main App)
@@ -219,19 +229,21 @@ nonisolated final class WidgetDataManager: @unchecked Sendable {
 
         let widgetData = WidgetData(nextDoses: doses, lastUpdated: Date())
 
-        if let data = try? encoder.encode(widgetData) {
+        if let data = try? makeEncoder().encode(widgetData) {
             userDefaults?.set(data, forKey: WidgetDataKey.nextDoses)
             #if DEBUG
             print("✅ [Widget] Saved \(data.count) bytes to App Group")
             #endif
+            // Trigger widget refresh only on successful save
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
         } else {
             #if DEBUG
-            print("❌ [Widget] Failed to encode widget data")
+            print("❌ [Widget] Failed to encode widget data - clearing stale data")
             #endif
+            // Clear stale data on encoding failure to avoid showing outdated info
+            userDefaults?.removeObject(forKey: WidgetDataKey.nextDoses)
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
         }
-
-        // Trigger widget refresh
-        WidgetCenter.shared.reloadTimelines(ofKind: "NextDoseWidget")
     }
 
     /// Clear all widget data (e.g., on logout)
@@ -350,11 +362,16 @@ nonisolated final class WidgetDataManager: @unchecked Sendable {
 
         // Save updated data
         let updatedWidgetData = WidgetData(nextDoses: updatedDoses, lastUpdated: Date())
-        if let data = try? encoder.encode(updatedWidgetData) {
+        if let data = try? makeEncoder().encode(updatedWidgetData) {
             userDefaults?.set(data, forKey: WidgetDataKey.nextDoses)
             #if DEBUG
             print("✅ [Widget] Marked dose as given for medication \(medicationId)")
             #endif
+        } else {
+            #if DEBUG
+            print("❌ [Widget] Failed to encode updated widget data for dose marking")
+            #endif
+            // Don't clear data here - keep existing data until next full sync
         }
     }
 

@@ -3,12 +3,13 @@ from datetime import UTC, datetime, timedelta, timezone as dt_timezone
 from typing import Dict
 from uuid import UUID
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.rate_limit import rate_limit
 from app.core.authorization import verify_medication_access, verify_dose_access, verify_family_access, verify_pet_access
 from app.core.utils import format_user_name
 from app.models.medication import PetMedication, PetMedicationDose
@@ -412,7 +413,9 @@ async def update_dose(
 
 
 @router.get("/all/{pet_id}", response_model=AllDosesListResponse)
+@rate_limit(requests=30, window_seconds=60)  # 30 requests per minute
 async def list_all_doses(
+    request: Request,
     pet_id: UUID,
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),

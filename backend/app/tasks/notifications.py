@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
+from sqlalchemy.pool import NullPool
 
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
@@ -22,41 +23,31 @@ from app.services.apns import apns_service
 logger = logging.getLogger(__name__)
 
 
-# Module-level engine and session factory - created once, reused across tasks
-# This prevents connection pool exhaustion under load
-_task_engine = None
-_task_session_factory = None
-
-
 def get_task_session_factory():
     """
     Get or create the async engine and session factory for Celery tasks.
 
-    Uses module-level singletons to reuse connections across task invocations,
-    preventing connection pool exhaustion. The engine is created lazily on first use.
+    Uses NullPool since each Celery task creates a new event loop via run_async(),
+    and asyncpg connections are bound to the event loop that created them.
+    NullPool creates a fresh connection per request and disposes it immediately,
+    avoiding connection pool issues across different event loops.
 
-    Note: asyncpg connections are tied to the event loop that created them.
-    Since each Celery task creates a new event loop via run_async(), we need
-    to dispose and recreate the engine for each task execution to avoid
-    connection errors. The engine is cached at module level for configuration
-    reuse, but disposed after each task completes.
+    The engine is disposed after each task completes to clean up resources.
     """
-    global _task_engine, _task_session_factory
-
     settings = get_settings()
 
-    # Always create a fresh engine for each task since each task has its own event loop
-    # This is necessary because asyncpg connections are bound to the event loop
+    # Use NullPool - creates fresh connection per request, disposed immediately
+    # This is the correct approach for Celery tasks with separate event loops
     engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
-        pool_pre_ping=True,
-        pool_size=2,
-        max_overflow=3,
+        poolclass=NullPool,  # No connection pooling - prevents event loop issues
         connect_args={
+            "command_timeout": 30,  # 30 second timeout per command
             "server_settings": {
                 "jit": "off",
                 "plan_cache_mode": "force_custom_plan",
+                "statement_timeout": "30000",  # 30 second statement timeout
             },
             "prepared_statement_cache_size": 0,
             "statement_cache_size": 0,

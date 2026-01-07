@@ -17,12 +17,15 @@ from app.core.authorization import (
     verify_dose_access,
     verify_feeding_access,
     verify_health_event_access,
+    verify_food_access,
+    verify_calorie_goal_access,
+    verify_health_category_access,
 )
 from app.models.user import FamilyMember
 from app.models.pet import Pet
 from app.models.medication import PetMedication, PetMedicationDose
-from app.models.food import PetFeeding
-from app.models.health import PetHealthEvent
+from app.models.food import PetFood, PetFeeding, PetCalorieGoal
+from app.models.health import PetHealthEvent, PetHealthCategory
 
 
 # Test data
@@ -33,6 +36,9 @@ TEST_MEDICATION_ID = uuid4()
 TEST_DOSE_ID = uuid4()
 TEST_FEEDING_ID = uuid4()
 TEST_EVENT_ID = uuid4()
+TEST_FOOD_ID = uuid4()
+TEST_CALORIE_GOAL_ID = uuid4()
+TEST_HEALTH_CATEGORY_ID = uuid4()
 
 
 def create_mock_membership(role: str = "member") -> FamilyMember:
@@ -82,6 +88,30 @@ def create_mock_event() -> PetHealthEvent:
     mock = MagicMock(spec=PetHealthEvent)
     mock.id = TEST_EVENT_ID
     mock.pet_id = TEST_PET_ID
+    return mock
+
+
+def create_mock_food() -> PetFood:
+    """Create a mock food."""
+    mock = MagicMock(spec=PetFood)
+    mock.id = TEST_FOOD_ID
+    mock.family_id = TEST_FAMILY_ID
+    return mock
+
+
+def create_mock_calorie_goal() -> PetCalorieGoal:
+    """Create a mock calorie goal."""
+    mock = MagicMock(spec=PetCalorieGoal)
+    mock.id = TEST_CALORIE_GOAL_ID
+    mock.pet_id = TEST_PET_ID
+    return mock
+
+
+def create_mock_health_category() -> PetHealthCategory:
+    """Create a mock health category."""
+    mock = MagicMock(spec=PetHealthCategory)
+    mock.id = TEST_HEALTH_CATEGORY_ID
+    mock.family_id = TEST_FAMILY_ID
     return mock
 
 
@@ -436,3 +466,169 @@ class TestVerifyHealthEventAccess:
                 )
 
         assert exc_info.value.status_code == 404
+
+
+class TestVerifyFoodAccess:
+    """Tests for verify_food_access function."""
+
+    @pytest.mark.asyncio
+    async def test_verify_food_access_success(self):
+        """Should return food when user has access."""
+        mock_db = AsyncMock()
+        mock_food = create_mock_food()
+        mock_membership = create_mock_membership()
+
+        mock_results = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_food)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_membership)),
+        ]
+        mock_db.execute.side_effect = mock_results
+
+        with patch("app.core.authorization.set_rls_user"):
+            result = await verify_food_access(
+                mock_db, TEST_USER_ID, TEST_FOOD_ID
+            )
+
+        assert result == mock_food
+
+    @pytest.mark.asyncio
+    async def test_verify_food_access_not_found(self):
+        """Should raise 404 when food doesn't exist."""
+        mock_db = AsyncMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        with patch("app.core.authorization.set_rls_user"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_food_access(mock_db, TEST_USER_ID, TEST_FOOD_ID)
+
+        assert exc_info.value.status_code == 404
+        assert "Food not found" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_verify_food_access_wrong_family(self):
+        """Should raise 403 when user doesn't have access to food's family."""
+        mock_db = AsyncMock()
+        mock_food = create_mock_food()
+
+        # First call returns food, second returns no membership
+        mock_results = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_food)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        ]
+        mock_db.execute.side_effect = mock_results
+
+        with patch("app.core.authorization.set_rls_user"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_food_access(mock_db, TEST_USER_ID, TEST_FOOD_ID)
+
+        assert exc_info.value.status_code == 403
+
+
+class TestVerifyCalorieGoalAccess:
+    """Tests for verify_calorie_goal_access function."""
+
+    @pytest.mark.asyncio
+    async def test_verify_calorie_goal_access_success(self):
+        """Should return calorie goal when user has access."""
+        mock_db = AsyncMock()
+        mock_goal = create_mock_calorie_goal()
+        mock_pet = create_mock_pet()
+        mock_membership = create_mock_membership()
+
+        mock_results = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_goal)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_pet)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_membership)),
+        ]
+        mock_db.execute.side_effect = mock_results
+
+        with patch("app.core.authorization.set_rls_user"):
+            result = await verify_calorie_goal_access(
+                mock_db, TEST_USER_ID, TEST_CALORIE_GOAL_ID
+            )
+
+        assert result == mock_goal
+
+    @pytest.mark.asyncio
+    async def test_verify_calorie_goal_access_not_found(self):
+        """Should raise 404 when calorie goal doesn't exist."""
+        mock_db = AsyncMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        with patch("app.core.authorization.set_rls_user"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_calorie_goal_access(
+                    mock_db, TEST_USER_ID, TEST_CALORIE_GOAL_ID
+                )
+
+        assert exc_info.value.status_code == 404
+        assert "Calorie goal not found" in str(exc_info.value.detail)
+
+
+class TestVerifyHealthCategoryAccess:
+    """Tests for verify_health_category_access function."""
+
+    @pytest.mark.asyncio
+    async def test_verify_health_category_access_success(self):
+        """Should return health category when user has access."""
+        mock_db = AsyncMock()
+        mock_category = create_mock_health_category()
+        mock_membership = create_mock_membership()
+
+        mock_results = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_category)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_membership)),
+        ]
+        mock_db.execute.side_effect = mock_results
+
+        with patch("app.core.authorization.set_rls_user"):
+            result = await verify_health_category_access(
+                mock_db, TEST_USER_ID, TEST_HEALTH_CATEGORY_ID
+            )
+
+        assert result == mock_category
+
+    @pytest.mark.asyncio
+    async def test_verify_health_category_access_not_found(self):
+        """Should raise 404 when health category doesn't exist."""
+        mock_db = AsyncMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        with patch("app.core.authorization.set_rls_user"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_health_category_access(
+                    mock_db, TEST_USER_ID, TEST_HEALTH_CATEGORY_ID
+                )
+
+        assert exc_info.value.status_code == 404
+        assert "Health category not found" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_verify_health_category_access_wrong_family(self):
+        """Should raise 403 when user doesn't have access to category's family."""
+        mock_db = AsyncMock()
+        mock_category = create_mock_health_category()
+
+        # First call returns category, second returns no membership
+        mock_results = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_category)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        ]
+        mock_db.execute.side_effect = mock_results
+
+        with patch("app.core.authorization.set_rls_user"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_health_category_access(
+                    mock_db, TEST_USER_ID, TEST_HEALTH_CATEGORY_ID
+                )
+
+        assert exc_info.value.status_code == 403

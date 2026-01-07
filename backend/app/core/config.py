@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # CORS
     allowed_origins: str = "http://localhost:3000"
 
+    # Error Tracking (Sentry) - Optional
+    sentry_dsn: Optional[str] = None
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",")]

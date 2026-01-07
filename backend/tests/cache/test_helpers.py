@@ -1,9 +1,11 @@
 """
 Unit tests for cache helper functions.
 
-Tests cache_get, cache_set, cache_delete, and cache_delete_pattern functions
-with various scenarios including Redis availability, data serialization, and error handling.
+Tests cache_get, cache_set, cache_delete, cache_delete_pattern, and cache_get_or_compute
+functions with various scenarios including Redis availability, data serialization,
+error handling, and cache stampede prevention.
 """
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -14,7 +16,9 @@ from app.cache.helpers import (
     cache_delete,
     cache_delete_pattern,
     cache_get,
+    cache_get_or_compute,
     cache_set,
+    LOCK_TIMEOUT_SECONDS,
 )
 
 
@@ -649,3 +653,327 @@ class TestCacheHelpersIntegration:
             for i in range(5):
                 result = await cache_get(f"user:{i}", SimpleModel)
                 assert result is None
+
+
+class TestCacheGetOrCompute:
+    """Tests for cache_get_or_compute with cache stampede prevention."""
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value_without_computing(self):
+        """Should return cached value without calling compute function."""
+        test_id = str(uuid4())
+        cached_json = f'{{"id": "{test_id}", "name": "Cached"}}'
+
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = cached_json
+
+        compute_called = False
+
+        async def compute_func():
+            nonlocal compute_called
+            compute_called = True
+            return SimpleModel(id="computed", name="Computed")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        assert result.id == test_id
+        assert result.name == "Cached"
+        assert not compute_called
+
+    @pytest.mark.asyncio
+    async def test_computes_and_caches_when_not_cached(self):
+        """Should compute and cache value when not in cache."""
+        test_id = str(uuid4())
+
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = None  # Not cached
+        mock_redis.set.return_value = True  # Lock acquired
+        mock_redis.setex = AsyncMock()  # Cache set
+        mock_redis.delete = AsyncMock()  # Lock released
+
+        async def compute_func():
+            return SimpleModel(id=test_id, name="Computed")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        assert result.id == test_id
+        assert result.name == "Computed"
+
+        # Verify lock was acquired with NX flag
+        mock_redis.set.assert_called_once()
+        lock_call = mock_redis.set.call_args
+        assert "lock:test:key" == lock_call[0][0]
+        assert lock_call[1]["nx"] is True  # Atomic set-if-not-exists
+
+        # Verify value was cached
+        mock_redis.setex.assert_called_once()
+
+        # Verify lock was released
+        mock_redis.delete.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_computes_directly_when_cache_disabled(self):
+        """Should compute directly when cache is disabled."""
+        test_id = str(uuid4())
+        compute_called = False
+
+        async def compute_func():
+            nonlocal compute_called
+            compute_called = True
+            return SimpleModel(id=test_id, name="Computed")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=False):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        assert result.id == test_id
+        assert compute_called
+
+    @pytest.mark.asyncio
+    async def test_waits_for_other_caller_when_lock_held(self):
+        """Should wait and get cached value when another caller holds the lock."""
+        test_id = str(uuid4())
+        mock_redis = AsyncMock()
+
+        # First call returns None (not cached)
+        # Subsequent calls return cached value (after "waiting")
+        get_call_count = 0
+
+        async def mock_get(key):
+            nonlocal get_call_count
+            get_call_count += 1
+            if get_call_count <= 1:
+                return None  # First call - not cached
+            return f'{{"id": "{test_id}", "name": "Cached By Other"}}'
+
+        mock_redis.get = mock_get
+        mock_redis.set = AsyncMock(return_value=False)  # Lock NOT acquired (held by other)
+        mock_redis.exists = AsyncMock(return_value=True)  # Lock still held
+
+        compute_called = False
+
+        async def compute_func():
+            nonlocal compute_called
+            compute_called = True
+            return SimpleModel(id="should-not-be-called", name="Computed")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis), \
+             patch("app.cache.helpers.asyncio.sleep", new_callable=AsyncMock):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        # Should get the value cached by the other caller
+        assert result.id == test_id
+        assert result.name == "Cached By Other"
+        assert not compute_called
+
+    @pytest.mark.asyncio
+    async def test_computes_after_lock_timeout(self):
+        """Should compute directly after waiting for lock times out."""
+        test_id = str(uuid4())
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)  # Never cached
+        mock_redis.set = AsyncMock(return_value=False)  # Never acquire lock
+        mock_redis.exists = AsyncMock(return_value=True)  # Lock always held
+
+        async def compute_func():
+            return SimpleModel(id=test_id, name="Timeout Fallback")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis), \
+             patch("app.cache.helpers.asyncio.sleep", new_callable=AsyncMock):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        # After timeout, should compute directly
+        assert result.id == test_id
+        assert result.name == "Timeout Fallback"
+
+    @pytest.mark.asyncio
+    async def test_acquires_lock_when_previous_holder_releases(self):
+        """Should acquire lock after previous holder releases it without caching."""
+        test_id = str(uuid4())
+        mock_redis = AsyncMock()
+
+        # First get returns None, subsequent returns None too (other caller failed to cache)
+        mock_redis.get = AsyncMock(return_value=None)
+
+        # First set returns False (lock held), second returns True (lock released)
+        set_calls = 0
+
+        async def mock_set(*args, **kwargs):
+            nonlocal set_calls
+            set_calls += 1
+            return set_calls > 1  # First call fails, subsequent succeed
+
+        mock_redis.set = mock_set
+
+        # Lock no longer exists (previous holder released it)
+        exists_calls = 0
+
+        async def mock_exists(key):
+            nonlocal exists_calls
+            exists_calls += 1
+            return exists_calls < 2  # First check shows lock held, then released
+
+        mock_redis.exists = mock_exists
+        mock_redis.setex = AsyncMock()
+        mock_redis.delete = AsyncMock()
+
+        async def compute_func():
+            return SimpleModel(id=test_id, name="Computed After Lock Release")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis), \
+             patch("app.cache.helpers.asyncio.sleep", new_callable=AsyncMock):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        assert result.id == test_id
+        assert result.name == "Computed After Lock Release"
+        # Should have cached the value
+        mock_redis.setex.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_releases_lock_on_compute_error(self):
+        """Should release lock even when compute function raises error."""
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)  # Not cached
+        mock_redis.set = AsyncMock(return_value=True)  # Lock acquired
+        mock_redis.delete = AsyncMock()  # Track lock release
+
+        async def failing_compute():
+            raise ValueError("Compute failed")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis):
+            with pytest.raises(ValueError, match="Compute failed"):
+                await cache_get_or_compute(
+                    "test:key", SimpleModel, 300, failing_compute
+                )
+
+        # Lock should still be released
+        mock_redis.delete.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_lock_acquisition_fails(self):
+        """Should compute without lock when Redis lock operation fails."""
+        test_id = str(uuid4())
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)  # Not cached
+        mock_redis.set = AsyncMock(side_effect=Exception("Redis error"))  # Lock acquisition fails
+
+        async def compute_func():
+            return SimpleModel(id=test_id, name="Fallback Compute")
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis):
+            result = await cache_get_or_compute(
+                "test:key", SimpleModel, 300, compute_func
+            )
+
+        # Should still return computed value
+        assert result.id == test_id
+        assert result.name == "Fallback Compute"
+
+    @pytest.mark.asyncio
+    async def test_prevents_cache_stampede_concurrent_calls(self):
+        """Should prevent cache stampede by only computing once for concurrent calls."""
+        test_id = str(uuid4())
+        mock_redis = AsyncMock()
+
+        compute_count = 0
+        compute_started = asyncio.Event()
+        compute_can_finish = asyncio.Event()
+
+        async def slow_compute():
+            nonlocal compute_count
+            compute_count += 1
+            compute_started.set()
+            await compute_can_finish.wait()
+            return SimpleModel(id=test_id, name="Computed")
+
+        # First caller acquires lock, others don't
+        lock_acquired = False
+
+        async def mock_set(key, value, **kwargs):
+            nonlocal lock_acquired
+            if "lock:" in key and not lock_acquired:
+                lock_acquired = True
+                return True
+            return False
+
+        # Cache storage simulation
+        cached_value = None
+
+        async def mock_get(key):
+            if "lock:" not in key and cached_value:
+                return cached_value
+            return None
+
+        async def mock_setex(key, ttl, value):
+            nonlocal cached_value
+            cached_value = value
+
+        mock_redis.get = mock_get
+        mock_redis.set = mock_set
+        mock_redis.setex = mock_setex
+        mock_redis.delete = AsyncMock()
+        mock_redis.exists = AsyncMock(return_value=True)
+
+        with patch("app.cache.helpers.is_cache_enabled", return_value=True), \
+             patch("app.cache.helpers.get_redis", return_value=mock_redis):
+            # Start first caller (will acquire lock)
+            task1 = asyncio.create_task(
+                cache_get_or_compute("test:key", SimpleModel, 300, slow_compute)
+            )
+
+            # Wait for first compute to start
+            await asyncio.wait_for(compute_started.wait(), timeout=1.0)
+
+            # Start second caller with mocked sleep
+            with patch("app.cache.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                sleep_count = 0
+
+                async def controlled_sleep(delay):
+                    nonlocal sleep_count
+                    sleep_count += 1
+                    if sleep_count > 2:
+                        # After a few sleeps, let compute finish
+                        compute_can_finish.set()
+                        await asyncio.sleep(0.001)  # Real tiny sleep
+
+                mock_sleep.side_effect = controlled_sleep
+
+                task2 = asyncio.create_task(
+                    cache_get_or_compute("test:key", SimpleModel, 300, slow_compute)
+                )
+
+                # Let task2 start waiting
+                await asyncio.sleep(0.01)
+
+            # If compute hasn't finished, let it finish now
+            compute_can_finish.set()
+
+            result1 = await task1
+            result2 = await task2
+
+            # Both should have the same result
+            assert result1.id == test_id
+            assert result2.id == test_id
+
+            # Only ONE compute should have run (stampede prevention)
+            assert compute_count == 1

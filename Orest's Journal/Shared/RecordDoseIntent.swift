@@ -9,6 +9,7 @@
 //
 
 import AppIntents
+
 import WidgetKit
 import Foundation
 import Security
@@ -28,9 +29,29 @@ nonisolated enum SharedKeychainManager: Sendable {
         case familyId = "shared_family_id"
     }
 
+    /// Convert OSStatus to human-readable string for debugging
+    private static func statusDescription(_ status: OSStatus) -> String {
+        switch status {
+        case errSecSuccess: return "success"
+        case errSecItemNotFound: return "item not found"
+        case errSecDuplicateItem: return "duplicate item"
+        case errSecAuthFailed: return "auth failed"
+        case errSecInteractionNotAllowed: return "interaction not allowed (device locked?)"
+        case errSecMissingEntitlement: return "missing entitlement"
+        case errSecParam: return "invalid parameter"
+        default: return "error \(status)"
+        }
+    }
+
     /// Save a credential to the shared Keychain
-    nonisolated static func save(_ value: String, for key: Key) {
-        guard let data = value.data(using: .utf8) else { return }
+    @discardableResult
+    nonisolated static func save(_ value: String, for key: Key) -> Bool {
+        guard let data = value.data(using: .utf8) else {
+            #if DEBUG
+            print("🔐 [Keychain] Failed to encode value for \(key.rawValue)")
+            #endif
+            return false
+        }
 
         let searchQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -39,7 +60,13 @@ nonisolated enum SharedKeychainManager: Sendable {
             kSecAttrAccessGroup as String: accessGroup,
         ]
 
-        SecItemDelete(searchQuery as CFDictionary)
+        // Delete existing item first (ignore result - may not exist)
+        let deleteStatus = SecItemDelete(searchQuery as CFDictionary)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            #if DEBUG
+            print("🔐 [Keychain] Delete before save warning for \(key.rawValue): \(statusDescription(deleteStatus))")
+            #endif
+        }
 
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -50,7 +77,18 @@ nonisolated enum SharedKeychainManager: Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
 
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess {
+            #if DEBUG
+            print("🔐 [Keychain] Failed to save \(key.rawValue): \(statusDescription(addStatus))")
+            #endif
+            return false
+        }
+
+        #if DEBUG
+        print("🔐 [Keychain] Saved \(key.rawValue) successfully")
+        #endif
+        return true
     }
 
     /// Retrieve a credential from the shared Keychain
@@ -67,9 +105,21 @@ nonisolated enum SharedKeychainManager: Sendable {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
 
-        guard status == errSecSuccess,
-              let data = result as? Data,
+        if status != errSecSuccess {
+            #if DEBUG
+            if status != errSecItemNotFound {
+                // Only log unexpected errors, not "item not found" which is normal
+                print("🔐 [Keychain] Failed to get \(key.rawValue): \(statusDescription(status))")
+            }
+            #endif
+            return nil
+        }
+
+        guard let data = result as? Data,
               let string = String(data: data, encoding: .utf8) else {
+            #if DEBUG
+            print("🔐 [Keychain] Failed to decode data for \(key.rawValue)")
+            #endif
             return nil
         }
 
@@ -77,7 +127,8 @@ nonisolated enum SharedKeychainManager: Sendable {
     }
 
     /// Delete a credential from the shared Keychain
-    nonisolated static func delete(_ key: Key) {
+    @discardableResult
+    nonisolated static func delete(_ key: Key) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -85,7 +136,20 @@ nonisolated enum SharedKeychainManager: Sendable {
             kSecAttrAccessGroup as String: accessGroup,
         ]
 
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            #if DEBUG
+            print("🔐 [Keychain] Failed to delete \(key.rawValue): \(statusDescription(status))")
+            #endif
+            return false
+        }
+
+        #if DEBUG
+        if status == errSecSuccess {
+            print("🔐 [Keychain] Deleted \(key.rawValue)")
+        }
+        #endif
+        return true
     }
 
     /// Delete all shared credentials (e.g., on logout)
@@ -114,17 +178,27 @@ nonisolated private enum PendingDoseKey: Sendable {
 
 /// Manages the queue of doses waiting to be recorded
 /// Thread-safe for access from widget AppIntents
-nonisolated final class PendingDoseManager: @unchecked Sendable {
+nonisolated final class PendingDoseManager: Sendable {
     static let shared = PendingDoseManager()
 
     private let userDefaults: UserDefaults?
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     init() {
         userDefaults = UserDefaults(suiteName: "group.com.notip.orests-journal")
+    }
+
+    /// Create a configured encoder (thread-safe because created per-call)
+    private func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    /// Create a configured decoder (thread-safe because created per-call)
+    private func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 
     /// Add a dose to the pending queue
@@ -150,7 +224,7 @@ nonisolated final class PendingDoseManager: @unchecked Sendable {
         guard let data = userDefaults?.data(forKey: PendingDoseKey.queue) else {
             return []
         }
-        return (try? decoder.decode([WidgetPendingDose].self, from: data)) ?? []
+        return (try? makeDecoder().decode([WidgetPendingDose].self, from: data)) ?? []
     }
 
     /// Remove a dose from the queue (after processing)
@@ -181,7 +255,7 @@ nonisolated final class PendingDoseManager: @unchecked Sendable {
     }
 
     nonisolated private func savePendingDoses(_ doses: [WidgetPendingDose]) {
-        if let data = try? encoder.encode(doses) {
+        if let data = try? makeEncoder().encode(doses) {
             userDefaults?.set(data, forKey: PendingDoseKey.queue)
         }
     }
