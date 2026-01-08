@@ -89,7 +89,9 @@ async def notify_family_dose_administered(
 
 
 @router.post("", response_model=DoseResponse, status_code=status.HTTP_201_CREATED)
+@rate_limit(requests=30, window_seconds=60)  # 30 doses per minute
 async def record_dose(
+    request: Request,
     dose_in: DoseCreate,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
@@ -133,6 +135,33 @@ async def record_dose(
     scheduled_for = dose_in.scheduled_for
     if scheduled_for is not None and scheduled_for.tzinfo is not None:
         scheduled_for = scheduled_for.astimezone(UTC).replace(tzinfo=None)
+
+    # Deduplication check: prevent double-recording same scheduled dose within 5 minutes
+    # This protects against widget/app race conditions
+    if scheduled_for is not None:
+        five_minutes_ago = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5)
+        # Check for existing dose with same medication and scheduled_for (within same minute)
+        dup_query = (
+            select(PetMedicationDose)
+            .where(
+                and_(
+                    PetMedicationDose.medication_id == dose_in.medication_id,
+                    PetMedicationDose.scheduled_for >= scheduled_for - timedelta(minutes=1),
+                    PetMedicationDose.scheduled_for <= scheduled_for + timedelta(minutes=1),
+                    PetMedicationDose.given_at >= five_minutes_ago,
+                )
+            )
+            .limit(1)
+        )
+        dup_result = await db.execute(dup_query)
+        existing_dose = dup_result.scalar_one_or_none()
+        if existing_dose:
+            logger.info(
+                f"Dedup: Dose already recorded for medication {dose_in.medication_id} "
+                f"scheduled_for {scheduled_for} (existing id: {existing_dose.id})"
+            )
+            # Return existing dose instead of creating duplicate
+            return DoseResponse.model_validate(existing_dose)
 
     dose = PetMedicationDose(
         medication_id=dose_in.medication_id,

@@ -177,11 +177,12 @@ nonisolated private enum PendingDoseKey: Sendable {
 // MARK: - Pending Dose Manager
 
 /// Manages the queue of doses waiting to be recorded
-/// Thread-safe for access from widget AppIntents
-nonisolated final class PendingDoseManager: Sendable {
+/// Thread-safe for access from widget AppIntents using NSLock
+nonisolated final class PendingDoseManager: @unchecked Sendable {
     static let shared = PendingDoseManager()
 
     private let userDefaults: UserDefaults?
+    private let lock = NSLock()
 
     init() {
         userDefaults = UserDefaults(suiteName: "group.com.notip.orests-journal")
@@ -201,60 +202,103 @@ nonisolated final class PendingDoseManager: Sendable {
         return decoder
     }
 
-    /// Add a dose to the pending queue
+    /// Add a dose to the pending queue (thread-safe)
     nonisolated func queueDose(_ dose: WidgetPendingDose) {
-        var queue = getPendingDoses()
+        lock.lock()
+        defer { lock.unlock() }
 
-        // Prevent duplicate requests for the same medication within 5 minutes
+        var queue = getPendingDosesUnsafe()
+
+        // Prevent duplicate requests for the same medication + scheduled time within 5 minutes
+        // This uses both medication ID AND scheduled time for precise deduplication
         let fiveMinutesAgo = Date().addingTimeInterval(-5 * 60)
         queue.removeAll { existing in
-            existing.medicationId == dose.medicationId && existing.requestedAt > fiveMinutesAgo
+            guard existing.medicationId == dose.medicationId,
+                  existing.requestedAt > fiveMinutesAgo else {
+                return false
+            }
+            // Match by scheduled time if both have it (same schedule slot)
+            if let existingScheduled = existing.scheduledFor,
+               let newScheduled = dose.scheduledFor {
+                let calendar = Calendar.current
+                return calendar.isDate(existingScheduled, equalTo: newScheduled, toGranularity: .minute)
+            }
+            // Fall back to medication-only match if no scheduled time
+            return existing.scheduledFor == nil && dose.scheduledFor == nil
         }
 
         queue.append(dose)
-        savePendingDoses(queue)
+        savePendingDosesUnsafe(queue)
 
         #if DEBUG
         print("📱 [Widget] Queued dose for \(dose.medicationName). Queue size: \(queue.count)")
         #endif
     }
 
-    /// Get all pending doses
+    /// Get all pending doses (thread-safe)
     nonisolated func getPendingDoses() -> [WidgetPendingDose] {
+        lock.lock()
+        defer { lock.unlock() }
+        return getPendingDosesUnsafe()
+    }
+
+    /// Remove a dose from the queue (thread-safe)
+    nonisolated func removeDose(_ dose: WidgetPendingDose) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var queue = getPendingDosesUnsafe()
+        queue.removeAll { $0.id == dose.id }
+        savePendingDosesUnsafe(queue)
+    }
+
+    /// Remove a dose by medication ID and optional scheduled time (thread-safe)
+    nonisolated func removeDose(forMedicationId medicationId: UUID, scheduledFor: Date? = nil) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var queue = getPendingDosesUnsafe()
+        queue.removeAll { existing in
+            guard existing.medicationId == medicationId else { return false }
+            // If scheduledFor provided, match by that as well
+            if let scheduled = scheduledFor, let existingScheduled = existing.scheduledFor {
+                let calendar = Calendar.current
+                return calendar.isDate(existingScheduled, equalTo: scheduled, toGranularity: .minute)
+            }
+            // Otherwise remove all doses for this medication
+            return scheduledFor == nil
+        }
+        savePendingDosesUnsafe(queue)
+    }
+
+    /// Clear all pending doses (thread-safe)
+    nonisolated func clearAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        userDefaults?.removeObject(forKey: PendingDoseKey.queue)
+    }
+
+    /// Clean up old pending doses older than 1 hour (thread-safe)
+    nonisolated func cleanupOldDoses() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var queue = getPendingDosesUnsafe()
+        let oneHourAgo = Date().addingTimeInterval(-3600)
+        queue.removeAll { $0.requestedAt < oneHourAgo }
+        savePendingDosesUnsafe(queue)
+    }
+
+    // MARK: - Unsafe internal methods (must be called with lock held)
+
+    private func getPendingDosesUnsafe() -> [WidgetPendingDose] {
         guard let data = userDefaults?.data(forKey: PendingDoseKey.queue) else {
             return []
         }
         return (try? makeDecoder().decode([WidgetPendingDose].self, from: data)) ?? []
     }
 
-    /// Remove a dose from the queue (after processing)
-    nonisolated func removeDose(_ dose: WidgetPendingDose) {
-        var queue = getPendingDoses()
-        queue.removeAll { $0.id == dose.id }
-        savePendingDoses(queue)
-    }
-
-    /// Remove a dose by medication ID (after processing)
-    nonisolated func removeDose(forMedicationId medicationId: UUID) {
-        var queue = getPendingDoses()
-        queue.removeAll { $0.medicationId == medicationId }
-        savePendingDoses(queue)
-    }
-
-    /// Clear all pending doses
-    nonisolated func clearAll() {
-        userDefaults?.removeObject(forKey: PendingDoseKey.queue)
-    }
-
-    /// Clean up old pending doses (older than 1 hour)
-    nonisolated func cleanupOldDoses() {
-        var queue = getPendingDoses()
-        let oneHourAgo = Date().addingTimeInterval(-3600)
-        queue.removeAll { $0.requestedAt < oneHourAgo }
-        savePendingDoses(queue)
-    }
-
-    nonisolated private func savePendingDoses(_ doses: [WidgetPendingDose]) {
+    private func savePendingDosesUnsafe(_ doses: [WidgetPendingDose]) {
         if let data = try? makeEncoder().encode(doses) {
             userDefaults?.set(data, forKey: PendingDoseKey.queue)
         }

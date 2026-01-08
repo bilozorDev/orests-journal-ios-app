@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
 from sqlalchemy import select, or_, func, delete, exists
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ def to_utc_naive(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 from app.core.security import get_current_user_id
+from app.core.rate_limit import rate_limit
 from app.core.authorization import verify_pet_access, verify_health_event_access
 from app.models.pet import Pet
 from app.models.health import PetHealthCategory, PetHealthEvent, PetHealthEventPhoto
@@ -259,7 +260,9 @@ async def get_or_create_category(
 
 # Events
 @router.post("/pet/{pet_id}/events", response_model=HealthEventResponse, status_code=status.HTTP_201_CREATED)
+@rate_limit(requests=30, window_seconds=60)  # 30 health events per minute
 async def create_health_event(
+    request: Request,
     pet_id: UUID,
     event_in: HealthEventCreate,
     db: AsyncSession = Depends(get_db),
@@ -575,12 +578,12 @@ async def update_health_event(
     if event_in.notes is not None:
         event.notes = event_in.notes if event_in.notes else None
 
-    await db.commit()
-
-    # Clean up orphaned category if category was changed
+    # Clean up orphaned category if category was changed (before commit for single transaction)
     if old_category_id and old_category_id != event.category_id:
         await delete_orphaned_category(db, old_category_id)
-        await db.commit()
+
+    # Single commit for entire update operation (event changes + orphan cleanup)
+    await db.commit()
 
     # Invalidate cache
     await invalidate_health_cache(event.pet_id, current_category.family_id)

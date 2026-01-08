@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -328,10 +328,12 @@ async def create_health_record(
 @router.get("/{pet_id}/health-records", response_model=list[HealthRecordResponse])
 async def list_health_records(
     pet_id: UUID,
+    limit: int = Query(default=50, le=200, description="Maximum records to return"),
+    offset: int = Query(default=0, ge=0, description="Number of records to skip"),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """List health records for a pet."""
+    """List health records for a pet with pagination support."""
     # Verify user has access to this pet through family membership
     await verify_pet_access(db, user_id, pet_id)
 
@@ -339,6 +341,8 @@ async def list_health_records(
         select(HealthRecord)
         .where(HealthRecord.pet_id == pet_id)
         .order_by(HealthRecord.recorded_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     result = await db.execute(query)
     records = result.scalars().all()

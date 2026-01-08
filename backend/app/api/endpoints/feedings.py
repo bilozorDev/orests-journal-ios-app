@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.core.security import get_current_user_id
+from app.core.rate_limit import rate_limit
 from app.core.authorization import verify_pet_access, verify_feeding_access
 from app.models.pet import Pet
 from app.models.food import PetFeeding, PetCalorieGoal
@@ -14,21 +15,32 @@ from app.schemas.food import (
     FeedingCreate, FeedingUpdate, FeedingResponse, FeedingListResponse,
     CalorieGoalCreate, CalorieGoalResponse,
 )
-from app.cache.helpers import cache_get, cache_set, cache_delete_pattern
-from app.cache.keys import key_feeding_history, TTL_FEEDING_HISTORY
+from app.cache.helpers import cache_get, cache_set, cache_delete, cache_delete_pattern
+from app.cache.keys import key_feeding_history, key_calorie_goal, TTL_FEEDING_HISTORY
 
 router = APIRouter()
 
 
-async def invalidate_feeding_caches(pet_id: UUID) -> None:
-    """Invalidate all feeding-related caches for a pet."""
+async def invalidate_feeding_caches(pet_id: UUID, include_calorie_goal: bool = False) -> None:
+    """Invalidate all feeding-related caches for a pet.
+
+    Args:
+        pet_id: The pet whose caches should be invalidated
+        include_calorie_goal: If True, also invalidate the calorie goal cache
+    """
     # Invalidate dashboard and feeding history caches
     await cache_delete_pattern(f"dashboard:{pet_id}:*")
     await cache_delete_pattern(f"feeding_history:{pet_id}:*")
 
+    # Invalidate calorie goal cache if requested
+    if include_calorie_goal:
+        await cache_delete(key_calorie_goal(str(pet_id)))
+
 
 @router.post("", response_model=FeedingResponse, status_code=status.HTTP_201_CREATED)
+@rate_limit(requests=30, window_seconds=60)  # 30 feedings per minute
 async def create_feeding(
+    request: Request,
     feeding_in: FeedingCreate,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
@@ -261,7 +273,7 @@ async def set_calorie_goal(
     await db.commit()
     await db.refresh(goal)
 
-    # Invalidate dashboard cache
-    await invalidate_feeding_caches(pet_id)
+    # Invalidate dashboard and calorie goal caches
+    await invalidate_feeding_caches(pet_id, include_calorie_goal=True)
 
     return CalorieGoalResponse.model_validate(goal)

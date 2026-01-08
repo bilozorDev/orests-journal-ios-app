@@ -573,7 +573,10 @@ final class AuthManager {
     // MARK: - Keychain Operations
 
     private func saveTokenToKeychain(_ token: String) {
-        guard let data = token.data(using: .utf8) else { return }
+        guard let data = token.data(using: .utf8) else {
+            print("⚠️ [Auth] Failed to encode token data")
+            return
+        }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -582,14 +585,26 @@ final class AuthManager {
         ]
 
         // Delete existing
-        SecItemDelete(query as CFDictionary)
+        let deleteStatus = SecItemDelete(query as CFDictionary)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            print("⚠️ [Auth] Keychain delete warning: \(deleteStatus)")
+        }
 
-        // Add new
+        // Add new with persistent storage
         var newQuery = query
         newQuery[kSecValueData as String] = data
-        SecItemAdd(newQuery as CFDictionary, nil)
+        newQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+
+        let addStatus = SecItemAdd(newQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess {
+            print("❌ [Auth] Keychain save failed with status: \(addStatus)")
+            // Don't fail silently - if keychain save fails, the token won't persist
+            // This is important for debugging but we don't show UI since login will appear to work
+            // but fail on next app launch. The SharedKeychainManager below serves as backup.
+        }
 
         // Sync to shared keychain for widget access
+        // This also serves as a fallback if main keychain fails
         SharedKeychainManager.save(token, for: .authToken)
     }
 

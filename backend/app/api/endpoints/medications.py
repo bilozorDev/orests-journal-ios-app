@@ -31,11 +31,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def invalidate_medication_caches(pet_id: UUID, family_id: str = None) -> None:
-    """Invalidate dashboard and medication caches when medications change."""
+async def invalidate_medication_caches(pet_id: UUID, family_id: str) -> None:
+    """Invalidate dashboard and medication caches when medications change.
+
+    Args:
+        pet_id: The pet whose medications changed
+        family_id: The family ID (required for medication list cache invalidation)
+    """
     await cache_delete_pattern(f"dashboard:{pet_id}:*")
-    if family_id:
-        await cache_delete_pattern(f"medications:{family_id}:*")
+    await cache_delete_pattern(f"medications:{family_id}:*")
 
 
 async def notify_family_medication_change(
